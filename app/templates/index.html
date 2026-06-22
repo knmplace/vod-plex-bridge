@@ -262,10 +262,17 @@
                             <div class="label">Active STRM</div>
                         </div>
                     </div>
+                    <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
+                        <span style="font-size:0.75rem;color:var(--text-muted)">Scrape limit:</span>
+                        <input type="number" id="scrapeLimit" value="5000" min="0" step="1000" placeholder="0 = all"
+                               style="width:80px;background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;padding:0.3rem 0.4rem;font-size:0.8rem;">
+                        <span style="font-size:0.65rem;color:var(--text-muted)">(0 = no limit)</span>
+                    </div>
                     <div class="sync-actions">
                         <button class="btn btn-primary btn-sm" onclick="syncCatalog()">Sync Catalog</button>
                         <button class="btn btn-primary btn-sm" onclick="generateStrm()">Generate STRM</button>
                         <button class="btn btn-outline btn-sm" onclick="fullSync()">Full Sync</button>
+                        <button class="btn btn-danger btn-sm" id="stopBtn" onclick="stopSync()" style="display:none;">Stop</button>
                     </div>
                     <div class="msg" id="syncMessage"></div>
                 </div>
@@ -327,11 +334,16 @@
 
             const dot = document.getElementById('statusDot');
             const text = document.getElementById('statusText');
+            const stopBtn = document.getElementById('stopBtn');
             dot.className = 'status-dot ' + (s.status || 'idle');
             text.textContent = s.status === 'idle' ? 'Ready' : s.status?.charAt(0).toUpperCase() + s.status?.slice(1) + '...';
 
+            stopBtn.style.display = (s.status !== 'idle') ? 'inline-block' : 'none';
+
             if (s.status !== 'idle') {
                 setTimeout(refreshStatus, 2000);
+            } else {
+                refreshGenres();
             }
         }
 
@@ -436,7 +448,12 @@
         }
 
         async function syncCatalog() {
-            await fetchJSON('/api/sync/catalog', {method: 'POST'});
+            const limit = parseInt(document.getElementById('scrapeLimit').value) || 0;
+            await fetchJSON('/api/sync/catalog', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({max_movies: limit})
+            });
             refreshStatus();
         }
 
@@ -447,6 +464,11 @@
 
         async function fullSync() {
             await fetchJSON('/api/sync/full', {method: 'POST'});
+            refreshStatus();
+        }
+
+        async function stopSync() {
+            await fetchJSON('/api/sync/stop', {method: 'POST'});
             refreshStatus();
         }
 

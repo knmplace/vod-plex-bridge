@@ -10,9 +10,22 @@ logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 100
 
+_cancel = False
 
-async def scrape_catalog():
-    """Scrape all VOD movies from Dispatcharr API into SQLite."""
+
+def request_cancel():
+    global _cancel
+    _cancel = True
+
+
+def is_cancelled():
+    return _cancel
+
+
+async def scrape_catalog(max_movies: int = 0):
+    global _cancel
+    _cancel = False
+
     db = await get_db()
     try:
         await db.execute(
@@ -29,6 +42,14 @@ async def scrape_catalog():
             total_synced = 0
 
             while True:
+                if _cancel:
+                    logger.info("Catalog scrape cancelled by user")
+                    break
+
+                if max_movies > 0 and total_synced >= max_movies:
+                    logger.info(f"Reached scrape limit of {max_movies}")
+                    break
+
                 url = f"{DISPATCHARR_URL}/api/vod/movies/?page={page}&page_size={PAGE_SIZE}"
                 resp = await client.get(url, headers=req_headers)
                 if resp.status_code != 200:
@@ -41,6 +62,11 @@ async def scrape_catalog():
                     break
 
                 for movie in results:
+                    if _cancel:
+                        break
+                    if max_movies > 0 and total_synced >= max_movies:
+                        break
+
                     custom = movie.get("custom_properties") or {}
                     if isinstance(custom, str):
                         import json
@@ -82,9 +108,10 @@ async def scrape_catalog():
 
                 await db.commit()
 
+                limit_msg = f" (limit: {max_movies})" if max_movies > 0 else ""
                 await db.execute(
                     "UPDATE sync_state SET message = ? WHERE id = 1",
-                    (f"Scraped {total_synced} movies (page {page})...",),
+                    (f"Scraped {total_synced} movies (page {page}){limit_msg}...",),
                 )
                 await db.commit()
 
@@ -96,19 +123,22 @@ async def scrape_catalog():
         count_row = await db.execute("SELECT COUNT(*) as cnt FROM movies")
         count = (await count_row.fetchone())["cnt"]
 
+        status_msg = "cancelled" if _cancel else "complete"
         await db.execute(
             "UPDATE sync_state SET last_catalog_sync = ?, total_movies = ?, status = 'idle', message = ? WHERE id = 1",
-            (datetime.now(timezone.utc).isoformat(), count, f"Catalog sync complete: {total_synced} movies"),
+            (datetime.now(timezone.utc).isoformat(), count, f"Catalog sync {status_msg}: {total_synced} movies"),
         )
         await db.commit()
-        logger.info(f"Catalog scrape complete: {total_synced} movies synced, {count} total in DB")
+        logger.info(f"Catalog scrape {status_msg}: {total_synced} movies synced, {count} total in DB")
+        _cancel = False
         return total_synced
     finally:
         await db.close()
 
 
 async def enrich_from_tmdb(batch_size: int = 50):
-    """Enrich movies with genre data from TMDB API."""
+    global _cancel
+
     if not TMDB_API_KEY and not TMDB_READ_TOKEN:
         logger.warning("TMDB_API_KEY/TMDB_READ_TOKEN not set, skipping enrichment")
         return 0
@@ -126,6 +156,9 @@ async def enrich_from_tmdb(batch_size: int = 50):
         enriched = 0
         async with httpx.AsyncClient(timeout=10.0) as client:
             for movie in movies:
+                if _cancel:
+                    logger.info("TMDB enrichment cancelled by user")
+                    break
                 try:
                     url = f"https://api.themoviedb.org/3/movie/{movie['tmdb_id']}"
                     headers = {}
@@ -161,6 +194,7 @@ async def enrich_from_tmdb(batch_size: int = 50):
 
         await db.commit()
         logger.info(f"TMDB enrichment complete: {enriched} movies enriched")
+        _cancel = False
         return enriched
     finally:
         await db.close()

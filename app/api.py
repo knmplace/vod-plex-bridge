@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from database import get_db
-from scraper import scrape_catalog, enrich_from_tmdb
+from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled
 from generator import generate_strm_files
 from stream_mapper import apply_stream_mapping_to_db
 
@@ -144,15 +144,28 @@ async def delete_filter(filter_id: int):
 
 
 @router.post("/sync/catalog")
-async def trigger_catalog_sync():
-    asyncio.create_task(_run_catalog_sync())
-    return {"status": "started", "message": "Catalog sync started in background"}
-
-
-async def _run_catalog_sync():
+async def trigger_catalog_sync(request: Request):
+    data = {}
     try:
-        await scrape_catalog()
-        await enrich_from_tmdb(batch_size=200)
+        data = await request.json()
+    except Exception:
+        pass
+    max_movies = data.get("max_movies", 0)
+    asyncio.create_task(_run_catalog_sync(max_movies))
+    return {"status": "started", "message": f"Catalog sync started (limit: {max_movies or 'none'})"}
+
+
+@router.post("/sync/stop")
+async def stop_sync():
+    request_cancel()
+    return {"status": "ok", "message": "Stop requested"}
+
+
+async def _run_catalog_sync(max_movies: int = 0):
+    try:
+        await scrape_catalog(max_movies=max_movies)
+        if not is_cancelled():
+            await enrich_from_tmdb(batch_size=200)
     except Exception as e:
         logger.error(f"Catalog sync failed: {e}")
         db = await get_db()
@@ -211,8 +224,12 @@ async def _run_mapping_sync():
 async def _run_full_sync():
     try:
         await scrape_catalog()
+        if is_cancelled():
+            return
         await apply_stream_mapping_to_db()
         await enrich_from_tmdb(batch_size=200)
+        if is_cancelled():
+            return
         await generate_strm_files()
     except Exception as e:
         logger.error(f"Full sync failed: {e}")
