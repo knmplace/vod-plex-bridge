@@ -32,6 +32,28 @@ async def init_db():
                 tmdb_enriched INTEGER DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS vod_categories (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                category_type TEXT DEFAULT 'movie',
+                movie_count INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS movie_categories (
+                movie_id INTEGER NOT NULL,
+                category_id INTEGER NOT NULL,
+                PRIMARY KEY (movie_id, category_id),
+                FOREIGN KEY (movie_id) REFERENCES movies(id),
+                FOREIGN KEY (category_id) REFERENCES vod_categories(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS selected_categories (
+                category_id INTEGER PRIMARY KEY,
+                enabled INTEGER DEFAULT 1,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (category_id) REFERENCES vod_categories(id)
+            );
+
             CREATE TABLE IF NOT EXISTS filter_configs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 genre TEXT NOT NULL,
@@ -59,7 +81,48 @@ async def init_db():
             CREATE INDEX IF NOT EXISTS idx_movies_rating ON movies(rating);
             CREATE INDEX IF NOT EXISTS idx_movies_year ON movies(year);
             CREATE INDEX IF NOT EXISTS idx_movies_tmdb ON movies(tmdb_id);
+            CREATE INDEX IF NOT EXISTS idx_movie_categories_cat ON movie_categories(category_id);
         """)
+
+        for col in [
+            "ALTER TABLE movies ADD COLUMN activated INTEGER DEFAULT 0",
+            "ALTER TABLE movies ADD COLUMN file_size INTEGER",
+            "ALTER TABLE movies ADD COLUMN account_id INTEGER",
+            "ALTER TABLE movies ADD COLUMN account_name TEXT DEFAULT ''",
+            "ALTER TABLE movies ADD COLUMN trailer_key TEXT",
+        ]:
+            try:
+                await db.execute(col)
+                await db.commit()
+            except Exception:
+                pass
+
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_movies_activated ON movies(activated)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_movies_account ON movies(account_id)")
+
+        await db.executescript("""
+            CREATE TABLE IF NOT EXISTS m3u_accounts (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS vod_category_accounts (
+                category_id INTEGER NOT NULL,
+                account_id INTEGER NOT NULL,
+                PRIMARY KEY (category_id, account_id),
+                FOREIGN KEY (category_id) REFERENCES vod_categories(id),
+                FOREIGN KEY (account_id) REFERENCES m3u_accounts(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS selected_accounts (
+                account_id INTEGER PRIMARY KEY,
+                enabled INTEGER DEFAULT 1,
+                FOREIGN KEY (account_id) REFERENCES m3u_accounts(id)
+            );
+        """)
+        await db.execute(
+            "UPDATE sync_state SET status = 'idle', message = 'Ready' WHERE id = 1 AND status != 'idle'"
+        )
         await db.commit()
     finally:
         await db.close()

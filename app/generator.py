@@ -39,21 +39,47 @@ async def generate_strm_files():
             await db.commit()
             return 0
 
+        # Get movies from selected categories
+        sel_rows = await db.execute("SELECT category_id FROM selected_categories WHERE enabled = 1")
+        selected_cats = [r["category_id"] for r in await sel_rows.fetchall()]
+
         selected_ids = set()
-        for f in active_filters:
-            genre = f["genre"]
-            limit = f["limit_count"]
-            sort_by = f["sort_by"] if f["sort_by"] in ("rating", "year", "name") else "rating"
-            sort_order = "DESC" if f["sort_order"] == "desc" else "ASC"
 
-            sort_col = {"rating": "rating", "year": "year", "name": "name"}[sort_by]
-
+        if selected_cats and not active_filters:
+            # Categories selected but no genre filters — include all movies from selected categories
+            placeholders = ",".join("?" for _ in selected_cats)
             rows = await db.execute(
-                f"SELECT id FROM movies WHERE genre LIKE ? AND name != '' ORDER BY {sort_col} {sort_order} LIMIT ?",
-                (f"%{genre}%", limit),
+                f"SELECT DISTINCT m.id FROM movies m "
+                f"JOIN movie_categories mc ON m.id = mc.movie_id "
+                f"WHERE mc.category_id IN ({placeholders}) AND m.name != ''",
+                selected_cats,
             )
-            ids = [row["id"] for row in await rows.fetchall()]
-            selected_ids.update(ids)
+            selected_ids = {row["id"] for row in await rows.fetchall()}
+        elif active_filters:
+            for f in active_filters:
+                genre = f["genre"]
+                limit = f["limit_count"]
+                sort_by = f["sort_by"] if f["sort_by"] in ("rating", "year", "name") else "rating"
+                sort_order = "DESC" if f["sort_order"] == "desc" else "ASC"
+
+                sort_col = {"rating": "rating", "year": "year", "name": "name"}[sort_by]
+
+                if selected_cats:
+                    placeholders = ",".join("?" for _ in selected_cats)
+                    rows = await db.execute(
+                        f"SELECT m.id FROM movies m "
+                        f"JOIN movie_categories mc ON m.id = mc.movie_id "
+                        f"WHERE mc.category_id IN ({placeholders}) AND m.genre LIKE ? AND m.name != '' "
+                        f"ORDER BY m.{sort_col} {sort_order} LIMIT ?",
+                        selected_cats + [f"%{genre}%", limit],
+                    )
+                else:
+                    rows = await db.execute(
+                        f"SELECT id FROM movies WHERE genre LIKE ? AND name != '' ORDER BY {sort_col} {sort_order} LIMIT ?",
+                        (f"%{genre}%", limit),
+                    )
+                ids = [row["id"] for row in await rows.fetchall()]
+                selected_ids.update(ids)
 
         if not selected_ids:
             logger.warning("Filters matched no movies")
@@ -86,7 +112,8 @@ async def generate_strm_files():
                 if not name:
                     continue
 
-                clean_name = re.sub(r'\s*-\s*\d{4}\s*$', '', name).strip()
+                clean_name = re.sub(r'\s*[-–]\s*\d{4}\s*$', '', name).strip()
+                clean_name = re.sub(r'\s*\(\d{4}\)\s*$', '', clean_name).strip()
 
                 if year:
                     folder_name = sanitize_filename(f"{clean_name} ({year})")
@@ -100,8 +127,7 @@ async def generate_strm_files():
                 os.makedirs(folder_path, exist_ok=True)
                 generated_dirs.add(folder_name)
 
-                ext = "mkv" if "matroska" in (movie["content_type"] or "") else "mp4"
-                strm_url = f"http://{BRIDGE_HOST}:{BRIDGE_PORT}/stream/{movie['id']}.{ext}"
+                strm_url = f"http://{BRIDGE_HOST}:{BRIDGE_PORT}/stream/{movie['id']}.mp4"
                 strm_path = os.path.join(folder_path, f"{file_name}.strm")
                 with open(strm_path, "w", encoding="utf-8") as f:
                     f.write(strm_url)

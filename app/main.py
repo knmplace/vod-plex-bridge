@@ -9,17 +9,27 @@ from fastapi.requests import Request
 from database import init_db
 from proxy import router as proxy_router
 from api import router as api_router
+from cache import stream_cache
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+APP_VERSION = "0.8.2"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await stream_cache.start()
     yield
+    await stream_cache.stop()
 
 
-app = FastAPI(title="VOD Plex Bridge", lifespan=lifespan)
+app = FastAPI(title="VOD Plex Bridge", version=APP_VERSION, lifespan=lifespan)
+
+
+@app.get("/version")
+async def version():
+    return {"version": APP_VERSION}
 app.include_router(proxy_router)
 app.include_router(api_router)
 app.mount("/static", StaticFiles(directory="/app/static"), name="static")

@@ -42,10 +42,13 @@ async def apply_stream_mapping_to_db():
             stream_id = info.get("stream_id")
             ext = info.get("ext", "mkv")
             content_type = "video/x-matroska" if ext == "mkv" else "video/mp4"
+            account_id = info.get("account_id")
+            account_name = info.get("account_name", "")
 
             result = await db.execute(
-                "UPDATE movies SET stream_id = ?, content_type = ? WHERE id = ? AND (stream_id IS NULL OR stream_id != ?)",
-                (stream_id, content_type, movie_id, stream_id),
+                "UPDATE movies SET stream_id = ?, content_type = ?, account_id = ?, account_name = ? "
+                "WHERE id = ? AND (stream_id IS NULL OR stream_id != ? OR account_id IS NULL)",
+                (stream_id, content_type, account_id, account_name, movie_id, stream_id),
             )
             if result.rowcount > 0:
                 updated += 1
@@ -66,24 +69,36 @@ sys.path.insert(0, '/app')
 django.setup()
 
 from django.apps import apps
-from django.db.models import Min
 
 M3UMovieRelation = apps.get_model('vod', 'M3UMovieRelation')
 
-# Get one stream_id per movie (lowest stream_id = most common across providers)
+M3UAccount = apps.get_model('m3u', 'M3UAccount')
+account_names = dict(M3UAccount.objects.values_list('id', 'name'))
+
+PREFERRED_ACCOUNTS = [10, 17, 13, 14]  # Amber Baby accounts first
+
 rels = (
     M3UMovieRelation.objects
     .filter(m3u_account__is_active=True)
-    .values('movie_id', 'container_extension')
-    .annotate(first_stream_id=Min('stream_id'))
+    .values('movie_id', 'stream_id', 'container_extension', 'm3u_account_id')
 )
 
 mapping = {}
 for r in rels:
-    mapping[r['movie_id']] = {
-        'stream_id': r['first_stream_id'],
-        'ext': r['container_extension'] or 'mkv',
-    }
+    mid = r['movie_id']
+    acct_id = r['m3u_account_id']
+    is_preferred = acct_id in PREFERRED_ACCOUNTS
+    if mid not in mapping or (is_preferred and not mapping[mid].get('_preferred')):
+        mapping[mid] = {
+            'stream_id': r['stream_id'],
+            'ext': r['container_extension'] or 'mkv',
+            'account_id': acct_id,
+            'account_name': account_names.get(acct_id, 'Unknown'),
+            '_preferred': is_preferred,
+        }
+
+for mid in mapping:
+    mapping[mid].pop('_preferred', None)
 
 output_path = sys.argv[1] if len(sys.argv) > 1 else '/tmp/stream_mapping.json'
 with open(output_path, 'w') as f:

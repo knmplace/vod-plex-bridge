@@ -34,24 +34,19 @@
         .header {
             background: var(--bg-secondary);
             border-bottom: 1px solid var(--border);
-            padding: 1rem 2rem;
+            padding: 0.75rem 1.5rem;
             display: flex;
             align-items: center;
             justify-content: space-between;
         }
 
-        .header h1 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            letter-spacing: -0.02em;
-        }
-
+        .header h1 { font-size: 1.1rem; font-weight: 600; }
         .header h1 span { color: var(--accent); }
 
         .status-bar {
             display: flex;
             align-items: center;
-            gap: 1rem;
+            gap: 0.75rem;
             font-size: 0.8rem;
             color: var(--text-secondary);
         }
@@ -62,144 +57,179 @@
             display: inline-block;
         }
         .status-dot.idle { background: var(--success); }
-        .status-dot.scraping, .status-dot.generating, .status-dot.enriching { background: var(--warning); animation: pulse 1s infinite; }
+        .status-dot.scraping, .status-dot.generating, .status-dot.enriching, .status-dot.loading { background: var(--warning); animation: pulse 1s infinite; }
         .status-dot.error { background: var(--danger); }
 
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 1.5rem;
-            display: grid;
-            grid-template-columns: 340px 1fr;
-            gap: 1.5rem;
-        }
-
-        .panel {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            overflow: hidden;
-        }
-
-        .panel-header {
-            padding: 0.875rem 1.125rem;
+        .dashboard-bar {
+            background: var(--bg-secondary);
             border-bottom: 1px solid var(--border);
-            font-weight: 600;
-            font-size: 0.9rem;
+            padding: 0.6rem 1.5rem;
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            gap: 1.5rem;
+            flex-wrap: wrap;
         }
 
-        .panel-body { padding: 1rem; }
+        .stat-inline {
+            display: flex;
+            align-items: baseline;
+            gap: 0.4rem;
+        }
+        .stat-inline .value { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
+        .stat-inline .label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }
+
+        .dashboard-bar .btn { margin: 0; }
+        .dashboard-bar .msg { font-size: 0.75rem; color: var(--text-secondary); margin-left: auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
         .btn {
-            padding: 0.5rem 1rem;
-            border-radius: 6px;
+            padding: 0.4rem 0.8rem;
+            border-radius: 5px;
             border: none;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             font-weight: 500;
             cursor: pointer;
             transition: all 0.15s;
         }
         .btn-primary { background: var(--accent); color: #fff; }
         .btn-primary:hover { background: var(--accent-hover); }
+        .btn-success { background: var(--success); color: #fff; }
+        .btn-success:hover { background: #16a34a; }
         .btn-danger { background: var(--danger); color: #fff; }
         .btn-danger:hover { background: var(--danger-hover); }
-        .btn-sm { padding: 0.3rem 0.6rem; font-size: 0.75rem; }
         .btn-outline {
             background: transparent;
             border: 1px solid var(--border);
             color: var(--text-secondary);
         }
         .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+        .btn-warning { background: var(--warning); color: #000; }
+        .btn-warning:hover { background: #d97706; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        .sync-actions {
-            display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap;
-            margin-bottom: 1rem;
-        }
-
-        .stat-grid {
+        .top-panels {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.75rem;
-            margin-bottom: 1rem;
+            grid-template-columns: 220px 1fr;
+            gap: 1rem;
+            padding: 1rem 1.5rem;
         }
 
-        .stat-card {
-            background: var(--bg-secondary);
-            border-radius: 8px;
-            padding: 0.75rem;
-            text-align: center;
-        }
-        .stat-card .value { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
-        .stat-card .label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.25rem; }
-
-        .genre-list { max-height: 400px; overflow-y: auto; }
-        .genre-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0.5rem 0.75rem;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background 0.15s;
-            font-size: 0.85rem;
-        }
-        .genre-item:hover { background: var(--bg-card-hover); }
-        .genre-item .count { color: var(--text-muted); font-size: 0.75rem; }
-        .genre-item.active { background: var(--accent); color: #fff; }
-        .genre-item.active .count { color: rgba(255,255,255,0.7); }
-
-        .filter-card {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 0.875rem;
-            margin-bottom: 0.75rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.75rem;
-        }
-
-        .filter-card .genre-name { font-weight: 600; font-size: 0.9rem; }
-
-        .filter-controls {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .filter-controls select, .filter-controls input[type="number"] {
+        .panel {
             background: var(--bg-card);
             border: 1px solid var(--border);
-            color: var(--text-primary);
-            border-radius: 4px;
-            padding: 0.3rem 0.4rem;
-            font-size: 0.8rem;
+            border-radius: 8px;
+            overflow: hidden;
         }
 
-        .filter-controls input[type="number"] { width: 60px; }
+        .panel-header {
+            padding: 0.6rem 0.875rem;
+            border-bottom: 1px solid var(--border);
+            font-weight: 600;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .panel-body { padding: 0.5rem; }
+
+        .search-input {
+            width: 100%;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: 5px;
+            padding: 0.4rem 0.6rem;
+            font-size: 0.75rem;
+            margin-bottom: 0.4rem;
+        }
+        .search-input:focus { outline: none; border-color: var(--accent); }
+
+        .scroll-list { max-height: 300px; overflow-y: auto; }
+
+        .list-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.35rem 0.6rem;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 0.78rem;
+        }
+        .list-item:hover { background: var(--bg-card-hover); }
+        .list-item .count { color: var(--text-muted); font-size: 0.7rem; }
+        .list-item.selected { background: var(--accent); color: #fff; }
+        .list-item.selected .count { color: rgba(255,255,255,0.7); }
+
+        .panel-footer {
+            padding: 0.5rem 0.875rem;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+        }
+
+        .cat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 0.4rem;
+        }
+
+        .cat-chip {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.3rem 0.6rem;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.15s;
+            font-size: 0.75rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+        }
+        .cat-chip:hover { border-color: var(--accent); }
+        .cat-chip.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .cat-chip .count { font-size: 0.68rem; color: var(--text-muted); margin-left: 0.4rem; }
+        .cat-chip.selected .count { color: rgba(255,255,255,0.7); }
+
+        .browse-section {
+            padding: 0 1.5rem 1.5rem;
+        }
+
+        .browse-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.5rem 0.875rem;
+            flex-wrap: wrap;
+        }
+
+        .browse-toolbar select, .browse-toolbar input {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: 5px;
+            padding: 0.35rem 0.5rem;
+            font-size: 0.75rem;
+        }
+        .browse-toolbar select:focus, .browse-toolbar input:focus { outline: none; border-color: var(--accent); }
 
         .movie-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-            gap: 0.75rem;
-            max-height: 500px;
-            overflow-y: auto;
+            grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+            gap: 0.6rem;
             padding: 0.5rem;
         }
 
         .movie-card {
-            border-radius: 8px;
+            border-radius: 6px;
             overflow: hidden;
             background: var(--bg-secondary);
             transition: transform 0.15s;
+            position: relative;
+            cursor: pointer;
         }
         .movie-card:hover { transform: translateY(-2px); }
         .movie-card img {
@@ -208,11 +238,9 @@
             object-fit: cover;
             display: block;
         }
-        .movie-card .info {
-            padding: 0.4rem 0.5rem;
-        }
+        .movie-card .info { padding: 0.3rem 0.4rem; }
         .movie-card .title {
-            font-size: 0.72rem;
+            font-size: 0.7rem;
             font-weight: 500;
             line-height: 1.2;
             overflow: hidden;
@@ -220,112 +248,320 @@
             white-space: nowrap;
         }
         .movie-card .meta {
-            font-size: 0.65rem;
+            font-size: 0.62rem;
             color: var(--text-muted);
-            margin-top: 0.15rem;
+            margin-top: 0.1rem;
+        }
+        .movie-card .provider-tag {
+            font-size: 0.58rem;
+            color: var(--accent);
+            margin-top: 0.1rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .movie-card .check-overlay {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.5);
+            background: rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            color: transparent;
+        }
+        .movie-card.card-selected .check-overlay {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+        .movie-card .activated-badge {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            background: var(--success);
+            color: #fff;
+            font-size: 0.55rem;
+            font-weight: 700;
+            padding: 0.1rem 0.3rem;
+            border-radius: 3px;
+        }
+
+        .pagination {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.6rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
         }
 
         .empty-state {
             text-align: center;
-            padding: 2rem;
+            padding: 1.5rem;
             color: var(--text-muted);
+            font-size: 0.8rem;
         }
 
-        .msg { font-size: 0.8rem; color: var(--text-secondary); padding: 0.5rem 0; }
+        .badge {
+            background: var(--accent);
+            color: #fff;
+            border-radius: 10px;
+            padding: 0.05rem 0.45rem;
+            font-size: 0.68rem;
+            font-weight: 600;
+        }
+
+        .selection-bar {
+            background: var(--bg-secondary);
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 0.4rem 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin: 0 0.5rem;
+        }
+        .selection-bar .count { font-weight: 700; color: var(--accent); }
+
+        .trailer-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            z-index: 10000;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        .trailer-modal.active { display: flex; }
+        .trailer-modal .trailer-close {
+            position: absolute;
+            top: 1rem; right: 1.5rem;
+            font-size: 2rem;
+            color: #fff;
+            cursor: pointer;
+            z-index: 10001;
+        }
+        .trailer-modal iframe {
+            width: 80vw;
+            height: 45vw;
+            max-width: 960px;
+            max-height: 540px;
+            border: none;
+            border-radius: 8px;
+        }
+
+        .movie-card .trailer-btn {
+            position: absolute;
+            bottom: 52px;
+            right: 4px;
+            width: 26px; height: 26px;
+            border-radius: 50%;
+            background: rgba(255,0,0,0.85);
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.65rem;
+            color: #fff;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+        .movie-card:hover .trailer-btn { opacity: 1; }
+
+        .sync-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 1.2rem;
+        }
+        .sync-overlay.active { display: flex; }
+        .sync-spinner {
+            width: 56px; height: 56px;
+            border: 4px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .sync-overlay .sync-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .sync-overlay .sync-progress {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            max-width: 400px;
+            text-align: center;
+        }
+        .sync-overlay .btn { margin-top: 0.5rem; }
 
         @media (max-width: 768px) {
-            .container { grid-template-columns: 1fr; }
+            .top-panels { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
+    <div class="sync-overlay" id="syncOverlay">
+        <div class="sync-spinner"></div>
+        <div class="sync-title" id="syncOverlayTitle">Syncing Catalog...</div>
+        <div class="sync-progress" id="syncOverlayProgress">Starting...</div>
+        <button class="btn btn-danger" onclick="stopSync()">Stop</button>
+    </div>
+
+    <div class="trailer-modal" id="trailerModal" onclick="closeTrailer(event)">
+        <span class="trailer-close" onclick="closeTrailer()">&times;</span>
+        <iframe id="trailerFrame" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+    </div>
+
     <div class="header">
-        <h1><span>VOD</span> Plex Bridge</h1>
+        <h1><span>VOD</span> Plex Bridge <span style="color:#fff" id="appVersion"></span></h1>
         <div class="status-bar">
             <span class="status-dot idle" id="statusDot"></span>
             <span id="statusText">Loading...</span>
         </div>
     </div>
 
-    <div class="container">
-        <div>
-            <div class="panel" style="margin-bottom: 1.5rem;">
-                <div class="panel-header">Dashboard</div>
-                <div class="panel-body">
-                    <div class="stat-grid">
-                        <div class="stat-card">
-                            <div class="value" id="totalMovies">-</div>
-                            <div class="label">Total Catalog</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="value" id="activeStrm">-</div>
-                            <div class="label">Active STRM</div>
-                        </div>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
-                        <span style="font-size:0.75rem;color:var(--text-muted)">Scrape limit:</span>
-                        <input type="number" id="scrapeLimit" value="5000" min="0" step="1000" placeholder="0 = all"
-                               style="width:80px;background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;padding:0.3rem 0.4rem;font-size:0.8rem;">
-                        <span style="font-size:0.65rem;color:var(--text-muted)">(0 = no limit)</span>
-                    </div>
-                    <div class="sync-actions">
-                        <button class="btn btn-primary btn-sm" onclick="syncCatalog()">Sync Catalog</button>
-                        <button class="btn btn-primary btn-sm" onclick="generateStrm()">Generate STRM</button>
-                        <button class="btn btn-outline btn-sm" onclick="fullSync()">Full Sync</button>
-                        <button class="btn btn-danger btn-sm" id="stopBtn" onclick="stopSync()" style="display:none;">Stop</button>
-                    </div>
-                    <div class="msg" id="syncMessage"></div>
+    <div class="dashboard-bar">
+        <div class="stat-inline">
+            <span class="value" id="totalMovies">-</span>
+            <span class="label">Catalog</span>
+        </div>
+        <div class="stat-inline">
+            <span class="value" id="activatedCount">-</span>
+            <span class="label">Activated</span>
+        </div>
+        <div class="stat-inline">
+            <span class="value" id="activeStrm">-</span>
+            <span class="label">STRM</span>
+        </div>
+        <button class="btn btn-primary" onclick="syncCatalog()">Sync Selected</button>
+        <button class="btn btn-outline" onclick="loadCategories()">Reload Categories</button>
+        <button class="btn btn-danger" onclick="clearCatalog()">Clear Catalog</button>
+        <button class="btn btn-danger" onclick="clearStrm()">Clear STRMs</button>
+        <button class="btn btn-danger" id="stopBtn" onclick="stopSync()" style="display:none;">Stop</button>
+        <span class="msg" id="syncMessage"></span>
+    </div>
+
+    <div class="top-panels">
+        <!-- Providers -->
+        <div class="panel">
+            <div class="panel-header">
+                Providers
+                <span class="badge" id="selectedProvCount">0</span>
+            </div>
+            <div class="panel-body">
+                <div class="scroll-list" id="providerList">
+                    <div class="empty-state">Load categories first.</div>
                 </div>
             </div>
-
-            <div class="panel">
-                <div class="panel-header">
-                    Active Filters
-                    <span style="font-size:0.75rem; color:var(--text-muted)" id="filterCount">0</span>
-                </div>
-                <div class="panel-body" id="filterList">
-                    <div class="empty-state">No filters configured.<br>Add genres from the list.</div>
-                </div>
+            <div class="panel-footer">
+                <button class="btn btn-outline" style="font-size:0.7rem;" onclick="selectAllProviders()">All</button>
+                <button class="btn btn-outline" style="font-size:0.7rem;" onclick="clearProviders()">None</button>
             </div>
         </div>
 
-        <div>
-            <div class="panel" style="margin-bottom: 1.5rem;">
-                <div class="panel-header">
-                    Available Genres
-                    <span style="font-size:0.75rem; color:var(--text-muted)">Click to add filter</span>
-                </div>
-                <div class="panel-body">
-                    <div class="genre-list" id="genreList">
-                        <div class="empty-state">Run catalog sync first to discover genres.</div>
-                    </div>
+        <!-- Categories -->
+        <div class="panel">
+            <div class="panel-header">
+                Categories
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <span class="badge" id="selectedCatCount">0</span>
+                    <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="selectAllCategories()">All</button>
+                    <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="clearCategories()">None</button>
                 </div>
             </div>
-
-            <div class="panel">
-                <div class="panel-header">
-                    Preview
-                    <span style="font-size:0.75rem; color:var(--text-muted)" id="previewCount"></span>
+            <div class="panel-body">
+                <input type="text" class="search-input" id="catSearch" placeholder="Search categories..." oninput="renderCategoryGrid()">
+                <div class="cat-grid" id="categoryGrid" style="max-height:300px;overflow-y:auto;">
+                    <div class="empty-state">Select a provider to see categories.</div>
                 </div>
-                <div class="panel-body">
-                    <div class="movie-grid" id="movieGrid">
-                        <div class="empty-state">Select a genre to preview movies.</div>
-                    </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Movie Browser -->
+    <div class="browse-section">
+        <div class="panel">
+            <div class="panel-header">
+                Browse Movies
+                <span style="font-size:0.75rem;color:var(--text-muted)" id="browseLabel"></span>
+            </div>
+            <div class="browse-toolbar">
+                <input type="text" id="movieSearch" placeholder="Search movies..." style="width:200px;" oninput="debounceSearch()">
+                <select id="sortBy" onchange="loadMovies()">
+                    <option value="rating">Rating</option>
+                    <option value="year">Year</option>
+                    <option value="name">Name</option>
+                </select>
+                <select id="sortOrder" onchange="loadMovies()">
+                    <option value="desc">Desc</option>
+                    <option value="asc">Asc</option>
+                </select>
+                <select id="filterActivated" onchange="loadMovies()">
+                    <option value="">All</option>
+                    <option value="1">Activated</option>
+                    <option value="0">Not Activated</option>
+                </select>
+                <select id="pageSize" onchange="syncPageSize(this,'pageSizeBottom');loadMovies()">
+                    <option value="60">60 / page</option>
+                    <option value="100" selected>100 / page</option>
+                    <option value="200">200 / page</option>
+                    <option value="300">300 / page</option>
+                </select>
+                <div id="selectionBar" style="display:none;" class="selection-bar">
+                    <span class="count" id="selCount">0</span> selected
+                    <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="activateSelected()">Activate</button>
+                    <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="deactivateSelected()">Deactivate</button>
+                    <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="clearSelection()">Clear</button>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="movie-grid" id="movieGrid">
+                    <div class="empty-state">Select providers and categories, then sync to browse movies.</div>
+                </div>
+                <div class="pagination" id="pagination"></div>
+                <div class="browse-toolbar" style="justify-content:center;padding-top:0.5rem;">
+                    <select id="pageSizeBottom" onchange="syncPageSize(this,'pageSize');loadMovies()">
+                        <option value="60">60 / page</option>
+                        <option value="100" selected>100 / page</option>
+                        <option value="200">200 / page</option>
+                        <option value="300">300 / page</option>
+                    </select>
+                    <div class="pagination" id="paginationBottom" style="display:inline-flex;gap:0.5rem;align-items:center;"></div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        let activeFilters = [];
-        let allGenres = [];
-        let previewGenre = null;
+        let allProviders = [];
+        let allCategories = [];
+        let selectedMovies = new Set();
+        let currentPage = 1;
+        let searchTimeout = null;
 
         async function fetchJSON(url, opts) {
             const resp = await fetch(url, opts);
             return resp.json();
         }
 
+        // --- Status ---
         async function refreshStatus() {
             const s = await fetchJSON('/api/status');
             document.getElementById('totalMovies').textContent = s.total_movies?.toLocaleString() || '0';
@@ -337,144 +573,402 @@
             const stopBtn = document.getElementById('stopBtn');
             dot.className = 'status-dot ' + (s.status || 'idle');
             text.textContent = s.status === 'idle' ? 'Ready' : s.status?.charAt(0).toUpperCase() + s.status?.slice(1) + '...';
-
             stopBtn.style.display = (s.status !== 'idle') ? 'inline-block' : 'none';
 
             if (s.status !== 'idle') {
                 setTimeout(refreshStatus, 2000);
-            } else {
-                refreshGenres();
             }
         }
 
-        async function refreshGenres() {
-            allGenres = await fetchJSON('/api/genres');
-            const container = document.getElementById('genreList');
-            if (!allGenres.length) {
-                container.innerHTML = '<div class="empty-state">Run catalog sync first to discover genres.</div>';
+        async function refreshActivatedCount() {
+            const data = await fetchJSON('/api/movies/activated-count');
+            document.getElementById('activatedCount').textContent = data.count?.toLocaleString() || '0';
+        }
+
+        // --- Providers ---
+        async function refreshProviders() {
+            allProviders = await fetchJSON('/api/providers');
+            renderProviderList();
+        }
+
+        function renderProviderList() {
+            const container = document.getElementById('providerList');
+            if (!allProviders.length) {
+                container.innerHTML = '<div class="empty-state">Load categories first.</div>';
+                updateProviderCount();
                 return;
             }
-
-            const activeGenreNames = new Set(activeFilters.map(f => f.genre));
-            container.innerHTML = allGenres.map(g => `
-                <div class="genre-item ${activeGenreNames.has(g.name) ? 'active' : ''}"
-                     onclick="addFilter('${g.name.replace(/'/g, "\\'")}')"
-                     title="${g.count} movies">
-                    <span>${g.name}</span>
-                    <span class="count">${g.count}</span>
+            container.innerHTML = allProviders.map(p => `
+                <div class="list-item ${p.selected ? 'selected' : ''}"
+                     onclick="toggleProvider(${p.id}, ${p.selected ? 'false' : 'true'})">
+                    <span>${p.name}</span>
                 </div>
             `).join('');
+            updateProviderCount();
         }
 
-        async function refreshFilters() {
-            activeFilters = await fetchJSON('/api/filters');
-            const container = document.getElementById('filterList');
-            document.getElementById('filterCount').textContent = activeFilters.length;
-
-            if (!activeFilters.length) {
-                container.innerHTML = '<div class="empty-state">No filters configured.<br>Add genres from the list.</div>';
-                return;
-            }
-
-            container.innerHTML = activeFilters.map(f => `
-                <div class="filter-card">
-                    <div>
-                        <div class="genre-name">${f.genre}</div>
-                    </div>
-                    <div class="filter-controls">
-                        <span style="font-size:0.75rem;color:var(--text-muted)">Top</span>
-                        <input type="number" value="${f.limit_count}" min="1" max="500"
-                               onchange="updateFilter(${f.id}, {limit_count: parseInt(this.value)})">
-                        <select onchange="updateFilter(${f.id}, {sort_by: this.value})">
-                            <option value="rating" ${f.sort_by==='rating'?'selected':''}>Rating</option>
-                            <option value="year" ${f.sort_by==='year'?'selected':''}>Year</option>
-                            <option value="name" ${f.sort_by==='name'?'selected':''}>Name</option>
-                        </select>
-                        <button class="btn btn-danger btn-sm" onclick="removeFilter(${f.id})">X</button>
-                    </div>
-                </div>
-            `).join('');
-
-            refreshGenres();
+        function updateProviderCount() {
+            document.getElementById('selectedProvCount').textContent = allProviders.filter(p => p.selected).length;
         }
 
-        async function addFilter(genre) {
-            if (activeFilters.find(f => f.genre === genre)) {
-                previewGenre = genre;
-                previewMovies(genre);
-                return;
-            }
-            await fetchJSON('/api/filters', {
+        async function toggleProvider(id, select) {
+            const url = select ? '/api/providers/select' : '/api/providers/deselect';
+            await fetchJSON(url, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({genre, limit_count: 30, sort_by: 'rating', sort_order: 'desc'})
+                body: JSON.stringify({account_id: id})
             });
-            await refreshFilters();
-            previewMovies(genre);
+            const prov = allProviders.find(p => p.id === id);
+            if (prov) prov.selected = select;
+            renderProviderList();
+            refreshCategories();
         }
 
-        async function updateFilter(id, data) {
-            await fetchJSON('/api/filters/' + id, {
-                method: 'PUT',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(data)
-            });
-            await refreshFilters();
+        async function selectAllProviders() {
+            for (const p of allProviders) {
+                if (!p.selected) {
+                    await fetchJSON('/api/providers/select', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({account_id: p.id})
+                    });
+                    p.selected = true;
+                }
+            }
+            renderProviderList();
+            refreshCategories();
         }
 
-        async function removeFilter(id) {
-            await fetchJSON('/api/filters/' + id, {method: 'DELETE'});
-            await refreshFilters();
+        async function clearProviders() {
+            for (const p of allProviders.filter(p => p.selected)) {
+                await fetchJSON('/api/providers/deselect', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({account_id: p.id})
+                });
+                p.selected = false;
+            }
+            renderProviderList();
+            refreshCategories();
         }
 
-        async function previewMovies(genre) {
-            document.getElementById('previewCount').textContent = genre;
-            const data = await fetchJSON(`/api/movies?genre=${encodeURIComponent(genre)}&page_size=60&sort_by=rating&sort_order=desc`);
-            const container = document.getElementById('movieGrid');
-            if (!data.results.length) {
-                container.innerHTML = '<div class="empty-state">No movies found for this genre.</div>';
+        // --- Categories ---
+        async function refreshCategories() {
+            const selectedProvs = allProviders.filter(p => p.selected);
+            if (selectedProvs.length === 0) {
+                allCategories = await fetchJSON('/api/categories');
+            } else if (selectedProvs.length === 1) {
+                allCategories = await fetchJSON('/api/categories?account_id=' + selectedProvs[0].id);
+            } else {
+                const catSets = await Promise.all(
+                    selectedProvs.map(p => fetchJSON('/api/categories?account_id=' + p.id))
+                );
+                const seen = new Set();
+                allCategories = [];
+                for (const cats of catSets) {
+                    for (const c of cats) {
+                        if (!seen.has(c.id)) {
+                            seen.add(c.id);
+                            allCategories.push(c);
+                        }
+                    }
+                }
+                allCategories.sort((a, b) => a.name.localeCompare(b.name));
+            }
+            renderCategoryGrid();
+        }
+
+        function renderCategoryGrid() {
+            const container = document.getElementById('categoryGrid');
+            const search = (document.getElementById('catSearch').value || '').toLowerCase();
+            const filtered = allCategories.filter(c => c.name.toLowerCase().includes(search));
+
+            if (!filtered.length) {
+                container.innerHTML = '<div class="empty-state">' +
+                    (allCategories.length ? 'No match.' : 'Select a provider to see categories.') + '</div>';
+                updateCatCount();
                 return;
             }
+
+            container.innerHTML = filtered.map(c => `
+                <div class="cat-chip ${c.selected ? 'selected' : ''}"
+                     onclick="toggleCategory(${c.id}, ${c.selected ? 'false' : 'true'})">
+                    <span>${c.name}</span>
+                    <span class="count">${c.movie_count.toLocaleString()}</span>
+                </div>
+            `).join('');
+            updateCatCount();
+        }
+
+        function updateCatCount() {
+            document.getElementById('selectedCatCount').textContent = allCategories.filter(c => c.selected).length;
+        }
+
+        async function toggleCategory(id, select) {
+            const url = select ? '/api/categories/select' : '/api/categories/deselect';
+            await fetchJSON(url, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({category_id: id})
+            });
+            const cat = allCategories.find(c => c.id === id);
+            if (cat) cat.selected = select;
+            renderCategoryGrid();
+        }
+
+        async function selectAllCategories() {
+            const search = (document.getElementById('catSearch').value || '').toLowerCase();
+            const visible = allCategories.filter(c => !c.selected && c.name.toLowerCase().includes(search));
+            for (const c of visible) {
+                await fetchJSON('/api/categories/select', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({category_id: c.id})
+                });
+                c.selected = true;
+            }
+            renderCategoryGrid();
+        }
+
+        async function clearCategories() {
+            for (const c of allCategories.filter(c => c.selected)) {
+                await fetchJSON('/api/categories/deselect', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({category_id: c.id})
+                });
+                c.selected = false;
+            }
+            renderCategoryGrid();
+        }
+
+        // --- Movie Browser ---
+        async function loadMovies(page) {
+            currentPage = page || 1;
+            const search = document.getElementById('movieSearch').value;
+            const sortBy = document.getElementById('sortBy').value;
+            const sortOrder = document.getElementById('sortOrder').value;
+            const filterAct = document.getElementById('filterActivated').value;
+
+            const ps = parseInt(document.getElementById('pageSize').value) || 100;
+            let url = `/api/movies?page=${currentPage}&page_size=${ps}&sort_by=${sortBy}&sort_order=${sortOrder}`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+            if (filterAct === '1') url += '&activated_only=true';
+
+            const selProvs = allProviders.filter(p => p.selected);
+            if (selProvs.length > 0) {
+                selProvs.forEach(p => url += `&account_id=${p.id}`);
+            }
+
+            const data = await fetchJSON(url);
+            const container = document.getElementById('movieGrid');
+
+            document.getElementById('browseLabel').textContent =
+                `${data.count.toLocaleString()} movies`;
+
+            if (!data.results.length) {
+                container.innerHTML = '<div class="empty-state">No movies found. Sync catalog first.</div>';
+                document.getElementById('pagination').innerHTML = '';
+                document.getElementById('paginationBottom').innerHTML = '';
+                return;
+            }
+
             container.innerHTML = data.results.map(m => `
-                <div class="movie-card">
+                <div class="movie-card ${selectedMovies.has(m.id) ? 'card-selected' : ''} ${filterAct === '0' && m.activated ? 'hidden' : ''}"
+                     onclick="toggleMovie(${m.id})" data-id="${m.id}">
+                    ${m.activated ? '<div class="activated-badge">ACTIVE</div>' : ''}
+                    <div class="check-overlay">&check;</div>
+                    ${m.trailer_key ? '<button class="trailer-btn" onclick="event.stopPropagation();playTrailer(\'' + m.trailer_key + '\')">&#9654;</button>' : ''}
                     <img src="${m.poster_url || ''}" alt="" loading="lazy"
                          onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
                     <div class="info">
                         <div class="title" title="${(m.name||'').replace(/"/g,'&quot;')}">${m.name || 'Unknown'}</div>
                         <div class="meta">${m.year || '?'} &middot; ${m.rating || '-'}</div>
+                        ${m.account_name ? '<div class="provider-tag">' + m.account_name + '</div>' : ''}
                     </div>
                 </div>
             `).join('');
+
+            // Filter out activated if "Not Activated" selected
+            if (filterAct === '0') {
+                container.querySelectorAll('.movie-card').forEach(card => {
+                    const id = parseInt(card.dataset.id);
+                    const movie = data.results.find(m => m.id === id);
+                    if (movie && movie.activated) card.style.display = 'none';
+                });
+            }
+
+            const totalPages = Math.ceil(data.count / ps);
+            let pagHTML = '';
+            if (totalPages > 1) {
+                if (currentPage > 1) pagHTML += `<button class="btn btn-outline" onclick="loadMovies(${currentPage-1})">&laquo; Prev</button>`;
+                pagHTML += `Page ${currentPage} of ${totalPages}`;
+                if (currentPage < totalPages) pagHTML += `<button class="btn btn-outline" onclick="loadMovies(${currentPage+1})">Next &raquo;</button>`;
+            }
+            document.getElementById('pagination').innerHTML = pagHTML;
+            document.getElementById('paginationBottom').innerHTML = pagHTML;
         }
 
+        function toggleMovie(id) {
+            if (selectedMovies.has(id)) {
+                selectedMovies.delete(id);
+            } else {
+                selectedMovies.add(id);
+            }
+            const card = document.querySelector(`.movie-card[data-id="${id}"]`);
+            if (card) card.classList.toggle('card-selected');
+            updateSelectionBar();
+        }
+
+        function updateSelectionBar() {
+            const bar = document.getElementById('selectionBar');
+            const count = selectedMovies.size;
+            document.getElementById('selCount').textContent = count;
+            bar.style.display = count > 0 ? 'flex' : 'none';
+        }
+
+        function clearSelection() {
+            selectedMovies.clear();
+            document.querySelectorAll('.movie-card.card-selected').forEach(c => c.classList.remove('card-selected'));
+            updateSelectionBar();
+        }
+
+        async function activateSelected() {
+            if (!selectedMovies.size) return;
+            await fetchJSON('/api/movies/activate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({movie_ids: [...selectedMovies]})
+            });
+            selectedMovies.clear();
+            updateSelectionBar();
+            loadMovies(currentPage);
+            refreshActivatedCount();
+        }
+
+        async function deactivateSelected() {
+            if (!selectedMovies.size) return;
+            await fetchJSON('/api/movies/deactivate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({movie_ids: [...selectedMovies]})
+            });
+            selectedMovies.clear();
+            updateSelectionBar();
+            loadMovies(currentPage);
+            refreshActivatedCount();
+        }
+
+        function debounceSearch() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => loadMovies(1), 300);
+        }
+
+        function syncPageSize(source, targetId) {
+            document.getElementById(targetId).value = source.value;
+        }
+
+        // --- Sync Overlay ---
+        function showOverlay(title) {
+            document.getElementById('syncOverlayTitle').textContent = title || 'Syncing Catalog...';
+            document.getElementById('syncOverlayProgress').textContent = 'Starting...';
+            document.getElementById('syncOverlay').classList.add('active');
+        }
+        function hideOverlay() {
+            document.getElementById('syncOverlay').classList.remove('active');
+        }
+        function updateOverlayProgress(msg) {
+            document.getElementById('syncOverlayProgress').textContent = msg || '';
+        }
+
+        // --- Sync ---
         async function syncCatalog() {
-            const limit = parseInt(document.getElementById('scrapeLimit').value) || 0;
+            showOverlay('Syncing Catalog...');
             await fetchJSON('/api/sync/catalog', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({max_movies: limit})
+                body: JSON.stringify({})
             });
             refreshStatus();
+            const pollUntilDone = () => {
+                setTimeout(async () => {
+                    const s = await fetchJSON('/api/status');
+                    updateOverlayProgress(s.message || '');
+                    if (s.status !== 'idle' && s.status !== 'error') {
+                        refreshStatus();
+                        pollUntilDone();
+                    } else {
+                        hideOverlay();
+                        refreshStatus();
+                        loadMovies(1);
+                        refreshActivatedCount();
+                    }
+                }, 2000);
+            };
+            pollUntilDone();
         }
 
-        async function generateStrm() {
-            await fetchJSON('/api/sync/generate', {method: 'POST'});
+        async function loadCategories() {
+            showOverlay('Loading Categories...');
+            await fetchJSON('/api/categories/load', {method: 'POST'});
             refreshStatus();
+            const pollUntilDone = () => {
+                setTimeout(async () => {
+                    const s = await fetchJSON('/api/status');
+                    updateOverlayProgress(s.message || '');
+                    if (s.status !== 'idle' && s.status !== 'error') {
+                        refreshStatus();
+                        pollUntilDone();
+                    } else {
+                        hideOverlay();
+                        refreshStatus();
+                        refreshProviders();
+                        refreshCategories();
+                    }
+                }, 2000);
+            };
+            pollUntilDone();
         }
 
-        async function fullSync() {
-            await fetchJSON('/api/sync/full', {method: 'POST'});
+        async function clearCatalog() {
+            if (!confirm('Clear all movies from the catalog database?')) return;
+            await fetchJSON('/api/sync/clear-catalog', {method: 'POST'});
+            refreshStatus();
+            refreshActivatedCount();
+            loadMovies(1);
+        }
+
+        async function clearStrm() {
+            if (!confirm('Remove all generated STRM files?')) return;
+            await fetchJSON('/api/sync/clear-strm', {method: 'POST'});
             refreshStatus();
         }
 
         async function stopSync() {
             await fetchJSON('/api/sync/stop', {method: 'POST'});
+            hideOverlay();
             refreshStatus();
         }
 
+        // --- Trailer ---
+        function playTrailer(key) {
+            document.getElementById('trailerFrame').src = 'https://www.youtube.com/embed/' + key + '?autoplay=1';
+            document.getElementById('trailerModal').classList.add('active');
+        }
+        function closeTrailer(e) {
+            if (e && e.target !== e.currentTarget && !e.target.classList.contains('trailer-close')) return;
+            document.getElementById('trailerFrame').src = '';
+            document.getElementById('trailerModal').classList.remove('active');
+        }
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTrailer(); });
+
+        // --- Init ---
+        fetchJSON('/version').then(d => document.getElementById('appVersion').textContent = 'v' + d.version);
         refreshStatus();
-        refreshFilters();
-        refreshGenres();
+        refreshProviders();
+        refreshCategories();
+        refreshActivatedCount();
+        loadMovies(1);
     </script>
 </body>
 </html>
