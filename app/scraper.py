@@ -3,7 +3,7 @@ import httpx
 import logging
 from datetime import datetime, timezone
 
-from config import DISPATCHARR_URL, TMDB_API_KEY, TMDB_READ_TOKEN
+from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, TMDB_API_KEY, TMDB_READ_TOKEN
 from database import get_db
 
 logger = logging.getLogger(__name__)
@@ -20,13 +20,17 @@ async def scrape_catalog():
         )
         await db.commit()
 
+        req_headers = {}
+        if DISPATCHARR_API_KEY:
+            req_headers["X-API-Key"] = DISPATCHARR_API_KEY
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             page = 1
             total_synced = 0
 
             while True:
                 url = f"{DISPATCHARR_URL}/api/vod/movies/?page={page}&page_size={PAGE_SIZE}"
-                resp = await client.get(url)
+                resp = await client.get(url, headers=req_headers)
                 if resp.status_code != 200:
                     logger.error(f"API error on page {page}: {resp.status_code}")
                     break

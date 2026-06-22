@@ -2,7 +2,7 @@ import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
 
-from config import DISPATCHARR_URL
+from config import DISPATCHARR_URL, DISPATCHARR_API_KEY
 from database import get_db
 
 router = APIRouter()
@@ -32,6 +32,8 @@ async def stream_movie(movie_id: int, request: Request):
             upstream_url += f"?stream_id={stream_id}"
 
         headers = {}
+        if DISPATCHARR_API_KEY:
+            headers["X-API-Key"] = DISPATCHARR_API_KEY
         if "range" in request.headers:
             headers["Range"] = request.headers["range"]
 
