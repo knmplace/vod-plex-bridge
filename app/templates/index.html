@@ -62,7 +62,7 @@
             display: inline-block;
         }
         .status-dot.idle { background: var(--success); }
-        .status-dot.scraping, .status-dot.generating { background: var(--warning); animation: pulse 1s infinite; }
+        .status-dot.scraping, .status-dot.generating, .status-dot.enriching { background: var(--warning); animation: pulse 1s infinite; }
         .status-dot.error { background: var(--danger); }
 
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }

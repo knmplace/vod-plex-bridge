@@ -145,13 +145,28 @@ async def enrich_from_tmdb(batch_size: int = 50):
 
     db = await get_db()
     try:
+        remaining_row = await db.execute(
+            "SELECT COUNT(*) as cnt FROM movies WHERE tmdb_id IS NOT NULL AND tmdb_enriched = 0 AND tmdb_id != ''"
+        )
+        remaining = (await remaining_row.fetchone())["cnt"]
+
         rows = await db.execute(
             "SELECT id, tmdb_id FROM movies WHERE tmdb_id IS NOT NULL AND tmdb_enriched = 0 AND tmdb_id != '' LIMIT ?",
             (batch_size,),
         )
         movies = await rows.fetchall()
         if not movies:
+            await db.execute(
+                "UPDATE sync_state SET status = 'idle', message = 'TMDB enrichment complete' WHERE id = 1"
+            )
+            await db.commit()
             return 0
+
+        await db.execute(
+            "UPDATE sync_state SET status = 'enriching', message = ? WHERE id = 1",
+            (f"Enriching genres from TMDB... {remaining} remaining",),
+        )
+        await db.commit()
 
         enriched = 0
         async with httpx.AsyncClient(timeout=10.0) as client:

@@ -165,7 +165,10 @@ async def _run_catalog_sync(max_movies: int = 0):
     try:
         await scrape_catalog(max_movies=max_movies)
         if not is_cancelled():
-            await enrich_from_tmdb(batch_size=200)
+            while True:
+                enriched = await enrich_from_tmdb(batch_size=500)
+                if enriched == 0 or is_cancelled():
+                    break
     except Exception as e:
         logger.error(f"Catalog sync failed: {e}")
         db = await get_db()
@@ -227,7 +230,10 @@ async def _run_full_sync():
         if is_cancelled():
             return
         await apply_stream_mapping_to_db()
-        await enrich_from_tmdb(batch_size=200)
+        while True:
+            enriched = await enrich_from_tmdb(batch_size=500)
+            if enriched == 0 or is_cancelled():
+                break
         if is_cancelled():
             return
         await generate_strm_files()
