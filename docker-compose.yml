@@ -12,8 +12,8 @@ services:
       - STRM_OUTPUT_DIR=/plex-vod/Movies
       - DB_PATH=/data/vod_bridge.db
       - STREAM_MAPPING_FILE=/data/stream_mapping.json
-      - TMDB_API_KEY=${TMDB_API_KEY:-}
-      - TMDB_READ_TOKEN=${TMDB_READ_TOKEN:-}
+      - TMDB_API_KEY=8700777d15c2abaffb878d34f870403f
+      - TMDB_READ_TOKEN=eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI4NzAwNzc3ZDE1YzJhYmFmZmI4NzhkMzRmODcwNDAzZiIsIm5iZiI6MTY2NzA3MTM2Ni40MjUsInN1YiI6IjYzNWQ3ZDg2OTVjMGFmMDA5OGY3MzFjYSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.r6Ac-MIPYPycu0zMipfe0sDzu-LJ4TfiHWNUI6Lshvw
     volumes:
       - /etc/docker/plexbridge/data:/data
       - /mnt/media50/plex-vod:/plex-vod

@@ -2,8 +2,8 @@ import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
 
-from .config import DISPATCHARR_URL
-from .database import get_db
+from config import DISPATCHARR_URL
+from database import get_db
 
 router = APIRouter()
 

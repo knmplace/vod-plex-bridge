@@ -3,8 +3,8 @@ import httpx
 import logging
 from datetime import datetime, timezone
 
-from .config import DISPATCHARR_URL, TMDB_API_KEY, TMDB_READ_TOKEN
-from .database import get_db
+from config import DISPATCHARR_URL, TMDB_API_KEY, TMDB_READ_TOKEN
+from database import get_db
 
 logger = logging.getLogger(__name__)
 

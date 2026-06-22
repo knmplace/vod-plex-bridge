@@ -28,7 +28,7 @@ def load_stream_mapping() -> dict:
 
 
 async def apply_stream_mapping_to_db():
-    from .database import get_db
+    from database import get_db
 
     mapping = load_stream_mapping()
     if not mapping:

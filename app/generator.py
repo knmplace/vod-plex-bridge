@@ -5,8 +5,8 @@ import logging
 import httpx
 from datetime import datetime, timezone
 
-from .config import STRM_OUTPUT_DIR, BRIDGE_HOST, BRIDGE_PORT
-from .database import get_db
+from config import STRM_OUTPUT_DIR, BRIDGE_HOST, BRIDGE_PORT
+from database import get_db
 
 logger = logging.getLogger(__name__)
 

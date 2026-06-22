@@ -3,10 +3,10 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from .database import get_db
-from .scraper import scrape_catalog, enrich_from_tmdb
-from .generator import generate_strm_files
-from .stream_mapper import apply_stream_mapping_to_db
+from database import get_db
+from scraper import scrape_catalog, enrich_from_tmdb
+from generator import generate_strm_files
+from stream_mapper import apply_stream_mapping_to_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
