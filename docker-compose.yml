@@ -1,0 +1,19 @@
+services:
+  vod-plex-bridge:
+    build: .
+    container_name: vod-plex-bridge
+    restart: unless-stopped
+    ports:
+      - "8585:8585"
+    environment:
+      - DISPATCHARR_URL=http://192.168.1.94:9191
+      - BRIDGE_HOST=192.168.1.94
+      - BRIDGE_PORT=8585
+      - STRM_OUTPUT_DIR=/plex-vod/Movies
+      - DB_PATH=/data/vod_bridge.db
+      - STREAM_MAPPING_FILE=/data/stream_mapping.json
+      - TMDB_API_KEY=${TMDB_API_KEY:-}
+      - TMDB_READ_TOKEN=${TMDB_READ_TOKEN:-}
+    volumes:
+      - /etc/docker/plexbridge/data:/data
+      - /mnt/media50/plex-vod:/plex-vod
