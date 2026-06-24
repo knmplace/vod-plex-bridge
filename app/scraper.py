@@ -111,10 +111,11 @@ async def scrape_catalog(max_movies: int = 0, category_ids: list = None, account
                     with open(stream_map_file) as f:
                         stream_map = json.load(f)
                     acct_set = set(account_ids)
-                    provider_movie_ids = {
-                        int(mid) for mid, info in stream_map.items()
-                        if info.get("account_id") in acct_set
-                    }
+                    provider_movie_ids = set()
+                    for mid, info in stream_map.items():
+                        entries = info if isinstance(info, list) else [info]
+                        if any(e.get("account_id") in acct_set for e in entries):
+                            provider_movie_ids.add(int(mid))
                     before = len(target_movie_ids)
                     target_movie_ids = target_movie_ids & provider_movie_ids
                     logger.info(f"Provider filter: {before} -> {len(target_movie_ids)} movies (accounts {account_ids})")
@@ -129,7 +130,7 @@ async def scrape_catalog(max_movies: int = 0, category_ids: list = None, account
                 return 0
 
         await db.execute(
-            "UPDATE sync_state SET status = 'scraping', message = 'Starting catalog scrape...' WHERE id = 1"
+            "UPDATE sync_state SET status = 'scraping', message = 'Starting catalog scrape...', lang_status = '' WHERE id = 1"
         )
         await db.commit()
 

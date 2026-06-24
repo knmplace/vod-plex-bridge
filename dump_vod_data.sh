@@ -8,7 +8,7 @@ BRIDGE_DATA_DIR="${BRIDGE_DATA_DIR:-/etc/docker/plexbridge/data}"
 
 mkdir -p "$BRIDGE_DATA_DIR"
 
-# 1. Dump stream mappings (movie_id -> stream_id + extension + account info)
+# 1. Dump stream mappings — ALL providers per movie (not just one winner)
 docker exec "$DISPATCHARR_CONTAINER" python3 -c "
 import os, sys, json, logging
 logging.disable(logging.CRITICAL)
@@ -23,8 +23,6 @@ M3UMovieRelation = apps.get_model('vod', 'M3UMovieRelation')
 M3UAccount = apps.get_model('m3u', 'M3UAccount')
 account_names = dict(M3UAccount.objects.values_list('id', 'name'))
 
-PREFERRED_ACCOUNTS = [10, 17, 13, 14]
-
 rels = (
     M3UMovieRelation.objects
     .filter(m3u_account__is_active=True)
@@ -34,26 +32,54 @@ rels = (
 mapping = {}
 for r in rels:
     mid = r['movie_id']
-    acct_id = r['m3u_account_id']
-    is_preferred = acct_id in PREFERRED_ACCOUNTS
-    if mid not in mapping or (is_preferred and not mapping[mid].get('_preferred')):
-        mapping[mid] = {
-            'stream_id': r['stream_id'],
+    if mid not in mapping:
+        mapping[mid] = {}
+    sid = r['stream_id']
+    if sid not in mapping[mid]:
+        acct_id = r['m3u_account_id']
+        mapping[mid][sid] = {
+            'stream_id': sid,
             'ext': r['container_extension'] or 'mkv',
             'account_id': acct_id,
             'account_name': account_names.get(acct_id, 'Unknown'),
-            '_preferred': is_preferred,
         }
 
-for mid in mapping:
-    mapping[mid].pop('_preferred', None)
+output = {}
+for mid, streams in mapping.items():
+    output[mid] = list(streams.values())
 
 with open('/tmp/stream_mapping.json', 'w') as f:
-    json.dump(mapping, f)
+    json.dump(output, f)
 " 2>/dev/null
 docker cp "$DISPATCHARR_CONTAINER":/tmp/stream_mapping.json "$BRIDGE_DATA_DIR/stream_mapping.json" 2>/dev/null
 
-# 2. Dump category mappings (categories + which movies belong to each)
+# 2. Dump M3U account credentials (for XC endpoint routing)
+docker exec "$DISPATCHARR_CONTAINER" python3 -c "
+import os, sys, json, logging
+logging.disable(logging.CRITICAL)
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dispatcharr.settings')
+sys.path.insert(0, '/app')
+sys.stdout = open(os.devnull, 'w')
+sys.stderr = open(os.devnull, 'w')
+import django; django.setup()
+from django.apps import apps
+
+M3UAccount = apps.get_model('m3u', 'M3UAccount')
+accounts = {}
+for a in M3UAccount.objects.filter(is_active=True):
+    accounts[str(a.id)] = {
+        'name': a.name,
+        'server_url': a.server_url or '',
+        'username': a.username or '',
+        'password': a.password or '',
+    }
+
+with open('/tmp/account_credentials.json', 'w') as f:
+    json.dump(accounts, f)
+" 2>/dev/null
+docker cp "$DISPATCHARR_CONTAINER":/tmp/account_credentials.json "$BRIDGE_DATA_DIR/account_credentials.json" 2>/dev/null
+
+# 3. Dump category mappings (categories + which movies belong to each)
 docker exec "$DISPATCHARR_CONTAINER" python3 -c "
 import os, sys, json, logging
 logging.disable(logging.CRITICAL)

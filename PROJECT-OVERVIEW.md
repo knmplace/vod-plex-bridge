@@ -118,7 +118,7 @@ services:
 |----------|-------------|---------|
 | `DISPATCHARR_URL` | URL of your Dispatcharr instance | `http://localhost:9191` |
 | `DISPATCHARR_API_KEY` | API key for Dispatcharr authentication | — |
-| `BRIDGE_HOST` | Host IP the bridge is accessible on | `192.168.1.94` |
+| `BRIDGE_HOST` | Host IP the bridge is accessible on | `192.0.0.0` | ## Or what ever you ip is
 | `BRIDGE_PORT` | Port the bridge listens on | `8585` |
 | `DB_PATH` | Path to SQLite database | `/data/vod_bridge.db` |
 | `CATEGORY_MAPPING_FILE` | Path to category-to-movie mapping JSON | `/data/category_mapping.json` |

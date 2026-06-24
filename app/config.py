@@ -12,8 +12,6 @@ PLEX_URL = os.environ.get("PLEX_URL", "")
 PLEX_TOKEN = os.environ.get("PLEX_TOKEN", "")
 PLEX_LIBRARY_ID = os.environ.get("PLEX_LIBRARY_ID", "7")
 
-CACHE_DIR = os.environ.get("CACHE_DIR", "/data/cache")
-CACHE_MAX_GB = float(os.environ.get("CACHE_MAX_GB", "25"))
-CACHE_MAX_BYTES = int(CACHE_MAX_GB * 1024 * 1024 * 1024)
-CACHE_IDLE_MINUTES = int(os.environ.get("CACHE_IDLE_MINUTES", "15"))
-CACHE_IDLE_SECONDS = CACHE_IDLE_MINUTES * 60
+DISPATCHARR_XC_USERNAME = os.environ.get("DISPATCHARR_XC_USERNAME", "")
+DISPATCHARR_XC_PASSWORD = os.environ.get("DISPATCHARR_XC_PASSWORD", "")
+

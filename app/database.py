@@ -90,6 +90,18 @@ async def init_db():
             "ALTER TABLE movies ADD COLUMN account_id INTEGER",
             "ALTER TABLE movies ADD COLUMN account_name TEXT DEFAULT ''",
             "ALTER TABLE movies ADD COLUMN trailer_key TEXT",
+            "ALTER TABLE movies ADD COLUMN language TEXT DEFAULT ''",
+            "ALTER TABLE movies ADD COLUMN dead INTEGER DEFAULT 0",
+            "ALTER TABLE movies ADD COLUMN dead_at TEXT",
+            "ALTER TABLE sync_state ADD COLUMN lang_status TEXT DEFAULT ''",
+            "ALTER TABLE movies ADD COLUMN header_data BLOB",
+            "ALTER TABLE movies ADD COLUMN header_size INTEGER DEFAULT 0",
+            "ALTER TABLE movies ADD COLUMN tail_data BLOB",
+            "ALTER TABLE movies ADD COLUMN tail_size INTEGER DEFAULT 0",
+            "ALTER TABLE movies ADD COLUMN tail_offset INTEGER DEFAULT 0",
+            "ALTER TABLE movies ADD COLUMN stream_dead INTEGER DEFAULT 0",
+            "ALTER TABLE movies ADD COLUMN stream_dead_count INTEGER DEFAULT 0",
+            "ALTER TABLE movies ADD COLUMN stream_dead_checked_at TEXT",
         ]:
             try:
                 await db.execute(col)

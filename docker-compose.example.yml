@@ -5,23 +5,16 @@ services:
     container_name: vod-plex-bridge
     restart: unless-stopped
     ports:
-      - "8585:8585"
+      - "${BRIDGE_PORT:-8585}:8585"
+    env_file:
+      - .env
     environment:
-      - DISPATCHARR_URL=http://<dispatcharr-host>:<port>
-      - BRIDGE_HOST=<bridge-host-ip>
-      - BRIDGE_PORT=8585
-      - STRM_OUTPUT_DIR=/plex-vod/Movies
       - DB_PATH=/data/vod_bridge.db
       - CATEGORY_MAPPING_FILE=/data/category_mapping.json
       - STREAM_MAPPING_FILE=/data/stream_mapping.json
-      - DISPATCHARR_API_KEY=<your-dispatcharr-api-key>
-      - PLEX_URL=http://<plex-host>:32400
-      - PLEX_TOKEN=<your-plex-token>
-      - PLEX_LIBRARY_ID=7
-      - CACHE_MAX_GB=25
-      - CACHE_IDLE_MINUTES=15
-      - TMDB_API_KEY=<optional-tmdb-api-key>
-      - TMDB_READ_TOKEN=<optional-tmdb-read-token>
+      - DISPATCHARR_XC_USERNAME=${DISPATCHARR_XC_USERNAME}
+      - DISPATCHARR_XC_PASSWORD=${DISPATCHARR_XC_PASSWORD}
+      - STRM_OUTPUT_DIR=/plex-vod/Movies
     volumes:
-      - /path/to/data:/data
-      - /path/to/plex-vod:/plex-vod
+      - ${DATA_DIR:-/etc/docker/plexbridge/data}:/data
+      - ${PLEX_VOD_DIR:-/mnt/media50/plex-vod}:/plex-vod

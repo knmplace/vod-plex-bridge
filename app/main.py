@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -8,20 +9,28 @@ from fastapi.requests import Request
 
 from database import init_db
 from proxy import router as proxy_router
-from api import router as api_router
-from cache import stream_cache
+from api import router as api_router, start_dead_scan_scheduler, _refresh_activated_stream_ids, catalog_validation_scheduler, resurrection_scheduler
+from health import health_check_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-APP_VERSION = "0.8.2"
+APP_VERSION = "0.17.1"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    await stream_cache.start()
+    # Note: Removed auto-refresh on startup to avoid stressing Dispatcharr at boot
+    # Stream IDs are refreshed on activation instead. Can add back after Dispatcharr stability improves.
+    dead_scan_task = asyncio.create_task(start_dead_scan_scheduler())
+    health_task = asyncio.create_task(health_check_scheduler())
+    validation_task = asyncio.create_task(catalog_validation_scheduler())
+    resurrection_task = asyncio.create_task(resurrection_scheduler())
     yield
-    await stream_cache.stop()
+    dead_scan_task.cancel()
+    health_task.cancel()
+    validation_task.cancel()
+    resurrection_task.cancel()
 
 
 app = FastAPI(title="VOD Plex Bridge", version=APP_VERSION, lifespan=lifespan)

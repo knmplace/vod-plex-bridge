@@ -43,6 +43,26 @@
         .header h1 { font-size: 1.1rem; font-weight: 600; }
         .header h1 span { color: var(--accent); }
 
+        .header-left { display: flex; align-items: center; gap: 1.5rem; }
+
+        .tab-nav {
+            display: flex;
+            gap: 0.3rem;
+        }
+        .tab-nav .tab-btn {
+            padding: 0.35rem 0.8rem;
+            border-radius: 5px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .tab-nav .tab-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .tab-nav .tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
         .status-bar {
             display: flex;
             align-items: center;
@@ -57,7 +77,7 @@
             display: inline-block;
         }
         .status-dot.idle { background: var(--success); }
-        .status-dot.scraping, .status-dot.generating, .status-dot.enriching, .status-dot.loading { background: var(--warning); animation: pulse 1s infinite; }
+        .status-dot.scraping, .status-dot.generating, .status-dot.enriching, .status-dot.loading, .status-dot.detecting { background: var(--warning); animation: pulse 1s infinite; }
         .status-dot.error { background: var(--danger); }
 
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
@@ -378,6 +398,72 @@
         }
         .movie-card:hover .trailer-btn { opacity: 1; }
 
+        .health-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+        }
+        .health-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+        .health-status {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 0.3rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.3rem;
+        }
+        .health-status.ok { color: var(--success); }
+        .health-status.slow { color: var(--warning); }
+        .health-status.down { color: var(--danger); }
+        .health-status.unknown { color: var(--text-muted); }
+        .health-time {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+        }
+
+        .movie-card .lang-detect-btn {
+            position: absolute;
+            bottom: 52px;
+            left: 4px;
+            width: 26px; height: 26px;
+            border-radius: 50%;
+            background: rgba(245,158,11,0.85);
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            color: #fff;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+        .movie-card:hover .lang-detect-btn { opacity: 1; }
+        .movie-card .lang-detect-btn.detecting {
+            opacity: 1;
+            animation: pulse 0.6s infinite;
+        }
+
+        .dead-badge {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            background: var(--danger);
+            color: #fff;
+            font-size: 0.55rem;
+            font-weight: 700;
+            padding: 0.1rem 0.3rem;
+            border-radius: 3px;
+        }
+
         .sync-overlay {
             display: none;
             position: fixed;
@@ -411,8 +497,75 @@
         }
         .sync-overlay .btn { margin-top: 0.5rem; }
 
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .log-container {
+            max-height: 75vh;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 0.78rem;
+            line-height: 1.6;
+        }
+        .log-entry {
+            padding: 0.3rem 0.875rem;
+            border-bottom: 1px solid rgba(42,54,84,0.4);
+            display: flex;
+            gap: 0.75rem;
+            align-items: baseline;
+        }
+        .log-entry:hover { background: var(--bg-card-hover); }
+        .log-ts { color: var(--text-muted); white-space: nowrap; min-width: 80px; }
+        .log-level { font-weight: 600; text-transform: uppercase; font-size: 0.68rem; min-width: 42px; }
+        .log-level.info { color: var(--accent); }
+        .log-level.warn { color: var(--warning); }
+        .log-level.error { color: var(--danger); }
+        .log-msg { color: var(--text-primary); }
+        .log-meta { color: var(--text-muted); font-size: 0.72rem; }
+        .log-movie { color: var(--success); font-size: 0.72rem; }
+
+        .summary-section { padding: 1rem 1.5rem; }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.78rem;
+        }
+        .summary-table th {
+            text-align: left;
+            padding: 0.4rem 0.6rem;
+            border-bottom: 2px solid var(--border);
+            color: var(--text-muted);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+        }
+        .summary-table td {
+            padding: 0.35rem 0.6rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .summary-table td.num { text-align: right; font-weight: 600; color: var(--accent); }
+        .summary-table tr:hover { background: var(--bg-card-hover); }
+
+        .cat-browse-tag {
+            display: inline-block;
+            font-size: 0.65rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 0.1rem 0.4rem;
+            border-radius: 3px;
+            color: var(--text-muted);
+            margin-left: 0.3rem;
+            cursor: pointer;
+        }
+        .cat-browse-tag:hover { border-color: var(--accent); color: var(--accent); }
+
         @media (max-width: 768px) {
             .top-panels { grid-template-columns: 1fr; }
+            .summary-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -430,7 +583,16 @@
     </div>
 
     <div class="header">
-        <h1><span>VOD</span> Plex Bridge <span style="color:#fff" id="appVersion"></span></h1>
+        <div class="header-left">
+            <h1><span>VOD</span> Plex Bridge <span style="color:#fff" id="appVersion"></span></h1>
+            <div class="tab-nav">
+                <button class="tab-btn active" onclick="switchTab('browse')">Browse</button>
+                <button class="tab-btn" onclick="switchTab('catalog')">Catalog</button>
+                <button class="tab-btn" onclick="switchTab('dead')">Dead Movies <span class="badge" id="deadBadge" style="display:none;background:var(--danger);margin-left:0.3rem;">0</span></button>
+                <button class="tab-btn" onclick="switchTab('logs')">Proxy Logs</button>
+                <button class="tab-btn" onclick="switchTab('health')">Health</button>
+            </div>
+        </div>
         <div class="status-bar">
             <span class="status-dot idle" id="statusDot"></span>
             <span id="statusText">Loading...</span>
@@ -452,98 +614,316 @@
         </div>
         <button class="btn btn-primary" onclick="syncCatalog()">Sync Selected</button>
         <button class="btn btn-outline" onclick="loadCategories()">Reload Categories</button>
+        <button class="btn btn-warning" onclick="detectAllLanguages()">Detect All Languages</button>
+        <button class="btn btn-outline" onclick="scanDead()">Scan Dead</button>
         <button class="btn btn-danger" onclick="clearCatalog()">Clear Catalog</button>
         <button class="btn btn-danger" onclick="clearStrm()">Clear STRMs</button>
         <button class="btn btn-danger" id="stopBtn" onclick="stopSync()" style="display:none;">Stop</button>
         <span class="msg" id="syncMessage"></span>
+        <span class="msg" id="langMessage" style="color:var(--warning);margin-left:0.5rem;"></span>
     </div>
 
-    <div class="top-panels">
-        <!-- Providers -->
-        <div class="panel">
-            <div class="panel-header">
-                Providers
-                <span class="badge" id="selectedProvCount">0</span>
-            </div>
-            <div class="panel-body">
-                <div class="scroll-list" id="providerList">
-                    <div class="empty-state">Load categories first.</div>
+    <!-- BROWSE TAB -->
+    <div class="tab-content active" id="tabBrowse">
+        <div class="top-panels">
+            <!-- Providers -->
+            <div class="panel">
+                <div class="panel-header">
+                    Providers
+                    <span class="badge" id="selectedProvCount">0</span>
+                </div>
+                <div class="panel-body">
+                    <div class="scroll-list" id="providerList">
+                        <div class="empty-state">Load categories first.</div>
+                    </div>
+                </div>
+                <div class="panel-footer">
+                    <button class="btn btn-outline" style="font-size:0.7rem;" onclick="selectAllProviders()">All</button>
+                    <button class="btn btn-outline" style="font-size:0.7rem;" onclick="clearProviders()">None</button>
                 </div>
             </div>
-            <div class="panel-footer">
-                <button class="btn btn-outline" style="font-size:0.7rem;" onclick="selectAllProviders()">All</button>
-                <button class="btn btn-outline" style="font-size:0.7rem;" onclick="clearProviders()">None</button>
+
+            <!-- Categories -->
+            <div class="panel">
+                <div class="panel-header">
+                    Categories
+                    <div style="display:flex;align-items:center;gap:0.5rem;">
+                        <span class="badge" id="selectedCatCount">0</span>
+                        <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="selectAllCategories()">All</button>
+                        <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="clearCategories()">None</button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div style="display:flex;gap:0.4rem;margin-bottom:0.4rem;">
+                        <select class="search-input" id="langFilter" style="width:auto;min-width:140px;margin-bottom:0;" onchange="renderCategoryGrid()">
+                            <option value="">All Languages</option>
+                            <option value="en">English / General</option>
+                            <option value="ES">Spanish</option>
+                            <option value="FR">French</option>
+                            <option value="DE">German</option>
+                            <option value="IT">Italian</option>
+                            <option value="EN">EN - Dubbed/Sub</option>
+                            <option value="NL">Dutch</option>
+                            <option value="GR">Greek</option>
+                            <option value="TR">Turkish</option>
+                            <option value="IN">Indian / Hindi</option>
+                            <option value="PL">Polish</option>
+                            <option value="RU">Russian</option>
+                            <option value="JP">Japanese</option>
+                            <option value="AR">Arabic</option>
+                            <option value="KR">Korean</option>
+                            <option value="PT">Portuguese</option>
+                            <option value="BR">Brazilian</option>
+                            <option value="IR">Persian</option>
+                            <option value="PH">Filipino</option>
+                            <option value="IL">Hebrew</option>
+                            <option value="AL">Albanian</option>
+                            <option value="BG">Bulgarian</option>
+                            <option value="RO">Romanian</option>
+                            <option value="other">Other Languages</option>
+                        </select>
+                        <input type="text" class="search-input" id="catSearch" style="margin-bottom:0;" placeholder="Search categories..." oninput="renderCategoryGrid()">
+                    </div>
+                    <div class="cat-grid" id="categoryGrid" style="max-height:300px;overflow-y:auto;">
+                        <div class="empty-state">Select a provider to see categories.</div>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- Categories -->
-        <div class="panel">
-            <div class="panel-header">
-                Categories
-                <div style="display:flex;align-items:center;gap:0.5rem;">
-                    <span class="badge" id="selectedCatCount">0</span>
-                    <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="selectAllCategories()">All</button>
-                    <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="clearCategories()">None</button>
+        <!-- Movie Browser -->
+        <div class="browse-section">
+            <div class="panel">
+                <div class="panel-header">
+                    Browse Movies
+                    <span style="font-size:0.75rem;color:var(--text-muted)" id="browseLabel"></span>
                 </div>
-            </div>
-            <div class="panel-body">
-                <input type="text" class="search-input" id="catSearch" placeholder="Search categories..." oninput="renderCategoryGrid()">
-                <div class="cat-grid" id="categoryGrid" style="max-height:300px;overflow-y:auto;">
-                    <div class="empty-state">Select a provider to see categories.</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Movie Browser -->
-    <div class="browse-section">
-        <div class="panel">
-            <div class="panel-header">
-                Browse Movies
-                <span style="font-size:0.75rem;color:var(--text-muted)" id="browseLabel"></span>
-            </div>
-            <div class="browse-toolbar">
-                <input type="text" id="movieSearch" placeholder="Search movies..." style="width:200px;" oninput="debounceSearch()">
-                <select id="sortBy" onchange="loadMovies()">
-                    <option value="rating">Rating</option>
-                    <option value="year">Year</option>
-                    <option value="name">Name</option>
-                </select>
-                <select id="sortOrder" onchange="loadMovies()">
-                    <option value="desc">Desc</option>
-                    <option value="asc">Asc</option>
-                </select>
-                <select id="filterActivated" onchange="loadMovies()">
-                    <option value="">All</option>
-                    <option value="1">Activated</option>
-                    <option value="0">Not Activated</option>
-                </select>
-                <select id="pageSize" onchange="syncPageSize(this,'pageSizeBottom');loadMovies()">
-                    <option value="60">60 / page</option>
-                    <option value="100" selected>100 / page</option>
-                    <option value="200">200 / page</option>
-                    <option value="300">300 / page</option>
-                </select>
-                <div id="selectionBar" style="display:none;" class="selection-bar">
-                    <span class="count" id="selCount">0</span> selected
-                    <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="activateSelected()">Activate</button>
-                    <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="deactivateSelected()">Deactivate</button>
-                    <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="clearSelection()">Clear</button>
-                </div>
-            </div>
-            <div class="panel-body">
-                <div class="movie-grid" id="movieGrid">
-                    <div class="empty-state">Select providers and categories, then sync to browse movies.</div>
-                </div>
-                <div class="pagination" id="pagination"></div>
-                <div class="browse-toolbar" style="justify-content:center;padding-top:0.5rem;">
-                    <select id="pageSizeBottom" onchange="syncPageSize(this,'pageSize');loadMovies()">
+                <div class="browse-toolbar">
+                    <input type="text" id="movieSearch" placeholder="Search movies..." style="width:200px;" oninput="debounceSearch()">
+                    <select id="sortBy" onchange="loadMovies()">
+                        <option value="rating">Rating</option>
+                        <option value="year">Year</option>
+                        <option value="name">Name</option>
+                    </select>
+                    <select id="sortOrder" onchange="loadMovies()">
+                        <option value="desc">Desc</option>
+                        <option value="asc">Asc</option>
+                    </select>
+                    <select id="filterActivated" onchange="loadMovies()">
+                        <option value="">All</option>
+                        <option value="1">Activated</option>
+                        <option value="0">Not Activated</option>
+                    </select>
+                    <select id="pageSize" onchange="syncPageSize(this,'pageSizeBottom');loadMovies()">
                         <option value="60">60 / page</option>
                         <option value="100" selected>100 / page</option>
                         <option value="200">200 / page</option>
                         <option value="300">300 / page</option>
                     </select>
-                    <div class="pagination" id="paginationBottom" style="display:inline-flex;gap:0.5rem;align-items:center;"></div>
+                    <select id="movieLangFilter" onchange="loadMovies(1)">
+                        <option value="">All Languages</option>
+                    </select>
+                    <select id="browseCatFilter" onchange="loadMovies(1)" style="max-width:180px;">
+                        <option value="">All Categories</option>
+                    </select>
+                    <select id="browseProvFilter" onchange="loadMovies(1)" style="max-width:160px;">
+                        <option value="">All Providers</option>
+                    </select>
+                    <div id="selectionBar" style="display:none;" class="selection-bar">
+                        <span class="count" id="selCount">0</span> selected
+                        <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="activateSelected()">Activate</button>
+                        <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="deactivateSelected()">Deactivate</button>
+                        <button class="btn btn-primary" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="detectLanguage()">Detect Language</button>
+                        <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="clearSelection()">Clear</button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div class="movie-grid" id="movieGrid">
+                        <div class="empty-state">Select providers and categories, then sync to browse movies.</div>
+                    </div>
+                    <div class="pagination" id="pagination"></div>
+                    <div class="browse-toolbar" style="justify-content:center;padding-top:0.5rem;">
+                        <select id="pageSizeBottom" onchange="syncPageSize(this,'pageSize');loadMovies()">
+                            <option value="60">60 / page</option>
+                            <option value="100" selected>100 / page</option>
+                            <option value="200">200 / page</option>
+                            <option value="300">300 / page</option>
+                        </select>
+                        <div class="pagination" id="paginationBottom" style="display:inline-flex;gap:0.5rem;align-items:center;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CATALOG TAB -->
+    <div class="tab-content" id="tabCatalog">
+        <div class="summary-section">
+            <div class="summary-grid">
+                <div class="panel">
+                    <div class="panel-header">By Provider</div>
+                    <div class="panel-body" style="max-height:500px;overflow-y:auto;">
+                        <table class="summary-table" id="summaryProviders">
+                            <thead><tr><th>Provider</th><th style="text-align:right">Total</th><th style="text-align:right">Activated</th></tr></thead>
+                            <tbody><tr><td colspan="3" class="empty-state">Loading...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header">By Language</div>
+                    <div class="panel-body" style="max-height:500px;overflow-y:auto;">
+                        <table class="summary-table" id="summaryLanguages">
+                            <thead><tr><th>Language</th><th style="text-align:right">Movies</th></tr></thead>
+                            <tbody><tr><td colspan="2" class="empty-state">Loading...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top:1rem;">
+                <div class="panel">
+                    <div class="panel-header">By Category
+                        <input type="text" class="search-input" id="summaryCatSearch" style="width:200px;margin:0;" placeholder="Search categories..." oninput="renderCatalogSummary()">
+                    </div>
+                    <div class="panel-body" style="max-height:600px;overflow-y:auto;">
+                        <table class="summary-table" id="summaryCategories">
+                            <thead><tr><th>Category</th><th style="text-align:right">Total</th><th style="text-align:right">Activated</th></tr></thead>
+                            <tbody><tr><td colspan="3" class="empty-state">Loading...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DEAD MOVIES TAB -->
+    <div class="tab-content" id="tabDead">
+        <div class="browse-section" style="padding-top:1rem;">
+            <div class="panel">
+                <div class="panel-header">
+                    Dead Movies
+                    <span style="font-size:0.75rem;color:var(--text-muted)" id="deadLabel">Movies no longer available from provider</span>
+                </div>
+                <div class="browse-toolbar">
+                    <input type="text" id="deadSearch" placeholder="Search dead movies..." style="width:200px;" oninput="debounceDeadSearch()">
+                    <div id="deadSelectionBar" style="display:none;" class="selection-bar">
+                        <span class="count" id="deadSelCount">0</span> selected
+                        <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="restoreDeadSelected()">Restore</button>
+                        <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="deleteDeadSelected()">Delete</button>
+                        <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="clearDeadSelection()">Clear</button>
+                    </div>
+                    <div style="margin-left:auto;display:flex;gap:0.4rem;">
+                        <button class="btn btn-success" onclick="restoreAllDead()">Restore All</button>
+                        <button class="btn btn-danger" onclick="deleteAllDead()">Delete All</button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div class="movie-grid" id="deadGrid">
+                        <div class="empty-state">No dead movies found.</div>
+                    </div>
+                    <div class="pagination" id="deadPagination"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOGS TAB -->
+    <div class="tab-content" id="tabLogs">
+        <div class="browse-section" style="padding-top:1rem;">
+            <div class="panel">
+                <div class="panel-header">
+                    Proxy Activity Log
+                    <div style="display:flex;gap:0.4rem;align-items:center;">
+                        <label style="font-size:0.7rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                            <input type="checkbox" id="logAutoRefresh" checked style="accent-color:var(--accent);"> Auto-refresh
+                        </label>
+                        <select id="logLevelFilter" onchange="renderProxyLog()" style="padding:0.2rem 0.4rem;font-size:0.7rem;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;">
+                            <option value="">All Levels</option>
+                            <option value="info">Info</option>
+                            <option value="warn">Warning</option>
+                            <option value="error">Error</option>
+                        </select>
+                        <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="loadProxyLog()">Refresh</button>
+                    </div>
+                </div>
+                <div class="panel-body" style="padding:0;">
+                    <div class="log-container" id="logContainer">
+                        <div class="empty-state">Loading logs...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-content" id="tabHealth">
+        <div class="browse-section" style="padding-top:1rem;">
+            <div class="panel">
+                <div class="panel-header">
+                    System Health Status
+                    <div style="display:flex;gap:0.4rem;align-items:center;">
+                        <label style="font-size:0.7rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                            <input type="checkbox" id="healthAutoRefresh" checked style="accent-color:var(--accent);"> Auto-refresh
+                        </label>
+                        <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="loadHealthStatus()">Check Now</button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div id="healthStatusContainer" style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem;">
+                        <div class="health-card">
+                            <div class="health-title">Bridge</div>
+                            <div class="health-status" id="healthBridge">-</div>
+                            <div class="health-time" id="healthBridgeTime">-</div>
+                        </div>
+                        <div class="health-card">
+                            <div class="health-title">Dispatcharr</div>
+                            <div class="health-status" id="healthDispatcharr">-</div>
+                            <div class="health-time" id="healthDispatcharrTime">-</div>
+                        </div>
+                        <div class="health-card">
+                            <div class="health-title">rclone</div>
+                            <div class="health-status" id="healthRclone">-</div>
+                            <div class="health-time" id="healthRcloneTime">-</div>
+                        </div>
+                    </div>
+                    <div style="border-top:1px solid var(--border);padding-top:1rem;margin-bottom:1.5rem;">
+                        <div style="font-weight:600;margin-bottom:0.75rem;">Stream Health</div>
+                        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.75rem;margin-bottom:0.75rem;">
+                            <div class="health-card">
+                                <div class="health-title">Activated</div>
+                                <div class="health-status ok" id="shTotal">-</div>
+                            </div>
+                            <div class="health-card">
+                                <div class="health-title">Healthy</div>
+                                <div class="health-status ok" id="shHealthy">-</div>
+                            </div>
+                            <div class="health-card">
+                                <div class="health-title">Striking (1-2)</div>
+                                <div class="health-status slow" id="shStriking">-</div>
+                            </div>
+                            <div class="health-card">
+                                <div class="health-title">Dead Streams</div>
+                                <div class="health-status down" id="shDead">-</div>
+                            </div>
+                            <div class="health-card">
+                                <div class="health-title">Never Checked</div>
+                                <div class="health-status unknown" id="shNever">-</div>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:0.5rem;align-items:center;">
+                            <button class="btn btn-primary" onclick="triggerValidation(false)">Validate Batch (500)</button>
+                            <button class="btn btn-warning" onclick="triggerValidation(true)">Full Sweep</button>
+                            <button class="btn btn-success" onclick="triggerResurrection()">Resurrect Check</button>
+                            <span class="msg" id="streamHealthMsg" style="font-size:0.75rem;color:var(--text-muted);margin-left:0.5rem;"></span>
+                        </div>
+                        <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.5rem;">
+                            Auto: validates 500 movies every 4h (~3,000/day) &middot; resurrection checks 50 dead streams every 8h &middot; all checks go through Dispatcharr (VPN-routed)
+                        </div>
+                    </div>
+                    <div style="border-top:1px solid var(--border);padding-top:1rem;">
+                        <div style="font-weight:600;margin-bottom:0.5rem;">Health Check Log</div>
+                        <div class="log-container" id="healthLogContainer">
+                            <div class="empty-state">Loading health logs...</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -553,12 +933,52 @@
         let allProviders = [];
         let allCategories = [];
         let selectedMovies = new Set();
+        let selectedDeadMovies = new Set();
         let currentPage = 1;
+        let deadPage = 1;
         let searchTimeout = null;
+        let deadSearchTimeout = null;
+        let catalogData = null;
 
         async function fetchJSON(url, opts) {
             const resp = await fetch(url, opts);
             return resp.json();
+        }
+
+        // --- Tabs ---
+        let logRefreshTimer = null;
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            if (logRefreshTimer) { clearInterval(logRefreshTimer); logRefreshTimer = null; }
+            if (tab === 'catalog') {
+                document.querySelectorAll('.tab-btn')[1].classList.add('active');
+                document.getElementById('tabCatalog').classList.add('active');
+                loadCatalogSummary();
+            } else if (tab === 'dead') {
+                document.querySelectorAll('.tab-btn')[2].classList.add('active');
+                document.getElementById('tabDead').classList.add('active');
+                loadDeadMovies(1);
+            } else if (tab === 'logs') {
+                document.querySelectorAll('.tab-btn')[3].classList.add('active');
+                document.getElementById('tabLogs').classList.add('active');
+                loadProxyLog();
+                logRefreshTimer = setInterval(() => {
+                    if (document.getElementById('logAutoRefresh').checked) loadProxyLog();
+                }, 3000);
+            } else if (tab === 'health') {
+                document.querySelectorAll('.tab-btn')[4].classList.add('active');
+                document.getElementById('tabHealth').classList.add('active');
+                loadHealthStatus();
+                loadStreamHealth();
+                logRefreshTimer = setInterval(() => {
+                    if (document.getElementById('healthAutoRefresh').checked) { loadHealthStatus(); loadStreamHealth(); }
+                }, 30000);
+            } else {
+                document.querySelectorAll('.tab-btn')[0].classList.add('active');
+                document.getElementById('tabBrowse').classList.add('active');
+            }
         }
 
         // --- Status ---
@@ -568,14 +988,28 @@
             document.getElementById('activeStrm').textContent = s.active_strm_count?.toLocaleString() || '0';
             document.getElementById('syncMessage').textContent = s.message || '';
 
+            const langMsg = s.lang_status || '';
+            const langEl = document.getElementById('langMessage');
+            langEl.textContent = langMsg;
+            langEl.style.display = langMsg ? 'inline' : 'none';
+
             const dot = document.getElementById('statusDot');
             const text = document.getElementById('statusText');
             const stopBtn = document.getElementById('stopBtn');
+            const langActive = langMsg && langMsg.includes('Detecting');
             dot.className = 'status-dot ' + (s.status || 'idle');
-            text.textContent = s.status === 'idle' ? 'Ready' : s.status?.charAt(0).toUpperCase() + s.status?.slice(1) + '...';
-            stopBtn.style.display = (s.status !== 'idle') ? 'inline-block' : 'none';
 
             if (s.status !== 'idle') {
+                text.textContent = s.status?.charAt(0).toUpperCase() + s.status?.slice(1) + '...';
+            } else if (langActive) {
+                text.textContent = 'Detecting languages...';
+                dot.className = 'status-dot detecting';
+            } else {
+                text.textContent = 'Ready';
+            }
+            stopBtn.style.display = (s.status !== 'idle' || langActive) ? 'inline-block' : 'none';
+
+            if (s.status !== 'idle' || langActive) {
                 setTimeout(refreshStatus, 2000);
             }
         }
@@ -589,6 +1023,17 @@
         async function refreshProviders() {
             allProviders = await fetchJSON('/api/providers');
             renderProviderList();
+            refreshProviderFilter();
+        }
+
+        function refreshProviderFilter() {
+            const sel = document.getElementById('browseProvFilter');
+            const current = sel.value;
+            sel.innerHTML = '<option value="">All Providers</option>';
+            for (const p of allProviders) {
+                sel.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+            }
+            sel.value = current;
         }
 
         function renderProviderList() {
@@ -676,12 +1121,37 @@
                 allCategories.sort((a, b) => a.name.localeCompare(b.name));
             }
             renderCategoryGrid();
+            updateBrowseCatFilter();
+        }
+
+        const KNOWN_LANG_PREFIXES = ['ES','FR','DE','IT','EN','NL','GR','TR','IN','PL','RU','JP','AR','KR','PT','BR','IR','PH','IL','AL','BG','RO','QC','KU','PK','AF','SO','BE','BN','CN','EX','MT','LA','FI'];
+
+        function getCategoryLang(name) {
+            const m1 = name.match(/^\[([A-Z]{2})\]/);
+            if (m1) return m1[1];
+            const m2 = name.match(/^([A-Z]{2})\s*-\s*/);
+            if (m2 && KNOWN_LANG_PREFIXES.includes(m2[1])) return m2[1];
+            return null;
         }
 
         function renderCategoryGrid() {
             const container = document.getElementById('categoryGrid');
             const search = (document.getElementById('catSearch').value || '').toLowerCase();
-            const filtered = allCategories.filter(c => c.name.toLowerCase().includes(search));
+            const langVal = document.getElementById('langFilter').value;
+
+            let filtered = allCategories;
+            if (langVal === 'en') {
+                filtered = filtered.filter(c => getCategoryLang(c.name) === null);
+            } else if (langVal === 'other') {
+                const mainLangs = ['ES','FR','DE','IT','EN','NL','GR','TR','IN','PL','RU','JP','AR','KR','PT','BR','IR','PH','IL','AL','BG','RO'];
+                filtered = filtered.filter(c => {
+                    const l = getCategoryLang(c.name);
+                    return l !== null && !mainLangs.includes(l);
+                });
+            } else if (langVal) {
+                filtered = filtered.filter(c => getCategoryLang(c.name) === langVal);
+            }
+            filtered = filtered.filter(c => c.name.toLowerCase().includes(search));
 
             if (!filtered.length) {
                 container.innerHTML = '<div class="empty-state">' +
@@ -692,7 +1162,8 @@
 
             container.innerHTML = filtered.map(c => `
                 <div class="cat-chip ${c.selected ? 'selected' : ''}"
-                     onclick="toggleCategory(${c.id}, ${c.selected ? 'false' : 'true'})">
+                     onclick="toggleCategory(${c.id}, ${c.selected ? 'false' : 'true'})"
+                     oncontextmenu="event.preventDefault();browseByCat(${c.id},'${c.name.replace(/'/g,"\\'")}')">
                     <span>${c.name}</span>
                     <span class="count">${c.movie_count.toLocaleString()}</span>
                 </div>
@@ -702,6 +1173,21 @@
 
         function updateCatCount() {
             document.getElementById('selectedCatCount').textContent = allCategories.filter(c => c.selected).length;
+        }
+
+        function updateBrowseCatFilter() {
+            const sel = document.getElementById('browseCatFilter');
+            const current = sel.value;
+            sel.innerHTML = '<option value="">All Categories</option>';
+            for (const c of allCategories) {
+                sel.innerHTML += `<option value="${c.id}">${c.name} (${c.movie_count.toLocaleString()})</option>`;
+            }
+            sel.value = current;
+        }
+
+        function browseByCat(catId, catName) {
+            document.getElementById('browseCatFilter').value = catId;
+            loadMovies(1);
         }
 
         async function toggleCategory(id, select) {
@@ -749,15 +1235,24 @@
             const sortBy = document.getElementById('sortBy').value;
             const sortOrder = document.getElementById('sortOrder').value;
             const filterAct = document.getElementById('filterActivated').value;
+            const catFilter = document.getElementById('browseCatFilter').value;
 
             const ps = parseInt(document.getElementById('pageSize').value) || 100;
+            const langFilter = document.getElementById('movieLangFilter').value;
             let url = `/api/movies?page=${currentPage}&page_size=${ps}&sort_by=${sortBy}&sort_order=${sortOrder}`;
             if (search) url += `&search=${encodeURIComponent(search)}`;
             if (filterAct === '1') url += '&activated_only=true';
+            if (langFilter) url += `&language=${encodeURIComponent(langFilter)}`;
+            if (catFilter) url += `&category_id=${catFilter}`;
 
-            const selProvs = allProviders.filter(p => p.selected);
-            if (selProvs.length > 0) {
-                selProvs.forEach(p => url += `&account_id=${p.id}`);
+            const provFilter = document.getElementById('browseProvFilter').value;
+            if (provFilter) {
+                url += `&account_id=${provFilter}`;
+            } else {
+                const selProvs = allProviders.filter(p => p.selected);
+                if (selProvs.length > 0) {
+                    selProvs.forEach(p => url += `&account_id=${p.id}`);
+                }
             }
 
             const data = await fetchJSON(url);
@@ -779,17 +1274,18 @@
                     ${m.activated ? '<div class="activated-badge">ACTIVE</div>' : ''}
                     <div class="check-overlay">&check;</div>
                     ${m.trailer_key ? '<button class="trailer-btn" onclick="event.stopPropagation();playTrailer(\'' + m.trailer_key + '\')">&#9654;</button>' : ''}
+                    <button class="lang-detect-btn" onclick="event.stopPropagation();detectSingleLang(${m.id},this)" title="Detect language">&#127760;</button>
                     <img src="${m.poster_url || ''}" alt="" loading="lazy"
                          onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
                     <div class="info">
                         <div class="title" title="${(m.name||'').replace(/"/g,'&quot;')}">${m.name || 'Unknown'}</div>
                         <div class="meta">${m.year || '?'} &middot; ${m.rating || '-'}</div>
                         ${m.account_name ? '<div class="provider-tag">' + m.account_name + '</div>' : ''}
+                        ${m.language ? '<div class="provider-tag" style="color:var(--warning)">' + getLangName(m.language) + '</div>' : ''}
                     </div>
                 </div>
             `).join('');
 
-            // Filter out activated if "Not Activated" selected
             if (filterAct === '0') {
                 container.querySelectorAll('.movie-card').forEach(card => {
                     const id = parseInt(card.dataset.id);
@@ -877,8 +1373,11 @@
         function hideOverlay() {
             document.getElementById('syncOverlay').classList.remove('active');
         }
-        function updateOverlayProgress(msg) {
-            document.getElementById('syncOverlayProgress').textContent = msg || '';
+        function updateOverlayProgress(msg, langMsg) {
+            const parts = [];
+            if (msg) parts.push(msg);
+            if (langMsg && langMsg.includes('Detecting')) parts.push(langMsg);
+            document.getElementById('syncOverlayProgress').textContent = parts.join(' | ') || '';
         }
 
         // --- Sync ---
@@ -893,8 +1392,12 @@
             const pollUntilDone = () => {
                 setTimeout(async () => {
                     const s = await fetchJSON('/api/status');
-                    updateOverlayProgress(s.message || '');
+                    const langActive = s.lang_status && s.lang_status.includes('Detecting');
+                    updateOverlayProgress(s.message || '', s.lang_status || '');
                     if (s.status !== 'idle' && s.status !== 'error') {
+                        refreshStatus();
+                        pollUntilDone();
+                    } else if (langActive) {
                         refreshStatus();
                         pollUntilDone();
                     } else {
@@ -902,6 +1405,7 @@
                         refreshStatus();
                         loadMovies(1);
                         refreshActivatedCount();
+                        refreshLanguageFilter();
                     }
                 }, 2000);
             };
@@ -935,6 +1439,7 @@
             await fetchJSON('/api/sync/clear-catalog', {method: 'POST'});
             refreshStatus();
             refreshActivatedCount();
+            refreshLanguageFilter();
             loadMovies(1);
         }
 
@@ -950,6 +1455,136 @@
             refreshStatus();
         }
 
+        // --- Language Detection ---
+        const LANG_NAMES = {
+            en:'English',es:'Spanish',fr:'French',de:'German',it:'Italian',pt:'Portuguese',
+            nl:'Dutch',ru:'Russian',ja:'Japanese',ko:'Korean',zh:'Chinese',hi:'Hindi',
+            ar:'Arabic',tr:'Turkish',pl:'Polish',sv:'Swedish',da:'Danish',no:'Norwegian',
+            fi:'Finnish',el:'Greek',he:'Hebrew',th:'Thai',vi:'Vietnamese',id:'Indonesian',
+            ro:'Romanian',hu:'Hungarian',cs:'Czech',bg:'Bulgarian',uk:'Ukrainian',
+            hr:'Croatian',sr:'Serbian',fa:'Persian',ur:'Urdu',bn:'Bengali',ta:'Tamil',
+            te:'Telugu',ml:'Malayalam',tl:'Tagalog',cn:'Cantonese',
+        };
+
+        function getLangName(code) {
+            return LANG_NAMES[code] || code.toUpperCase();
+        }
+
+        async function detectLanguage() {
+            if (!selectedMovies.size) return;
+            const ids = [...selectedMovies];
+            const btn = document.querySelector('#selectionBar .btn-primary');
+            const origText = btn.textContent;
+            btn.textContent = `Detecting (${ids.length})...`;
+            btn.disabled = true;
+            try {
+                const data = await fetchJSON('/api/movies/detect-language', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({movie_ids: ids})
+                });
+                const msg = `Detected: ${data.detected}, Skipped: ${data.skipped || 0}` +
+                    (data.no_tmdb_id ? `, No TMDB ID: ${data.no_tmdb_id}` : '');
+                alert(msg);
+                selectedMovies.clear();
+                updateSelectionBar();
+                loadMovies(currentPage);
+                refreshLanguageFilter();
+            } catch (e) {
+                alert('Language detection failed: ' + e.message);
+            } finally {
+                btn.textContent = origText;
+                btn.disabled = false;
+            }
+        }
+
+        async function detectAllLanguages() {
+            showOverlay('Detecting Languages...');
+            await fetchJSON('/api/movies/detect-language-all', {method: 'POST'});
+            refreshStatus();
+            const pollUntilDone = () => {
+                setTimeout(async () => {
+                    const s = await fetchJSON('/api/status');
+                    const langActive = s.lang_status && s.lang_status.includes('Detecting');
+                    updateOverlayProgress('', s.lang_status || '');
+                    if (langActive) {
+                        refreshStatus();
+                        pollUntilDone();
+                    } else {
+                        hideOverlay();
+                        refreshStatus();
+                        refreshLanguageFilter();
+                        loadMovies(currentPage);
+                    }
+                }, 2000);
+            };
+            pollUntilDone();
+        }
+
+        async function refreshLanguageFilter() {
+            const data = await fetchJSON('/api/languages');
+            const sel = document.getElementById('movieLangFilter');
+            const current = sel.value;
+            sel.innerHTML = '<option value="">All Languages</option>';
+            for (const lang of data.languages) {
+                const name = getLangName(lang.language);
+                sel.innerHTML += `<option value="${lang.language}">${name} (${lang.cnt})</option>`;
+            }
+            if (data.unknown > 0) {
+                sel.innerHTML += `<option disabled>── ${data.unknown} undetected ──</option>`;
+            }
+            sel.value = current;
+        }
+
+        // --- Catalog Summary ---
+        async function loadCatalogSummary() {
+            catalogData = await fetchJSON('/api/catalog/summary');
+            renderCatalogSummary();
+        }
+
+        function renderCatalogSummary() {
+            if (!catalogData) return;
+            const search = (document.getElementById('summaryCatSearch')?.value || '').toLowerCase();
+
+            // Providers
+            const provTbody = document.querySelector('#summaryProviders tbody');
+            if (catalogData.providers.length) {
+                provTbody.innerHTML = catalogData.providers.map(p =>
+                    `<tr><td>${p.account_name}</td><td class="num">${p.movie_count.toLocaleString()}</td><td class="num" style="color:var(--success)">${(p.activated_count || 0).toLocaleString()}</td></tr>`
+                ).join('');
+                provTbody.innerHTML += `<tr style="font-weight:700;border-top:2px solid var(--border)"><td>Total</td><td class="num">${catalogData.total.toLocaleString()}</td><td class="num" style="color:var(--success)">${catalogData.activated.toLocaleString()}</td></tr>`;
+            } else {
+                provTbody.innerHTML = '<tr><td colspan="3" class="empty-state">No data</td></tr>';
+            }
+
+            // Languages
+            const langTbody = document.querySelector('#summaryLanguages tbody');
+            if (catalogData.languages.length) {
+                langTbody.innerHTML = catalogData.languages.map(l =>
+                    `<tr><td>${getLangName(l.language)}</td><td class="num">${l.cnt.toLocaleString()}</td></tr>`
+                ).join('');
+                if (catalogData.language_unknown > 0) {
+                    langTbody.innerHTML += `<tr style="color:var(--text-muted)"><td>Undetected</td><td class="num" style="color:var(--text-muted)">${catalogData.language_unknown.toLocaleString()}</td></tr>`;
+                }
+            } else {
+                langTbody.innerHTML = '<tr><td colspan="2" class="empty-state">Run "Detect All Languages" first</td></tr>';
+            }
+
+            // Categories
+            const catTbody = document.querySelector('#summaryCategories tbody');
+            let cats = catalogData.categories;
+            if (search) {
+                cats = cats.filter(c => c.name.toLowerCase().includes(search));
+            }
+            if (cats.length) {
+                catTbody.innerHTML = cats.map(c =>
+                    `<tr><td>${c.name} <span class="cat-browse-tag" onclick="switchTab('browse');document.getElementById('browseCatFilter').value='${c.id}';loadMovies(1);">browse</span></td><td class="num">${c.movie_count.toLocaleString()}</td><td class="num" style="color:var(--success)">${(c.activated_count || 0).toLocaleString()}</td></tr>`
+                ).join('');
+            } else {
+                catTbody.innerHTML = '<tr><td colspan="3" class="empty-state">No categories found</td></tr>';
+            }
+        }
+
         // --- Trailer ---
         function playTrailer(key) {
             document.getElementById('trailerFrame').src = 'https://www.youtube.com/embed/' + key + '?autoplay=1';
@@ -962,12 +1597,383 @@
         }
         document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTrailer(); });
 
+        // --- Single Language Detect (hover button) ---
+        async function detectSingleLang(movieId, btn) {
+            btn.classList.add('detecting');
+            btn.innerHTML = '&#8987;';
+            try {
+                const data = await fetchJSON(`/api/movies/${movieId}/detect-language`, {method: 'POST'});
+                const card = btn.closest('.movie-card');
+                const info = card.querySelector('.info');
+                const existing = info.querySelector('.provider-tag[style*="warning"]');
+                if (data.language) {
+                    const langText = getLangName(data.language);
+                    if (existing) {
+                        existing.textContent = langText;
+                    } else {
+                        const tag = document.createElement('div');
+                        tag.className = 'provider-tag';
+                        tag.style.color = 'var(--warning)';
+                        tag.textContent = langText;
+                        info.appendChild(tag);
+                    }
+                    btn.innerHTML = '&#10003;';
+                    btn.style.background = 'rgba(34,197,94,0.85)';
+                } else {
+                    btn.innerHTML = '&#10007;';
+                    btn.style.background = 'rgba(239,68,68,0.85)';
+                }
+            } catch (e) {
+                btn.innerHTML = '&#10007;';
+                btn.style.background = 'rgba(239,68,68,0.85)';
+            }
+            btn.classList.remove('detecting');
+            setTimeout(() => {
+                btn.innerHTML = '&#127760;';
+                btn.style.background = '';
+            }, 2000);
+        }
+
+        // --- Dead Movies ---
+        async function loadDeadMovies(page) {
+            deadPage = page || 1;
+            const search = document.getElementById('deadSearch').value;
+            let url = `/api/movies/dead?page=${deadPage}&page_size=100`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+
+            const data = await fetchJSON(url);
+            const container = document.getElementById('deadGrid');
+            document.getElementById('deadLabel').textContent = `${data.count} dead movies`;
+
+            if (!data.results.length) {
+                container.innerHTML = '<div class="empty-state">No dead movies. All catalog movies are still live.</div>';
+                document.getElementById('deadPagination').innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = data.results.map(m => `
+                <div class="movie-card ${selectedDeadMovies.has(m.id) ? 'card-selected' : ''}"
+                     onclick="toggleDeadMovie(${m.id})" data-id="${m.id}">
+                    <div class="dead-badge">DEAD</div>
+                    <div class="check-overlay">&check;</div>
+                    <img src="${m.poster_url || ''}" alt="" loading="lazy"
+                         onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
+                    <div class="info">
+                        <div class="title" title="${(m.name||'').replace(/"/g,'&quot;')}">${m.name || 'Unknown'}</div>
+                        <div class="meta">${m.year || '?'} &middot; ${m.rating || '-'}</div>
+                        ${m.account_name ? '<div class="provider-tag">' + m.account_name + '</div>' : ''}
+                        ${m.dead_at ? '<div class="meta" style="color:var(--danger)">Died: ' + new Date(m.dead_at).toLocaleDateString() + '</div>' : ''}
+                    </div>
+                </div>
+            `).join('');
+
+            const totalPages = Math.ceil(data.count / 100);
+            let pagHTML = '';
+            if (totalPages > 1) {
+                if (deadPage > 1) pagHTML += `<button class="btn btn-outline" onclick="loadDeadMovies(${deadPage-1})">&laquo; Prev</button>`;
+                pagHTML += `Page ${deadPage} of ${totalPages}`;
+                if (deadPage < totalPages) pagHTML += `<button class="btn btn-outline" onclick="loadDeadMovies(${deadPage+1})">Next &raquo;</button>`;
+            }
+            document.getElementById('deadPagination').innerHTML = pagHTML;
+        }
+
+        function toggleDeadMovie(id) {
+            if (selectedDeadMovies.has(id)) {
+                selectedDeadMovies.delete(id);
+            } else {
+                selectedDeadMovies.add(id);
+            }
+            const card = document.querySelector(`#deadGrid .movie-card[data-id="${id}"]`);
+            if (card) card.classList.toggle('card-selected');
+            updateDeadSelectionBar();
+        }
+
+        function updateDeadSelectionBar() {
+            const bar = document.getElementById('deadSelectionBar');
+            const count = selectedDeadMovies.size;
+            document.getElementById('deadSelCount').textContent = count;
+            bar.style.display = count > 0 ? 'flex' : 'none';
+        }
+
+        function clearDeadSelection() {
+            selectedDeadMovies.clear();
+            document.querySelectorAll('#deadGrid .movie-card.card-selected').forEach(c => c.classList.remove('card-selected'));
+            updateDeadSelectionBar();
+        }
+
+        async function deleteDeadSelected() {
+            if (!selectedDeadMovies.size) return;
+            if (!confirm(`Delete ${selectedDeadMovies.size} dead movie(s) permanently?`)) return;
+            await fetchJSON('/api/movies/dead/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({movie_ids: [...selectedDeadMovies]})
+            });
+            selectedDeadMovies.clear();
+            updateDeadSelectionBar();
+            loadDeadMovies(deadPage);
+            refreshDeadBadge();
+        }
+
+        async function restoreDeadSelected() {
+            if (!selectedDeadMovies.size) return;
+            await fetchJSON('/api/movies/dead/restore', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({movie_ids: [...selectedDeadMovies]})
+            });
+            selectedDeadMovies.clear();
+            updateDeadSelectionBar();
+            loadDeadMovies(deadPage);
+            refreshDeadBadge();
+            refreshStatus();
+        }
+
+        async function deleteAllDead() {
+            if (!confirm('Permanently delete ALL dead movies?')) return;
+            await fetchJSON('/api/movies/dead/delete-all', {method: 'POST'});
+            loadDeadMovies(1);
+            refreshDeadBadge();
+        }
+
+        async function restoreAllDead() {
+            if (!confirm('Restore all dead movies back to catalog?')) return;
+            const data = await fetchJSON('/api/movies/dead?page=1&page_size=1');
+            if (!data.count) return;
+            const allData = await fetchJSON(`/api/movies/dead?page=1&page_size=${data.count}`);
+            const ids = allData.results.map(m => m.id);
+            await fetchJSON('/api/movies/dead/restore', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({movie_ids: ids})
+            });
+            loadDeadMovies(1);
+            refreshDeadBadge();
+            refreshStatus();
+        }
+
+        function debounceDeadSearch() {
+            clearTimeout(deadSearchTimeout);
+            deadSearchTimeout = setTimeout(() => loadDeadMovies(1), 300);
+        }
+
+        async function scanDead() {
+            showOverlay('Scanning Dead Movies...');
+            await fetchJSON('/api/movies/dead/scan', {method: 'POST'});
+            refreshStatus();
+            const pollUntilDone = () => {
+                setTimeout(async () => {
+                    const s = await fetchJSON('/api/status');
+                    updateOverlayProgress(s.message || '');
+                    if (s.status !== 'idle' && s.status !== 'error') {
+                        refreshStatus();
+                        pollUntilDone();
+                    } else {
+                        hideOverlay();
+                        refreshStatus();
+                        refreshDeadBadge();
+                        loadMovies(currentPage);
+                        refreshActivatedCount();
+                    }
+                }, 2000);
+            };
+            pollUntilDone();
+        }
+
+        async function refreshDeadBadge() {
+            const data = await fetchJSON('/api/movies/dead?page=1&page_size=1');
+            const badge = document.getElementById('deadBadge');
+            if (data.count > 0) {
+                badge.textContent = data.count;
+                badge.style.display = 'inline';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        // --- Proxy Logs ---
+        let proxyLogData = [];
+
+        async function loadProxyLog() {
+            try {
+                proxyLogData = await fetchJSON('/api/proxy-log');
+                renderProxyLog();
+            } catch (e) {
+                document.getElementById('logContainer').innerHTML = '<div class="empty-state">Failed to load logs</div>';
+            }
+        }
+
+        function renderProxyLog() {
+            const container = document.getElementById('logContainer');
+            const levelFilter = document.getElementById('logLevelFilter').value;
+
+            let entries = proxyLogData;
+            if (levelFilter) {
+                entries = entries.filter(e => e.level === levelFilter);
+            }
+
+            if (!entries.length) {
+                container.innerHTML = '<div class="empty-state">No log entries' + (levelFilter ? ' for this level' : '') + '</div>';
+                return;
+            }
+
+            const reversed = [...entries].reverse();
+            container.innerHTML = reversed.map(e => {
+                const d = new Date(e.ts * 1000);
+                const ts = d.toLocaleTimeString('en-US', {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit'});
+                const meta = [];
+                if (e.stream_id) meta.push('stream:' + e.stream_id);
+                if (e.bytes) meta.push(formatBytes(e.bytes));
+                if (e.head_bytes) meta.push('head:' + formatBytes(e.head_bytes));
+                if (e.tail_bytes) meta.push('tail:' + formatBytes(e.tail_bytes));
+                if (e.file_size) meta.push('file:' + formatBytes(e.file_size));
+                if (e.range_start !== undefined) meta.push('range:' + e.range_start + '-' + (e.range_end || ''));
+                if (e.retry_in) meta.push('retry:' + e.retry_in + 's');
+                const movieTag = e.movie_id ? `<span class="log-movie">movie:${e.movie_id}</span>` : '';
+                const metaStr = meta.length ? `<span class="log-meta">${meta.join(' | ')}</span>` : '';
+                return `<div class="log-entry">
+                    <span class="log-ts">${ts}</span>
+                    <span class="log-level ${e.level}">${e.level}</span>
+                    ${movieTag}
+                    <span class="log-msg">${escapeHtml(e.msg)}</span>
+                    ${metaStr}
+                </div>`;
+            }).join('');
+        }
+
+        function formatBytes(b) {
+            if (b >= 1048576) return (b / 1048576).toFixed(1) + 'MB';
+            if (b >= 1024) return (b / 1024).toFixed(0) + 'KB';
+            return b + 'B';
+        }
+
+        function escapeHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        // --- Health Check ---
+        async function loadHealthStatus() {
+            try {
+                const status = await fetchJSON('/api/health/status');
+                const logs = await fetchJSON('/api/health/log');
+
+                // Update status cards
+                updateHealthCard('bridge', status.bridge);
+                updateHealthCard('dispatcharr', status.dispatcharr);
+                updateHealthCard('rclone', status.rclone);
+
+                // Render log
+                renderHealthLog(logs.logs || []);
+            } catch (e) {
+                console.error('Health load failed:', e);
+                document.getElementById('healthLogContainer').innerHTML = '<div class="empty-state">Failed to load health status</div>';
+            }
+        }
+
+        function updateHealthCard(component, data) {
+            const statusEl = document.getElementById(`health${component.charAt(0).toUpperCase() + component.slice(1)}`);
+            const timeEl = document.getElementById(`health${component.charAt(0).toUpperCase() + component.slice(1)}Time`);
+
+            let icon = '-';
+            let statusClass = 'unknown';
+
+            if (data.status === 'ok') {
+                icon = '✓';
+                statusClass = 'ok';
+            } else if (data.status === 'slow') {
+                icon = '⚠';
+                statusClass = 'slow';
+            } else if (data.status === 'down') {
+                icon = '✕';
+                statusClass = 'down';
+            }
+
+            statusEl.className = `health-status ${statusClass}`;
+            statusEl.innerHTML = `${icon} ${data.status || 'unknown'}${data.response_time ? ` (${data.response_time.toFixed(2)}s)` : ''}`;
+
+            if (data.last_check) {
+                const ts = new Date(data.last_check * 1000);
+                timeEl.textContent = ts.toLocaleTimeString();
+            } else {
+                timeEl.textContent = '-';
+            }
+        }
+
+        function renderHealthLog(logs) {
+            if (!logs || logs.length === 0) {
+                document.getElementById('healthLogContainer').innerHTML = '<div class="empty-state">No health checks yet</div>';
+                return;
+            }
+
+            const html = logs.slice().reverse().map(e => {
+                const ts = new Date(e.ts).toLocaleString();
+                let statusIcon = '•';
+                if (e.status === 'ok' || e.status === 'restarted') statusIcon = '✓';
+                else if (e.status === 'slow' || e.status === 'restarting') statusIcon = '⚠';
+                else if (e.status === 'down') statusIcon = '✕';
+
+                return `<div class="log-entry">
+                    <span class="log-ts">${ts}</span>
+                    <span class="log-level">${statusIcon}</span>
+                    <strong>${e.component}</strong>
+                    ${e.status}: ${e.response_time ? e.response_time.toFixed(2) + 's' : ''}
+                    ${e.message ? ` - ${escapeHtml(e.message)}` : ''}
+                </div>`;
+            }).join('');
+
+            document.getElementById('healthLogContainer').innerHTML = html;
+        }
+
+        // --- Stream Health ---
+        async function loadStreamHealth() {
+            try {
+                const data = await fetchJSON('/api/movies/stream-health');
+                document.getElementById('shTotal').textContent = data.total_activated?.toLocaleString() || '0';
+                document.getElementById('shHealthy').textContent = data.healthy?.toLocaleString() || '0';
+                document.getElementById('shStriking').textContent = data.striking?.toLocaleString() || '0';
+                document.getElementById('shDead').textContent = data.stream_dead?.toLocaleString() || '0';
+                document.getElementById('shNever').textContent = data.never_validated?.toLocaleString() || '0';
+
+                document.getElementById('shStriking').className = 'health-status ' + (data.striking > 0 ? 'slow' : 'ok');
+                document.getElementById('shDead').className = 'health-status ' + (data.stream_dead > 0 ? 'down' : 'ok');
+                document.getElementById('shNever').className = 'health-status ' + (data.never_validated > 0 ? 'unknown' : 'ok');
+            } catch (e) {
+                console.error('Stream health load failed:', e);
+            }
+        }
+
+        async function triggerValidation(full) {
+            const msg = document.getElementById('streamHealthMsg');
+            if (full && !confirm('Run full catalog sweep? This will check ALL activated movies and may take a while.')) return;
+            msg.textContent = full ? 'Full sweep started...' : 'Validation batch started...';
+            await fetchJSON('/api/movies/validate-catalog', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({full: !!full})
+            });
+            setTimeout(() => { loadStreamHealth(); msg.textContent = full ? 'Full sweep running in background' : 'Batch validation running'; }, 2000);
+            const clearDelay = full ? 120000 : 35000;
+            setTimeout(() => { loadStreamHealth(); msg.textContent = ''; }, clearDelay);
+        }
+
+        async function triggerResurrection() {
+            const msg = document.getElementById('streamHealthMsg');
+            msg.textContent = 'Resurrection check started...';
+            await fetchJSON('/api/movies/resurrect-check', {method: 'POST'});
+            setTimeout(() => { loadStreamHealth(); msg.textContent = 'Resurrection check running in background'; }, 2000);
+            setTimeout(() => { loadStreamHealth(); msg.textContent = ''; }, 20000);
+        }
+
         // --- Init ---
         fetchJSON('/version').then(d => document.getElementById('appVersion').textContent = 'v' + d.version);
         refreshStatus();
         refreshProviders();
         refreshCategories();
         refreshActivatedCount();
+        refreshLanguageFilter();
+        refreshDeadBadge();
         loadMovies(1);
     </script>
 </body>
