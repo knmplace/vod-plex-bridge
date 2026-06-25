@@ -289,6 +289,8 @@ async def enrich_from_tmdb(batch_size: int = 50):
                     imdb_id = tmdb_data.get("imdb_id")
                     poster_path = tmdb_data.get("poster_path")
                     poster_url = f"https://image.tmdb.org/t/p/w600_and_h900_bestv2{poster_path}" if poster_path else None
+                    runtime_min = tmdb_data.get("runtime")
+                    duration_seconds = runtime_min * 60 if runtime_min else None
 
                     await db.execute("""
                         UPDATE movies SET
@@ -296,9 +298,10 @@ async def enrich_from_tmdb(batch_size: int = 50):
                             description = CASE WHEN description = '' OR description IS NULL THEN ? ELSE description END,
                             imdb_id = CASE WHEN imdb_id IS NULL THEN ? ELSE imdb_id END,
                             poster_url = CASE WHEN poster_url IS NULL THEN ? ELSE poster_url END,
+                            duration_seconds = CASE WHEN duration_seconds IS NULL THEN ? ELSE duration_seconds END,
                             tmdb_enriched = 1
                         WHERE id = ?
-                    """, (genres, description, imdb_id, poster_url, movie["id"]))
+                    """, (genres, description, imdb_id, poster_url, duration_seconds, movie["id"]))
                     enriched += 1
                     await asyncio.sleep(0.25)
                 except Exception as e:

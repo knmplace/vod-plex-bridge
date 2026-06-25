@@ -8,20 +8,19 @@ from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
 
 from database import init_db
-from proxy import router as proxy_router
+from proxy import router as proxy_router, start_pipe_manager
 from api import router as api_router, start_dead_scan_scheduler, _refresh_activated_stream_ids, catalog_validation_scheduler, resurrection_scheduler
 from health import health_check_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-APP_VERSION = "0.17.1"
+APP_VERSION = "0.23.0"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    # Note: Removed auto-refresh on startup to avoid stressing Dispatcharr at boot
-    # Stream IDs are refreshed on activation instead. Can add back after Dispatcharr stability improves.
+    start_pipe_manager()
     dead_scan_task = asyncio.create_task(start_dead_scan_scheduler())
     health_task = asyncio.create_task(health_check_scheduler())
     validation_task = asyncio.create_task(catalog_validation_scheduler())

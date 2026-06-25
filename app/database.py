@@ -102,6 +102,8 @@ async def init_db():
             "ALTER TABLE movies ADD COLUMN stream_dead INTEGER DEFAULT 0",
             "ALTER TABLE movies ADD COLUMN stream_dead_count INTEGER DEFAULT 0",
             "ALTER TABLE movies ADD COLUMN stream_dead_checked_at TEXT",
+            "ALTER TABLE movies ADD COLUMN duration_seconds INTEGER",
+            "ALTER TABLE movies ADD COLUMN stream_bitrate_kbps INTEGER",
         ]:
             try:
                 await db.execute(col)

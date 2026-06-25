@@ -336,17 +336,23 @@ Plex reads specific byte ranges when scanning metadata: container headers (start
 
 ## Operational Systems
 
-### Session Reuse (v0.17.1 — prevents connection flooding)
+### Session Reuse (v0.17.1+)
 - First XC request for a movie → Dispatcharr returns 301 with `session_id` in Location header
 - Bridge captures and caches `movie_id → (session_id, resolved_url)` in memory
 - All subsequent requests append `?session_id=XXX` → Dispatcharr reuses same session/provider connection
 - Per-movie asyncio locks prevent concurrent first-requests from racing
-- Session TTL: 1 hour. Auto-clears on 401/403/404/410 and retries fresh
+- Session TTL: 1 hour. Auto-clears on any HTTP error and retries fresh (v0.17.2)
 - Without this: every Plex range request creates a new provider connection → 509 bandwidth exceeded
+
+### Flood Protection (v0.17.3)
+- **Duplicate range detection**: If Plex requests the same byte range twice in 10 seconds, further identical requests blocked (503 Retry-After:10). Prevents Plex decode-loop hammering.
+- **Per-movie rate limit**: Max 1 upstream request per second per movie. Excess requests get 503 Retry-After:1.
+- **Quiet logging**: Routine "Stream proxy request" and "Reusing session" entries moved to debug level. Proxy Activity Log only shows meaningful events (errors, warnings, cache hits, blocked duplicates).
 
 ### Circuit Breaker
 - 3 consecutive failures for a stream_id → HTTP 503 for 30 seconds
 - Prevents hammering when providers rate-limit (509) or error (500)
+- Log entries at debug level (v0.17.2) — no more activity log flooding
 
 ### Dead Movie Detection
 - **Immediate deactivation**: HTTP 500+ during playback → movie deactivated + removed from Plex
@@ -416,6 +422,14 @@ When preparing for public GitHub release:
 
 | Version | Changes |
 |---------|---------|
+| 0.23.0 | Single persistent streaming connection via `aiter_bytes()` — mirrors browser player pattern. Wall-clock rate limiter at 1.2× bitrate. Pipe starts from byte 0 on first Plex GET. Progress logging every 30s. |
+| 0.22.0 | Sequential 64KB Range requests with sleep pacing — FAILED: thousands of separate connections, Dispatcharr dropped upstream after each completed |
+| 0.21.1 | Pipe starts from byte 0 instead of header offset. Live pipe served before header cache fallback. |
+| 0.21.0 | Removed sleep entirely — downloaded at full LAN speed (~57 MB/s), provider killed connection |
+| 0.20.0 | Provider bitrate from Dispatcharr API, metered reading with sleep_per_chunk, corrected DEFAULT_BITRATE units |
+| 0.18.0-0.19.x | StreamPipe class, follow_redirects, partial read_range, hard circuit breaker, pipe pre-start |
+| 0.17.3 | Flood protection — duplicate range detection (blocks Plex decode loops), per-movie rate limiting (1 req/s), quiet proxy logging |
+| 0.17.2 | Session recovery on ANY HTTP error (not just 401/403/404/410), circuit breaker logs at debug level |
 | 0.17.1 | Session reuse — captures session_id from Dispatcharr 301, reuses for all requests per movie. Fixes connection flooding (509 errors) |
 | 0.17.0 | XC endpoint routing via Dispatcharr user creds (not provider creds), movie_id (not stream_id) |
 | 0.16.0 | Health check system, catalog validation scheduler, resurrection scheduler |

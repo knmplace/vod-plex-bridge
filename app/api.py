@@ -13,7 +13,7 @@ from database import get_db
 from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled
 from generator import generate_strm_files, sanitize_filename
 from stream_mapper import apply_stream_mapping_to_db, load_stream_mapping, pick_stream_for_account, get_xc_url
-from proxy import probe_file_size, get_proxy_log, _log_event
+from proxy import probe_file_size, get_proxy_log, get_all_pipes, _log_event
 from health import run_health_checks, get_health_status, get_health_log, health_check_scheduler
 
 logger = logging.getLogger(__name__)
@@ -397,6 +397,17 @@ async def proxy_log():
     return get_proxy_log()
 
 
+@router.get("/debug/connections")
+async def debug_connections():
+    pipes = get_all_pipes()
+    active = sum(1 for p in pipes.values() if p["started"] and not p["finished"])
+    return {
+        "total_pipes": len(pipes),
+        "active_downloading": active,
+        "pipes": pipes,
+    }
+
+
 @router.post("/movies/activate")
 async def activate_movies(request: Request):
     data = await request.json()
@@ -501,6 +512,18 @@ async def _refresh_activated_stream_ids():
         if updated > 0:
             await db.commit()
             logger.info(f"Refreshed stream_ids for {updated} activated movies")
+
+        # Backfill bitrate for activated movies missing it
+        missing_rows = await db.execute(
+            "SELECT id FROM movies WHERE activated = 1 AND stream_bitrate_kbps IS NULL LIMIT 50"
+        )
+        missing = [r["id"] for r in await missing_rows.fetchall()]
+        if missing:
+            logger.info("Backfilling provider info for %d activated movies", len(missing))
+            for mid in missing:
+                await _fetch_provider_info(mid)
+                await asyncio.sleep(0.1)
+
         return updated
     finally:
         await db.close()
@@ -804,7 +827,41 @@ async def resurrection_scheduler():
             logger.error("Resurrection scheduler error: %s", e)
 
 
+async def _fetch_provider_info(movie_id: int):
+    """Fetch bitrate and duration from Dispatcharr's provider-info endpoint."""
+    try:
+        url = f"{DISPATCHARR_URL}/api/vod/movies/{movie_id}/provider-info/"
+        headers = {}
+        if DISPATCHARR_API_KEY:
+            headers["X-API-Key"] = DISPATCHARR_API_KEY
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            bitrate = data.get("bitrate")
+            duration_str = data.get("duration_secs")
+            duration = int(duration_str) if duration_str and str(duration_str).isdigit() else None
+            if bitrate or duration:
+                db = await get_db()
+                try:
+                    await db.execute(
+                        "UPDATE movies SET stream_bitrate_kbps = COALESCE(?, stream_bitrate_kbps), "
+                        "duration_seconds = COALESCE(?, duration_seconds) WHERE id = ?",
+                        (bitrate, duration, movie_id),
+                    )
+                    await db.commit()
+                    logger.info("Provider info for movie %d: bitrate=%s kbps, duration=%ss", movie_id, bitrate, duration)
+                finally:
+                    await db.close()
+            return {"bitrate": bitrate, "duration": duration}
+    except Exception as e:
+        logger.warning("Failed to fetch provider info for movie %d: %s", movie_id, e)
+        return None
+
+
 async def _fetch_headers(movies: list[dict]):
+    from proxy import _resolve_session as resolve_session
     for movie in movies:
         try:
             uuid = movie["uuid"]
@@ -814,38 +871,34 @@ async def _fetch_headers(movies: list[dict]):
             content_type = movie.get("content_type", "video/x-matroska")
             ext = "mp4" if content_type == "video/mp4" else "mkv"
 
+            await _fetch_provider_info(movie_id)
+
             xc_path = get_xc_url(movie_id, ext)
             if xc_path:
-                from proxy import _get_cached_session, _resolve_session, _cache_session, clear_movie_session
-                from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
-                base_xc_url = f"{DISPATCHARR_URL}{xc_path}"
-                cached = _get_cached_session(movie_id)
-                if cached:
-                    session_id, resolved_url = cached
-                    parsed = urlparse(resolved_url)
-                    qs = parse_qs(parsed.query)
-                    qs["session_id"] = [session_id]
-                    new_query = urlencode(qs, doseq=True)
-                    upstream_url = urlunparse(parsed._replace(query=new_query))
-                else:
-                    result = await _resolve_session(base_xc_url, movie_id)
-                    if result:
-                        _, resolved_url = result
-                        upstream_url = resolved_url
-                    else:
-                        upstream_url = base_xc_url
-                req_headers = {"Range": f"bytes=0-{HEADER_FETCH_SIZE - 1}"}
+                base_url = f"{DISPATCHARR_URL}{xc_path}"
             else:
-                upstream_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
-                req_headers = {"Range": f"bytes=0-{HEADER_FETCH_SIZE - 1}"}
-                if DISPATCHARR_API_KEY:
-                    req_headers["X-API-Key"] = DISPATCHARR_API_KEY
+                base_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
 
+            # Resolve session ONCE — this creates one provider connection
+            result = await resolve_session(base_url, movie_id)
+            if not result:
+                logger.warning("Header fetch: could not resolve session for movie %d", movie_id)
+                _log_event("error", movie_id, "Header fetch: session resolve failed")
+                continue
+
+            session_url, session_id = result
+            logger.info("Header fetch: using session %s for movie %d", session_id, movie_id)
+
+            req_headers = {"Range": f"bytes=0-{HEADER_FETCH_SIZE - 1}"}
+            if not xc_path and DISPATCHARR_API_KEY:
+                req_headers["X-API-Key"] = DISPATCHARR_API_KEY
+
+            # Use follow_redirects=False — we already have the session URL
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(connect=30, read=60, write=30, pool=30),
-                follow_redirects=True,
+                follow_redirects=False,
             ) as client:
-                resp = await client.get(upstream_url, headers=req_headers)
+                resp = await client.get(session_url, headers=req_headers)
                 if resp.status_code >= 400:
                     logger.warning("Header fetch failed for movie %d: HTTP %d", movie_id, resp.status_code)
                     _log_event("error", movie_id, f"Header fetch failed: HTTP {resp.status_code}")
@@ -884,6 +937,7 @@ async def _fetch_headers(movies: list[dict]):
                     if total.isdigit():
                         file_size = int(total)
 
+                # Reuse SAME session URL for tail fetch — no new provider connection
                 tail_bytes = None
                 tail_offset = 0
                 if file_size and file_size > TAIL_FETCH_SIZE:
@@ -892,10 +946,10 @@ async def _fetch_headers(movies: list[dict]):
                     if not xc_path and DISPATCHARR_API_KEY:
                         tail_headers["X-API-Key"] = DISPATCHARR_API_KEY
                     try:
-                        tail_resp = await client.get(upstream_url, headers=tail_headers)
+                        tail_resp = await client.get(session_url, headers=tail_headers)
                         if tail_resp.status_code < 400:
                             tail_bytes = tail_resp.content
-                            logger.info("Tail fetched: movie %d, %d bytes from offset %d", movie_id, len(tail_bytes), tail_offset)
+                            logger.info("Tail fetched: movie %d, %d bytes from offset %d (same session)", movie_id, len(tail_bytes), tail_offset)
                         else:
                             logger.warning("Tail fetch failed for movie %d: HTTP %d", movie_id, tail_resp.status_code)
                     except Exception as te:
