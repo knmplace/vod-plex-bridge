@@ -108,7 +108,7 @@ async def apply_stream_mapping_to_db():
         logger.info(f"Applied stream mapping: {updated} movies updated out of {len(mapping)} total")
         return updated
     finally:
-        await db.close()
+        pass
 
 
 # ---- Django dump script (runs inside Dispatcharr container) ----

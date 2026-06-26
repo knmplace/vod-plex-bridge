@@ -151,6 +151,26 @@
             align-items: center;
             justify-content: space-between;
         }
+        .panel-header.collapsible {
+            cursor: pointer;
+            user-select: none;
+        }
+        .panel-header .collapse-arrow {
+            font-size: 0.65rem;
+            margin-right: 0.4rem;
+            transition: transform 0.2s;
+            display: inline-block;
+        }
+        .panel.collapsed .collapse-arrow {
+            transform: rotate(-90deg);
+        }
+        .panel.collapsed .panel-body,
+        .panel.collapsed .panel-footer {
+            display: none;
+        }
+        .panel.collapsed .panel-header {
+            border-bottom: none;
+        }
 
         .panel-body { padding: 0.5rem; }
 
@@ -235,6 +255,37 @@
             font-size: 0.75rem;
         }
         .browse-toolbar select:focus, .browse-toolbar input:focus { outline: none; border-color: var(--accent); }
+
+        .multi-select { position: relative; display: inline-block; }
+        .multi-select-btn {
+            background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary);
+            border-radius: 5px; padding: 0.35rem 0.5rem; font-size: 0.75rem; cursor: pointer;
+            white-space: nowrap; min-width: 120px; text-align: left;
+        }
+        .multi-select-btn:hover { border-color: var(--accent); }
+        .multi-select-btn::after { content: ' ▾'; opacity: 0.5; }
+        .multi-select-dropdown {
+            display: none; position: absolute; top: 100%; left: 0; z-index: 1000;
+            background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 5px;
+            min-width: 200px; max-height: 280px; overflow-y: auto; margin-top: 2px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        .multi-select-dropdown.open { display: block; }
+        .multi-select-dropdown label {
+            display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.6rem;
+            cursor: pointer; font-size: 0.75rem; color: var(--text-primary);
+        }
+        .multi-select-dropdown label:hover { background: var(--bg-card); }
+        .multi-select-dropdown input[type="checkbox"] { accent-color: var(--accent); }
+        .multi-select-actions {
+            display: flex; gap: 0.4rem; padding: 0.3rem 0.6rem; border-bottom: 1px solid var(--border);
+        }
+        .multi-select-actions button {
+            background: none; border: none; color: var(--accent); cursor: pointer;
+            font-size: 0.7rem; padding: 0;
+        }
+        .multi-select-actions button:hover { text-decoration: underline; }
+        .ms-count { background: var(--accent); color: #fff; border-radius: 8px; padding: 0 5px; font-size: 0.65rem; margin-left: 4px; }
 
         .movie-grid {
             display: grid;
@@ -452,6 +503,32 @@
             animation: pulse 0.6s infinite;
         }
 
+        .movie-card .activate-btn {
+            position: absolute;
+            bottom: 82px;
+            right: 4px;
+            width: 26px; height: 26px;
+            border-radius: 50%;
+            background: rgba(34,197,94,0.85);
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            color: #fff;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+        .movie-card:hover .activate-btn { opacity: 1; }
+        .movie-card .activate-btn.active {
+            background: rgba(239,68,68,0.85);
+        }
+        .movie-card .activate-btn.working {
+            opacity: 1;
+            animation: pulse 0.6s infinite;
+        }
+
         .dead-badge {
             position: absolute;
             top: 4px;
@@ -563,9 +640,123 @@
         }
         .cat-browse-tag:hover { border-color: var(--accent); color: var(--accent); }
 
+        .stream-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 0.75rem;
+        }
+        .stream-card.error { border-color: var(--danger); }
+        .stream-card.complete { border-color: var(--success); }
+
+        .stream-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.75rem;
+        }
+        .stream-movie-title {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        .stream-movie-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-left: 0.5rem;
+        }
+        .stream-status-badge {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.15rem 0.5rem;
+            border-radius: 10px;
+            text-transform: uppercase;
+        }
+        .stream-status-badge.streaming { background: var(--success); color: #fff; }
+        .stream-status-badge.complete { background: var(--accent); color: #fff; }
+        .stream-status-badge.error { background: var(--danger); color: #fff; }
+        .stream-status-badge.starting { background: var(--warning); color: #000; }
+
+        .stream-time-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+            font-size: 0.8rem;
+        }
+        .stream-time-bar .time { font-weight: 600; font-variant-numeric: tabular-nums; }
+        .stream-time-bar .remaining { color: var(--text-muted); }
+
+        .stream-progress {
+            height: 6px;
+            background: var(--bg-secondary);
+            border-radius: 3px;
+            position: relative;
+            margin-bottom: 0.75rem;
+            overflow: hidden;
+        }
+        .stream-progress-download {
+            position: absolute;
+            top: 0; left: 0; height: 100%;
+            background: var(--accent);
+            opacity: 0.35;
+            border-radius: 3px;
+            transition: width 1s linear;
+        }
+        .stream-progress-plex {
+            position: absolute;
+            top: 0; left: 0; height: 100%;
+            background: var(--success);
+            border-radius: 3px;
+            transition: width 1s linear;
+        }
+
+        .stream-segments {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 0.75rem;
+        }
+        .stream-segment {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.6rem 0.75rem;
+        }
+        .segment-title {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            margin-bottom: 0.35rem;
+        }
+        .segment-status {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 0.2rem;
+        }
+        .segment-status .dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .segment-status .dot.ok { background: var(--success); }
+        .segment-status .dot.active { background: var(--success); animation: pulse 1s infinite; }
+        .segment-status .dot.idle { background: var(--warning); }
+        .segment-status .dot.off { background: var(--text-muted); }
+        .segment-status .dot.err { background: var(--danger); }
+        .segment-detail {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
         @media (max-width: 768px) {
             .top-panels { grid-template-columns: 1fr; }
             .summary-grid { grid-template-columns: 1fr; }
+            .stream-segments { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -590,10 +781,13 @@
                 <button class="tab-btn" onclick="switchTab('catalog')">Catalog</button>
                 <button class="tab-btn" onclick="switchTab('dead')">Dead Movies <span class="badge" id="deadBadge" style="display:none;background:var(--danger);margin-left:0.3rem;">0</span></button>
                 <button class="tab-btn" onclick="switchTab('logs')">Proxy Logs</button>
+                <button class="tab-btn" onclick="switchTab('streams')">Streams <span class="badge" id="streamsBadge" style="display:none;background:var(--success);margin-left:0.3rem;">0</span></button>
                 <button class="tab-btn" onclick="switchTab('health')">Health</button>
+                <button class="tab-btn" onclick="switchTab('settings')">Settings</button>
             </div>
         </div>
         <div class="status-bar">
+            <span id="vpnIpDisplay" style="color:#8b949e;font-size:0.82rem;margin-right:1rem;font-family:monospace;"></span>
             <span class="status-dot idle" id="statusDot"></span>
             <span id="statusText">Loading...</span>
         </div>
@@ -627,9 +821,9 @@
     <div class="tab-content active" id="tabBrowse">
         <div class="top-panels">
             <!-- Providers -->
-            <div class="panel">
-                <div class="panel-header">
-                    Providers
+            <div class="panel" id="providerPanel">
+                <div class="panel-header collapsible" onclick="togglePanel('providerPanel')">
+                    <span><span class="collapse-arrow">&#9660;</span>Providers</span>
                     <span class="badge" id="selectedProvCount">0</span>
                 </div>
                 <div class="panel-body">
@@ -644,10 +838,10 @@
             </div>
 
             <!-- Categories -->
-            <div class="panel">
-                <div class="panel-header">
-                    Categories
-                    <div style="display:flex;align-items:center;gap:0.5rem;">
+            <div class="panel" id="categoryPanel">
+                <div class="panel-header collapsible" onclick="togglePanel('categoryPanel')">
+                    <span><span class="collapse-arrow">&#9660;</span>Categories</span>
+                    <div style="display:flex;align-items:center;gap:0.5rem;" onclick="event.stopPropagation()">
                         <span class="badge" id="selectedCatCount">0</span>
                         <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="selectAllCategories()">All</button>
                         <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="clearCategories()">None</button>
@@ -720,15 +914,18 @@
                         <option value="200">200 / page</option>
                         <option value="300">300 / page</option>
                     </select>
-                    <select id="movieLangFilter" onchange="loadMovies(1)">
-                        <option value="">All Languages</option>
-                    </select>
-                    <select id="browseCatFilter" onchange="loadMovies(1)" style="max-width:180px;">
-                        <option value="">All Categories</option>
-                    </select>
-                    <select id="browseProvFilter" onchange="loadMovies(1)" style="max-width:160px;">
-                        <option value="">All Providers</option>
-                    </select>
+                    <div class="multi-select" id="msLang">
+                        <button class="multi-select-btn" onclick="toggleMs('msLang')">All Languages</button>
+                        <div class="multi-select-dropdown" id="msLangDrop"></div>
+                    </div>
+                    <div class="multi-select" id="msCat">
+                        <button class="multi-select-btn" onclick="toggleMs('msCat')">All Categories</button>
+                        <div class="multi-select-dropdown" id="msCatDrop"></div>
+                    </div>
+                    <div class="multi-select" id="msProv">
+                        <button class="multi-select-btn" onclick="toggleMs('msProv')">All Providers</button>
+                        <div class="multi-select-dropdown" id="msProvDrop"></div>
+                    </div>
                     <div id="selectionBar" style="display:none;" class="selection-bar">
                         <span class="count" id="selCount">0</span> selected
                         <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="activateSelected()">Activate</button>
@@ -854,6 +1051,26 @@
         </div>
     </div>
 
+    <!-- STREAMS TAB -->
+    <div class="tab-content" id="tabStreams">
+        <div class="browse-section" style="padding-top:1rem;">
+            <div class="panel">
+                <div class="panel-header">
+                    Active Streams
+                    <div style="display:flex;gap:0.4rem;align-items:center;">
+                        <label style="font-size:0.7rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                            <input type="checkbox" id="streamAutoRefresh" checked style="accent-color:var(--accent);"> Auto-refresh
+                        </label>
+                        <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="loadActiveStreams()">Refresh</button>
+                    </div>
+                </div>
+                <div class="panel-body" id="streamsContainer">
+                    <div class="empty-state">No active streams</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="tab-content" id="tabHealth">
         <div class="browse-section" style="padding-top:1rem;">
             <div class="panel">
@@ -863,7 +1080,7 @@
                         <label style="font-size:0.7rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
                             <input type="checkbox" id="healthAutoRefresh" checked style="accent-color:var(--accent);"> Auto-refresh
                         </label>
-                        <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="loadHealthStatus()">Check Now</button>
+                        <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="triggerHealthCheck()">Check Now</button>
                     </div>
                 </div>
                 <div class="panel-body">
@@ -879,9 +1096,9 @@
                             <div class="health-time" id="healthDispatcharrTime">-</div>
                         </div>
                         <div class="health-card">
-                            <div class="health-title">rclone</div>
-                            <div class="health-status" id="healthRclone">-</div>
-                            <div class="health-time" id="healthRcloneTime">-</div>
+                            <div class="health-title">Plex VOD Library</div>
+                            <div class="health-status" id="healthPlexVod">-</div>
+                            <div class="health-time" id="healthPlexVodTime">-</div>
                         </div>
                     </div>
                     <div style="border-top:1px solid var(--border);padding-top:1rem;margin-bottom:1.5rem;">
@@ -909,13 +1126,10 @@
                             </div>
                         </div>
                         <div style="display:flex;gap:0.5rem;align-items:center;">
-                            <button class="btn btn-primary" onclick="triggerValidation(false)">Validate Batch (500)</button>
-                            <button class="btn btn-warning" onclick="triggerValidation(true)">Full Sweep</button>
-                            <button class="btn btn-success" onclick="triggerResurrection()">Resurrect Check</button>
-                            <span class="msg" id="streamHealthMsg" style="font-size:0.75rem;color:var(--text-muted);margin-left:0.5rem;"></span>
+                            <span class="msg" id="streamHealthMsg" style="font-size:0.75rem;color:var(--text-muted);"></span>
                         </div>
                         <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.5rem;">
-                            Auto: validates 500 movies every 4h (~3,000/day) &middot; resurrection checks 50 dead streams every 8h &middot; all checks go through Dispatcharr (VPN-routed)
+                            Dead detection: activation validates streams (1-strike) &middot; playback errors mark dead immediately &middot; configure refresh schedule in Settings tab
                         </div>
                     </div>
                     <div style="border-top:1px solid var(--border);padding-top:1rem;">
@@ -923,6 +1137,64 @@
                         <div class="log-container" id="healthLogContainer">
                             <div class="empty-state">Loading health logs...</div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-content" id="tabSettings">
+        <div class="browse-section" style="padding-top:1rem;">
+            <div class="panel">
+                <div class="panel-header">Catalog Refresh Schedule</div>
+                <div class="panel-body">
+                    <p style="font-size:0.8rem;color:#c9d1d9;margin-bottom:1rem;">
+                        Controls how often the bridge refreshes its catalog from Dispatcharr. Each refresh: regenerates stream mappings, updates movie metadata, detects UUID/stream_id changes, re-fetches head/tail for activated movies with changed streams, and removes movies no longer in Dispatcharr.
+                    </p>
+                    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;">
+                        <label style="font-weight:600;font-size:0.85rem;">Refresh Interval:</label>
+                        <select id="refreshInterval" onchange="saveSchedule()" style="padding:0.4rem 0.8rem;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:0.85rem;">
+                            <option value="0">Off</option>
+                            <option value="12">Every 12 hours</option>
+                            <option value="8">Every 8 hours</option>
+                            <option value="6">Every 6 hours</option>
+                            <option value="4">Every 4 hours</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="triggerManualRefresh()" style="font-size:0.8rem;">Run Now</button>
+                        <span id="scheduleMsg" style="font-size:0.75rem;color:#c9d1d9;"></span>
+                        <span style="margin-left:auto;font-size:0.8rem;color:#c9d1d9;">
+                            <strong>Last Refresh:</strong> <span id="lastScheduledRefresh">Never</span>
+                            &nbsp;&bull;&nbsp;
+                            <strong>Interval:</strong> <span id="currentInterval">Off</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div id="refreshReportContainer" style="display:none;margin-top:1rem;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;max-width:1100px;">
+                    <div class="panel">
+                        <div class="panel-header">Latest Report</div>
+                        <div class="panel-body" id="latestReportBody" style="font-size:0.8rem;color:#e6edf3;line-height:1.7;">
+                            <div style="color:#8b949e;">No reports yet</div>
+                        </div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-header">Report Archive</div>
+                        <div class="panel-body" id="archiveReportBody" style="font-size:0.8rem;color:#e6edf3;line-height:1.7;max-height:400px;overflow-y:auto;">
+                            <div style="color:#8b949e;">No archived reports</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="panel" style="margin-top:1rem;max-width:1100px;">
+                <div class="panel-header">What Gets Refreshed</div>
+                <div class="panel-body" style="font-size:0.8rem;color:#c9d1d9;line-height:1.6;">
+                    <div style="display:grid;grid-template-columns:auto 1fr;gap:0.3rem 1rem;">
+                        <strong style="color:#e6edf3;">1. Dump Regen</strong><span>Regenerates stream_mapping.json from Dispatcharr's DB (picks up stream_id changes from M3U refresh)</span>
+                        <strong style="color:#e6edf3;">2. Catalog Refresh</strong><span>Pages through all Dispatcharr VOD movies — adds new movies, updates metadata, detects UUID changes and clears stale caches</span>
+                        <strong style="color:#e6edf3;">3. Stream Mapping</strong><span>Applies fresh stream_ids to all movies in the bridge DB</span>
+                        <strong style="color:#e6edf3;">4. Activated Refresh</strong><span>For activated movies: if stream_id changed, clears old head/tail cache and re-fetches from provider (sequential, one at a time)</span>
+                        <strong style="color:#e6edf3;">5. Dead Scan</strong><span>Removes movies no longer in Dispatcharr's catalog — deactivates, removes STRM files, removes from Plex</span>
                     </div>
                 </div>
             </div>
@@ -945,6 +1217,19 @@
             return resp.json();
         }
 
+        // --- Collapsible Panels ---
+        function togglePanel(panelId) {
+            const panel = document.getElementById(panelId);
+            panel.classList.toggle('collapsed');
+            localStorage.setItem('panel_' + panelId, panel.classList.contains('collapsed') ? '1' : '0');
+        }
+        ['providerPanel', 'categoryPanel'].forEach(id => {
+            if (localStorage.getItem('panel_' + id) === '1') {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('collapsed');
+            }
+        });
+
         // --- Tabs ---
         let logRefreshTimer = null;
 
@@ -952,31 +1237,43 @@
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             if (logRefreshTimer) { clearInterval(logRefreshTimer); logRefreshTimer = null; }
+            const tabs = document.querySelectorAll('.tab-btn');
             if (tab === 'catalog') {
-                document.querySelectorAll('.tab-btn')[1].classList.add('active');
+                tabs[1].classList.add('active');
                 document.getElementById('tabCatalog').classList.add('active');
                 loadCatalogSummary();
             } else if (tab === 'dead') {
-                document.querySelectorAll('.tab-btn')[2].classList.add('active');
+                tabs[2].classList.add('active');
                 document.getElementById('tabDead').classList.add('active');
                 loadDeadMovies(1);
             } else if (tab === 'logs') {
-                document.querySelectorAll('.tab-btn')[3].classList.add('active');
+                tabs[3].classList.add('active');
                 document.getElementById('tabLogs').classList.add('active');
                 loadProxyLog();
                 logRefreshTimer = setInterval(() => {
                     if (document.getElementById('logAutoRefresh').checked) loadProxyLog();
                 }, 3000);
+            } else if (tab === 'streams') {
+                tabs[4].classList.add('active');
+                document.getElementById('tabStreams').classList.add('active');
+                loadActiveStreams();
+                logRefreshTimer = setInterval(() => {
+                    if (document.getElementById('streamAutoRefresh').checked) loadActiveStreams();
+                }, 2000);
             } else if (tab === 'health') {
-                document.querySelectorAll('.tab-btn')[4].classList.add('active');
+                tabs[5].classList.add('active');
                 document.getElementById('tabHealth').classList.add('active');
                 loadHealthStatus();
                 loadStreamHealth();
                 logRefreshTimer = setInterval(() => {
                     if (document.getElementById('healthAutoRefresh').checked) { loadHealthStatus(); loadStreamHealth(); }
                 }, 30000);
+            } else if (tab === 'settings') {
+                tabs[6].classList.add('active');
+                document.getElementById('tabSettings').classList.add('active');
+                loadSchedule();
             } else {
-                document.querySelectorAll('.tab-btn')[0].classList.add('active');
+                tabs[0].classList.add('active');
                 document.getElementById('tabBrowse').classList.add('active');
             }
         }
@@ -1026,14 +1323,79 @@
             refreshProviderFilter();
         }
 
-        function refreshProviderFilter() {
-            const sel = document.getElementById('browseProvFilter');
-            const current = sel.value;
-            sel.innerHTML = '<option value="">All Providers</option>';
-            for (const p of allProviders) {
-                sel.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+        const msState = { msLang: new Set(), msCat: new Set(), msProv: new Set() };
+
+        function toggleMs(id) {
+            const drop = document.getElementById(id + 'Drop');
+            const wasOpen = drop.classList.contains('open');
+            document.querySelectorAll('.multi-select-dropdown.open').forEach(d => d.classList.remove('open'));
+            if (!wasOpen) drop.classList.add('open');
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.multi-select')) {
+                document.querySelectorAll('.multi-select-dropdown.open').forEach(d => d.classList.remove('open'));
             }
-            sel.value = current;
+        });
+
+        function msToggleItem(msId, val) {
+            const s = msState[msId];
+            if (s.has(val)) s.delete(val); else s.add(val);
+            msUpdateBtn(msId);
+            loadMovies(1);
+        }
+
+        function msSelectAll(msId) {
+            const drop = document.getElementById(msId + 'Drop');
+            drop.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                msState[msId].add(cb.value);
+                cb.checked = true;
+            });
+            msUpdateBtn(msId);
+            loadMovies(1);
+        }
+
+        function msClearAll(msId) {
+            msState[msId].clear();
+            const drop = document.getElementById(msId + 'Drop');
+            drop.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+            msUpdateBtn(msId);
+            loadMovies(1);
+        }
+
+        function msUpdateBtn(msId) {
+            const btn = document.querySelector(`#${msId} .multi-select-btn`);
+            const count = msState[msId].size;
+            const labels = { msLang: 'Languages', msCat: 'Categories', msProv: 'Providers' };
+            if (count === 0) {
+                btn.innerHTML = 'All ' + labels[msId];
+            } else {
+                btn.innerHTML = `${count} ${labels[msId]}<span class="ms-count">${count}</span>`;
+            }
+        }
+
+        function buildMsDropdown(msId, items) {
+            const drop = document.getElementById(msId + 'Drop');
+            const selected = msState[msId];
+            let html = `<div class="multi-select-actions">
+                <button onclick="event.stopPropagation();msSelectAll('${msId}')">All</button>
+                <button onclick="event.stopPropagation();msClearAll('${msId}')">None</button>
+            </div>`;
+            for (const item of items) {
+                const checked = selected.has(String(item.value)) ? 'checked' : '';
+                html += `<label onclick="event.stopPropagation()">
+                    <input type="checkbox" value="${item.value}" ${checked}
+                           onchange="msToggleItem('${msId}', this.value)">
+                    ${item.label}
+                </label>`;
+            }
+            drop.innerHTML = html;
+            msUpdateBtn(msId);
+        }
+
+        function refreshProviderFilter() {
+            const items = allProviders.map(p => ({ value: String(p.id), label: p.name }));
+            buildMsDropdown('msProv', items);
         }
 
         function renderProviderList() {
@@ -1176,17 +1538,14 @@
         }
 
         function updateBrowseCatFilter() {
-            const sel = document.getElementById('browseCatFilter');
-            const current = sel.value;
-            sel.innerHTML = '<option value="">All Categories</option>';
-            for (const c of allCategories) {
-                sel.innerHTML += `<option value="${c.id}">${c.name} (${c.movie_count.toLocaleString()})</option>`;
-            }
-            sel.value = current;
+            const items = allCategories.map(c => ({ value: String(c.id), label: `${c.name} (${c.movie_count.toLocaleString()})` }));
+            buildMsDropdown('msCat', items);
         }
 
         function browseByCat(catId, catName) {
-            document.getElementById('browseCatFilter').value = catId;
+            msState.msCat.clear();
+            msState.msCat.add(String(catId));
+            msUpdateBtn('msCat');
             loadMovies(1);
         }
 
@@ -1235,19 +1594,16 @@
             const sortBy = document.getElementById('sortBy').value;
             const sortOrder = document.getElementById('sortOrder').value;
             const filterAct = document.getElementById('filterActivated').value;
-            const catFilter = document.getElementById('browseCatFilter').value;
-
             const ps = parseInt(document.getElementById('pageSize').value) || 100;
-            const langFilter = document.getElementById('movieLangFilter').value;
             let url = `/api/movies?page=${currentPage}&page_size=${ps}&sort_by=${sortBy}&sort_order=${sortOrder}`;
             if (search) url += `&search=${encodeURIComponent(search)}`;
             if (filterAct === '1') url += '&activated_only=true';
-            if (langFilter) url += `&language=${encodeURIComponent(langFilter)}`;
-            if (catFilter) url += `&category_id=${catFilter}`;
 
-            const provFilter = document.getElementById('browseProvFilter').value;
-            if (provFilter) {
-                url += `&account_id=${provFilter}`;
+            for (const lang of msState.msLang) url += `&language=${encodeURIComponent(lang)}`;
+            for (const cat of msState.msCat) url += `&category_id=${cat}`;
+
+            if (msState.msProv.size > 0) {
+                for (const prov of msState.msProv) url += `&account_id=${prov}`;
             } else {
                 const selProvs = allProviders.filter(p => p.selected);
                 if (selProvs.length > 0) {
@@ -1275,6 +1631,7 @@
                     <div class="check-overlay">&check;</div>
                     ${m.trailer_key ? '<button class="trailer-btn" onclick="event.stopPropagation();playTrailer(\'' + m.trailer_key + '\')">&#9654;</button>' : ''}
                     <button class="lang-detect-btn" onclick="event.stopPropagation();detectSingleLang(${m.id},this)" title="Detect language">&#127760;</button>
+                    <button class="activate-btn ${m.activated ? 'active' : ''}" onclick="event.stopPropagation();toggleActivate(${m.id},${m.activated ? 1 : 0},this)" title="${m.activated ? 'Deactivate' : 'Activate'}">&#9889;</button>
                     <img src="${m.poster_url || ''}" alt="" loading="lazy"
                          onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
                     <div class="info">
@@ -1331,15 +1688,30 @@
 
         async function activateSelected() {
             if (!selectedMovies.size) return;
-            await fetchJSON('/api/movies/activate', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({movie_ids: [...selectedMovies]})
+            const ids = [...selectedMovies];
+            ids.forEach(id => {
+                const card = document.querySelector(`.movie-card[data-id="${id}"]`);
+                if (card) card.style.opacity = '0.5';
             });
+            try {
+                const res = await fetchJSON('/api/movies/activate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({movie_ids: ids})
+                });
+                if (res.failed_ids && res.failed_ids.length > 0) {
+                    res.failed_ids.forEach(id => {
+                        const card = document.querySelector(`.movie-card[data-id="${id}"]`);
+                        if (card) card.remove();
+                    });
+                    alert(`Activated: ${res.activated || 0}\nFailed (marked dead): ${res.failed_ids.length}`);
+                }
+            } catch(e) { /* fetchJSON already logged */ }
             selectedMovies.clear();
             updateSelectionBar();
             loadMovies(currentPage);
             refreshActivatedCount();
+            refreshStatus();
         }
 
         async function deactivateSelected() {
@@ -1353,6 +1725,7 @@
             updateSelectionBar();
             loadMovies(currentPage);
             refreshActivatedCount();
+            refreshStatus();
         }
 
         function debounceSearch() {
@@ -1523,17 +1896,8 @@
 
         async function refreshLanguageFilter() {
             const data = await fetchJSON('/api/languages');
-            const sel = document.getElementById('movieLangFilter');
-            const current = sel.value;
-            sel.innerHTML = '<option value="">All Languages</option>';
-            for (const lang of data.languages) {
-                const name = getLangName(lang.language);
-                sel.innerHTML += `<option value="${lang.language}">${name} (${lang.cnt})</option>`;
-            }
-            if (data.unknown > 0) {
-                sel.innerHTML += `<option disabled>── ${data.unknown} undetected ──</option>`;
-            }
-            sel.value = current;
+            const items = data.languages.map(l => ({ value: l.language, label: `${getLangName(l.language)} (${l.cnt})` }));
+            buildMsDropdown('msLang', items);
         }
 
         // --- Catalog Summary ---
@@ -1578,7 +1942,7 @@
             }
             if (cats.length) {
                 catTbody.innerHTML = cats.map(c =>
-                    `<tr><td>${c.name} <span class="cat-browse-tag" onclick="switchTab('browse');document.getElementById('browseCatFilter').value='${c.id}';loadMovies(1);">browse</span></td><td class="num">${c.movie_count.toLocaleString()}</td><td class="num" style="color:var(--success)">${(c.activated_count || 0).toLocaleString()}</td></tr>`
+                    `<tr><td>${c.name} <span class="cat-browse-tag" onclick="switchTab('browse');browseByCat('${c.id}','${c.name}');">browse</span></td><td class="num">${c.movie_count.toLocaleString()}</td><td class="num" style="color:var(--success)">${(c.activated_count || 0).toLocaleString()}</td></tr>`
                 ).join('');
             } else {
                 catTbody.innerHTML = '<tr><td colspan="3" class="empty-state">No categories found</td></tr>';
@@ -1632,6 +1996,50 @@
                 btn.innerHTML = '&#127760;';
                 btn.style.background = '';
             }, 2000);
+        }
+
+        // --- Single Activate/Deactivate (card button) ---
+        async function toggleActivate(movieId, isActive, btn) {
+            btn.classList.add('working');
+            const endpoint = isActive ? '/api/movies/deactivate' : '/api/movies/activate';
+            try {
+                const res = await fetchJSON(endpoint, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({movie_ids: [movieId]})
+                });
+                const card = btn.closest('.movie-card');
+                if (isActive) {
+                    const badge = card.querySelector('.activated-badge');
+                    if (badge) badge.remove();
+                    btn.classList.remove('active');
+                    btn.title = 'Activate';
+                    btn.setAttribute('onclick', `event.stopPropagation();toggleActivate(${movieId},0,this)`);
+                } else if (res.failed_ids && res.failed_ids.includes(movieId)) {
+                    card.style.transition = 'opacity 0.3s';
+                    card.style.opacity = '0';
+                    setTimeout(() => card.remove(), 300);
+                    btn.classList.remove('working');
+                    refreshActivatedCount();
+                    return;
+                } else {
+                    const badge = card.querySelector('.activated-badge');
+                    if (!badge) {
+                        const b = document.createElement('div');
+                        b.className = 'activated-badge';
+                        b.textContent = 'ACTIVE';
+                        card.prepend(b);
+                    }
+                    btn.classList.add('active');
+                    btn.title = 'Deactivate';
+                    btn.setAttribute('onclick', `event.stopPropagation();toggleActivate(${movieId},1,this)`);
+                }
+                refreshActivatedCount();
+            } catch (e) {
+                btn.innerHTML = '&#10007;';
+                setTimeout(() => { btn.innerHTML = '&#9889;'; }, 2000);
+            }
+            btn.classList.remove('working');
         }
 
         // --- Dead Movies ---
@@ -1829,7 +2237,8 @@
                 if (e.file_size) meta.push('file:' + formatBytes(e.file_size));
                 if (e.range_start !== undefined) meta.push('range:' + e.range_start + '-' + (e.range_end || ''));
                 if (e.retry_in) meta.push('retry:' + e.retry_in + 's');
-                const movieTag = e.movie_id ? `<span class="log-movie">movie:${e.movie_id}</span>` : '';
+                const idPrefix = e.movie_id ? `[${e.movie_id}] ` : '';
+                const movieTag = e.movie_name ? `<span class="log-movie">${idPrefix}${escapeHtml(e.movie_name)}</span>` : (e.movie_id ? `<span class="log-movie">#${e.movie_id}</span>` : '');
                 const metaStr = meta.length ? `<span class="log-meta">${meta.join(' | ')}</span>` : '';
                 return `<div class="log-entry">
                     <span class="log-ts">${ts}</span>
@@ -1854,17 +2263,35 @@
         }
 
         // --- Health Check ---
+        async function triggerHealthCheck() {
+            try {
+                const btn = document.querySelector('[onclick="triggerHealthCheck()"]');
+                if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
+                const result = await fetchJSON('/api/health/check-now', { method: 'POST' });
+                if (result.status) {
+                    updateHealthCard('bridge', result.status.bridge);
+                    updateHealthCard('dispatcharr', result.status.dispatcharr);
+                    updateHealthCard('plex_vod', result.status.plex_vod);
+                }
+                const logs = await fetchJSON('/api/health/log');
+                renderHealthLog(logs.logs || []);
+                if (btn) { btn.disabled = false; btn.textContent = 'Check Now'; }
+            } catch (e) {
+                console.error('Health check failed:', e);
+                const btn = document.querySelector('[onclick="triggerHealthCheck()"]');
+                if (btn) { btn.disabled = false; btn.textContent = 'Check Now'; }
+            }
+        }
+
         async function loadHealthStatus() {
             try {
                 const status = await fetchJSON('/api/health/status');
                 const logs = await fetchJSON('/api/health/log');
 
-                // Update status cards
                 updateHealthCard('bridge', status.bridge);
                 updateHealthCard('dispatcharr', status.dispatcharr);
-                updateHealthCard('rclone', status.rclone);
+                updateHealthCard('plex_vod', status.plex_vod);
 
-                // Render log
                 renderHealthLog(logs.logs || []);
             } catch (e) {
                 console.error('Health load failed:', e);
@@ -1873,8 +2300,9 @@
         }
 
         function updateHealthCard(component, data) {
-            const statusEl = document.getElementById(`health${component.charAt(0).toUpperCase() + component.slice(1)}`);
-            const timeEl = document.getElementById(`health${component.charAt(0).toUpperCase() + component.slice(1)}Time`);
+            const idPart = component.split('_').map((s, i) => i === 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s.charAt(0).toUpperCase() + s.slice(1)).join('');
+            const statusEl = document.getElementById(`health${idPart}`);
+            const timeEl = document.getElementById(`health${idPart}Time`);
 
             let icon = '-';
             let statusClass = 'unknown';
@@ -1966,14 +2394,285 @@
             setTimeout(() => { loadStreamHealth(); msg.textContent = ''; }, 20000);
         }
 
+        // --- Schedule/Settings ---
+        function _renderReport(entry) {
+            const mins = Math.floor(entry.elapsed / 60);
+            const secs = entry.elapsed % 60;
+            const duration = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+            let html = `<div style="color:#58a6ff;font-weight:600;margin-bottom:0.3rem;">${entry.date}</div>`;
+            html += `<div style="color:#8b949e;margin-bottom:0.4rem;">Completed in ${duration}</div>`;
+            for (const step of entry.steps) {
+                const failed = step.includes('FAILED');
+                const color = failed ? '#f85149' : '#e6edf3';
+                html += `<div style="color:${color};">${step}</div>`;
+            }
+            return html;
+        }
+
+        async function loadSchedule() {
+            const data = await fetchJSON('/api/schedule');
+            document.getElementById('refreshInterval').value = data.refresh_interval_hours || 0;
+            const label = data.refresh_interval_hours ? `Every ${data.refresh_interval_hours} hours` : 'Off';
+            document.getElementById('currentInterval').textContent = label;
+            if (data.last_scheduled_refresh) {
+                const raw = data.last_scheduled_refresh;
+                const d = new Date(raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z');
+                document.getElementById('lastScheduledRefresh').textContent = isNaN(d) ? raw : d.toLocaleString();
+            } else {
+                document.getElementById('lastScheduledRefresh').textContent = 'Never';
+            }
+            const container = document.getElementById('refreshReportContainer');
+            const latestEl = document.getElementById('latestReportBody');
+            const archiveEl = document.getElementById('archiveReportBody');
+            let reports = [];
+            if (data.last_refresh_report) {
+                try { reports = JSON.parse(data.last_refresh_report); } catch(e) { reports = []; }
+            }
+            if (reports.length > 0) {
+                container.style.display = 'block';
+                latestEl.innerHTML = _renderReport(reports[0]);
+                if (reports.length > 1) {
+                    archiveEl.innerHTML = reports.slice(1).map(r =>
+                        `<div style="padding-bottom:0.8rem;margin-bottom:0.8rem;border-bottom:1px solid var(--border,#30363d);">${_renderReport(r)}</div>`
+                    ).join('');
+                } else {
+                    archiveEl.innerHTML = '<div style="color:#8b949e;">No previous reports yet</div>';
+                }
+            } else {
+                container.style.display = 'none';
+            }
+        }
+
+        async function saveSchedule() {
+            const hours = parseInt(document.getElementById('refreshInterval').value);
+            const msg = document.getElementById('scheduleMsg');
+            await fetchJSON('/api/schedule', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({refresh_interval_hours: hours})
+            });
+            const label = hours ? `Every ${hours} hours` : 'Off';
+            document.getElementById('currentInterval').textContent = label;
+            msg.textContent = `Schedule saved: ${label}`;
+            setTimeout(() => { msg.textContent = ''; }, 3000);
+        }
+
+        async function triggerManualRefresh() {
+            const msg = document.getElementById('scheduleMsg');
+            const btn = document.querySelector('button[onclick="triggerManualRefresh()"]');
+            btn.disabled = true;
+            btn.textContent = 'Running...';
+            msg.textContent = 'Refresh started...';
+            const resp = await fetch('/api/sync/refresh', {method: 'POST'});
+            if (resp.status === 409) {
+                msg.textContent = 'Refresh already running';
+                btn.disabled = false;
+                btn.textContent = 'Run Now';
+                return;
+            }
+            msg.textContent = 'Catalog refresh running in background';
+            const poll = setInterval(async () => {
+                const s = await fetchJSON('/api/status');
+                if (s.status === 'idle') {
+                    clearInterval(poll);
+                    msg.textContent = s.message || 'Refresh complete';
+                    btn.disabled = false;
+                    btn.textContent = 'Run Now';
+                    loadSchedule();
+                    refreshStatus();
+                    setTimeout(() => { msg.textContent = ''; }, 5000);
+                } else {
+                    msg.textContent = s.message || 'Refreshing...';
+                }
+            }, 3000);
+        }
+
+        // --- Active Streams ---
+        async function loadActiveStreams() {
+            try {
+                const data = await fetchJSON('/api/streams/active');
+                const container = document.getElementById('streamsContainer');
+                const badge = document.getElementById('streamsBadge');
+                const active = data.streams.filter(s => s.status === 'streaming' || s.status === 'starting');
+
+                if (active.length > 0) {
+                    badge.textContent = active.length;
+                    badge.style.display = 'inline';
+                } else {
+                    badge.style.display = 'none';
+                }
+
+                if (!data.streams.length) {
+                    container.innerHTML = '<div class="empty-state">No active streams. Start playing a movie in Plex to see live connection details here.</div>';
+                    return;
+                }
+
+                container.innerHTML = data.streams.map(s => renderStreamCard(s)).join('');
+            } catch (e) {
+                document.getElementById('streamsContainer').innerHTML = '<div class="empty-state">Failed to load streams</div>';
+            }
+        }
+
+        function renderStreamCard(s) {
+            const statusClass = s.status;
+            const cardClass = s.error ? 'error' : s.finished ? 'complete' : '';
+            const yearStr = s.movie_year ? ` (${s.movie_year})` : '';
+
+            const plexTime = formatDuration(s.plex_time_seconds || 0);
+            const totalTime = formatDuration(s.duration_seconds || 0);
+            const remainTime = formatDuration(s.remaining_seconds || 0);
+
+            const dlSpeed = formatSpeed(s.actual_speed_bps || 0);
+            const targetSpeed = formatSpeed(s.bitrate_bps || 0);
+            const dlPct = s.download_pct || 0;
+            const plexPct = s.plex_pct || 0;
+            const bufferAhead = s.buffer_ahead_secs || 0;
+
+            // Segment statuses
+            let dlDot = 'off', dlLabel = 'Idle', dlDetail = '';
+            if (s.error) {
+                dlDot = 'err'; dlLabel = 'Error';
+                dlDetail = escapeHtml(s.error);
+            } else if (s.finished) {
+                dlDot = 'ok'; dlLabel = 'Complete';
+                dlDetail = `${formatBytes(s.file_size)} downloaded`;
+            } else if (s.started) {
+                dlDot = 'active'; dlLabel = 'Downloading';
+                dlDetail = `${dlSpeed} (target ${targetSpeed})<br>${formatBytes(s.total_downloaded)} / ${formatBytes(s.file_size)} (${dlPct}%)`;
+            } else {
+                dlDot = 'idle'; dlLabel = 'Starting';
+            }
+
+            let provDot = 'off', provLabel = 'Idle', provDetail = '';
+            if (s.error) {
+                provDot = 'err'; provLabel = 'Disconnected';
+                provDetail = 'Connection lost';
+            } else if (s.started && !s.finished) {
+                provDot = 'active'; provLabel = 'Connected';
+                provDetail = `${s.account_name}<br>Bitrate: ${formatSpeed(s.bitrate_bps)} (${s.bitrate_source})`;
+            } else if (s.finished) {
+                provDot = 'ok'; provLabel = 'Done';
+                provDetail = `${s.account_name}<br>Delivered ${formatBytes(s.file_size)}`;
+            }
+
+            let plexDot = 'off', plexLabel = 'Idle', plexDetail = '';
+            const plexIdle = s.plex_idle_seconds || 0;
+            if (s.error) {
+                plexDot = 'err'; plexLabel = 'Stopped';
+            } else if (plexIdle < 10) {
+                plexDot = 'active'; plexLabel = 'Playing';
+                plexDetail = `Position: ${formatBytes(s.plex_position)}<br>Buffer: ${bufferAhead}s ahead`;
+            } else if (plexIdle < 60) {
+                plexDot = 'idle'; plexLabel = 'Buffering';
+                plexDetail = `Last read ${plexIdle}s ago<br>Buffer: ${bufferAhead}s ahead`;
+            } else {
+                plexDot = 'idle'; plexLabel = `Idle (${plexIdle}s)`;
+                plexDetail = `Last read ${plexIdle}s ago`;
+            }
+
+            return `<div class="stream-card ${cardClass}">
+                <div class="stream-card-header">
+                    <div>
+                        <span class="stream-movie-title">${escapeHtml(s.movie_name)}${yearStr}</span>
+                        <span class="stream-movie-meta">ID: ${s.movie_id}</span>
+                    </div>
+                    <span class="stream-status-badge ${statusClass}">${s.status}</span>
+                </div>
+                <div class="stream-time-bar">
+                    <span class="time">${plexTime}</span>
+                    <span style="color:var(--text-muted)">/</span>
+                    <span class="time">${totalTime}</span>
+                    <span class="remaining">(${remainTime} remaining)</span>
+                    <span style="margin-left:auto;font-size:0.72rem;color:var(--text-muted);">Streaming for ${formatDuration(s.age_seconds || 0)}</span>
+                </div>
+                <div class="stream-progress">
+                    <div class="stream-progress-download" style="width:${dlPct}%"></div>
+                    <div class="stream-progress-plex" style="width:${plexPct}%"></div>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:var(--text-muted);margin-bottom:0.75rem;">
+                    <span>Plex: ${plexPct}%</span>
+                    <span>Downloaded: ${dlPct}%</span>
+                </div>
+                <div class="stream-segments">
+                    <div class="stream-segment">
+                        <div class="segment-title">Bridge &rarr; Dispatcharr</div>
+                        <div class="segment-status"><span class="dot ${dlDot}"></span> ${dlLabel}</div>
+                        <div class="segment-detail">${dlDetail}</div>
+                    </div>
+                    <div class="stream-segment">
+                        <div class="segment-title">Dispatcharr &rarr; Provider</div>
+                        <div class="segment-status"><span class="dot ${provDot}"></span> ${provLabel}</div>
+                        <div class="segment-detail">${provDetail}</div>
+                    </div>
+                    <div class="stream-segment">
+                        <div class="segment-title">Plex &rarr; Bridge</div>
+                        <div class="segment-status"><span class="dot ${plexDot}"></span> ${plexLabel}</div>
+                        <div class="segment-detail">${plexDetail}</div>
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        function formatDuration(secs) {
+            if (!secs || secs <= 0) return '0:00';
+            const h = Math.floor(secs / 3600);
+            const m = Math.floor((secs % 3600) / 60);
+            const s = Math.floor(secs % 60);
+            if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+            return `${m}:${String(s).padStart(2,'0')}`;
+        }
+
+        function formatSpeed(bps) {
+            if (!bps) return '0 KB/s';
+            if (bps >= 1048576) return (bps / 1048576).toFixed(1) + ' MB/s';
+            return Math.round(bps / 1024) + ' KB/s';
+        }
+
+        // Refresh stream badge on status poll
+        async function refreshStreamBadge() {
+            try {
+                const data = await fetchJSON('/api/streams/active');
+                const badge = document.getElementById('streamsBadge');
+                const active = data.streams.filter(s => s.status === 'streaming' || s.status === 'starting');
+                if (active.length > 0) {
+                    badge.textContent = active.length;
+                    badge.style.display = 'inline';
+                } else {
+                    badge.style.display = 'none';
+                }
+            } catch (e) {}
+        }
+
+        async function refreshVpnIp() {
+            try {
+                const d = await fetchJSON('/api/vpn-ip');
+                const el = document.getElementById('vpnIpDisplay');
+                if (d.ip) {
+                    el.textContent = 'Dispatcharr IP: ' + d.ip;
+                    el.title = d.city && d.country ? d.city + ', ' + d.country : '';
+                    el.style.color = '#58a6ff';
+                } else {
+                    el.textContent = 'Dispatcharr IP: unavailable';
+                    el.style.color = '#f85149';
+                }
+            } catch(e) {
+                document.getElementById('vpnIpDisplay').textContent = 'Dispatcharr IP: error';
+                document.getElementById('vpnIpDisplay').style.color = '#f85149';
+            }
+        }
+
         // --- Init ---
         fetchJSON('/version').then(d => document.getElementById('appVersion').textContent = 'v' + d.version);
         refreshStatus();
+        refreshVpnIp();
+        setInterval(refreshVpnIp, 60000);
         refreshProviders();
         refreshCategories();
         refreshActivatedCount();
         refreshLanguageFilter();
         refreshDeadBadge();
+        refreshStreamBadge();
+        setInterval(refreshStreamBadge, 10000);
         loadMovies(1);
     </script>
 </body>

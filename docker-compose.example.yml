@@ -1,7 +1,6 @@
 services:
   vod-plex-bridge:
-    image: vod-plex-bridge:latest
-    pull_policy: never
+    build: .
     container_name: vod-plex-bridge
     restart: unless-stopped
     ports:
@@ -12,9 +11,7 @@ services:
       - DB_PATH=/data/vod_bridge.db
       - CATEGORY_MAPPING_FILE=/data/category_mapping.json
       - STREAM_MAPPING_FILE=/data/stream_mapping.json
-      - DISPATCHARR_XC_USERNAME=${DISPATCHARR_XC_USERNAME}
-      - DISPATCHARR_XC_PASSWORD=${DISPATCHARR_XC_PASSWORD}
       - STRM_OUTPUT_DIR=/plex-vod/Movies
     volumes:
-      - ${DATA_DIR:-/etc/docker/plexbridge/data}:/data
-      - ${PLEX_VOD_DIR:-/mnt/media50/plex-vod}:/plex-vod
+      - ${DATA_DIR:-./data}:/data
+      - ${PLEX_VOD_DIR:-./plex-vod}:/plex-vod

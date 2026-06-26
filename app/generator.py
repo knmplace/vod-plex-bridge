@@ -165,7 +165,7 @@ async def generate_strm_files():
         logger.info(f"Generated {generated} STRM files, removed {len(stale_dirs)} stale directories")
         return generated
     finally:
-        await db.close()
+        pass
 
 
 def build_nfo(movie) -> str:

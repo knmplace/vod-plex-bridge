@@ -39,6 +39,20 @@ async def _upsert_movie(db, movie):
 
     trailer_key = custom.get("youtube_trailer") or custom.get("trailer") or None
 
+    new_uuid = movie["uuid"]
+    movie_id = movie["id"]
+
+    row = await db.execute("SELECT uuid FROM movies WHERE id = ?", (movie_id,))
+    existing = await row.fetchone()
+    if existing and existing["uuid"] and existing["uuid"] != new_uuid:
+        await db.execute(
+            "UPDATE movies SET header_data = NULL, header_size = 0, "
+            "tail_data = NULL, tail_size = 0, tail_offset = 0, file_size = NULL "
+            "WHERE id = ?",
+            (movie_id,),
+        )
+        logger.info("UUID changed for movie %d (%s -> %s), cleared caches", movie_id, existing["uuid"], new_uuid)
+
     await db.execute("""
         INSERT INTO movies (id, uuid, name, year, rating, genre, description,
                            tmdb_id, imdb_id, poster_url, cast_info, trailer_key, synced_at)
@@ -51,8 +65,8 @@ async def _upsert_movie(db, movie):
             trailer_key=excluded.trailer_key,
             synced_at=excluded.synced_at
     """, (
-        movie["id"],
-        movie["uuid"],
+        movie_id,
+        new_uuid,
         movie.get("name", ""),
         movie.get("year"),
         float(movie.get("rating") or 0),
@@ -230,7 +244,7 @@ async def scrape_catalog(max_movies: int = 0, category_ids: list = None, account
         _cancel = False
         return total_synced
     finally:
-        await db.close()
+        pass
 
 
 async def enrich_from_tmdb(batch_size: int = 50):
@@ -312,4 +326,4 @@ async def enrich_from_tmdb(batch_size: int = 50):
         _cancel = False
         return enriched
     finally:
-        await db.close()
+        pass

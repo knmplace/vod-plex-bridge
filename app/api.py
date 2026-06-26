@@ -5,21 +5,44 @@ import re
 import shutil
 import httpx
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN
+from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN, GLUETUN_API_URL
 from database import get_db
 from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled
 from generator import generate_strm_files, sanitize_filename
-from stream_mapper import apply_stream_mapping_to_db, load_stream_mapping, pick_stream_for_account, get_xc_url
+from stream_mapper import apply_stream_mapping_to_db, load_stream_mapping, pick_stream_for_account
 from proxy import probe_file_size, get_proxy_log, get_all_pipes, _log_event
 from health import run_health_checks, get_health_status, get_health_log, health_check_scheduler
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
+_refresh_running = False
 
-DEAD_SCAN_INTERVAL_HOURS = 12
+
+async def _probe_stream_status(url: str, headers: dict) -> httpx.Response:
+    """Probe a stream URL, following only the first 301 if it stays on Dispatcharr's domain."""
+    disp_host = urlparse(DISPATCHARR_URL).netloc.split(":")[0]
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(connect=10, read=15, write=10, pool=10),
+        follow_redirects=False,
+    ) as client:
+        resp = await client.get(url, headers=headers)
+        if resp.status_code in (301, 302):
+            location = resp.headers.get("location", "")
+            if location.startswith("/"):
+                base = urlparse(DISPATCHARR_URL)
+                location = f"{base.scheme}://{base.netloc}{location}"
+            redirect_host = urlparse(location).netloc.split(":")[0]
+            if redirect_host != disp_host:
+                logger.warning("Probe blocked redirect to external host %s (expected %s)", redirect_host, disp_host)
+                return resp
+            resp = await client.get(location, headers=headers)
+        return resp
+
+MAINTENANCE_INTERVAL_HOURS = 24
 
 
 @router.get("/status")
@@ -30,7 +53,18 @@ async def get_status():
         state = await row.fetchone()
         return dict(state)
     finally:
-        await db.close()
+        pass
+
+
+@router.get("/vpn-ip")
+async def get_vpn_ip():
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(f"{GLUETUN_API_URL}/v1/publicip/ip")
+            data = r.json()
+            return {"ip": data.get("public_ip", ""), "country": data.get("country", ""), "city": data.get("city", "")}
+    except Exception:
+        return {"ip": "", "country": "", "city": ""}
 
 
 @router.get("/providers")
@@ -48,7 +82,7 @@ async def list_providers():
 
         return accounts
     finally:
-        await db.close()
+        pass
 
 
 @router.post("/providers/select")
@@ -66,7 +100,7 @@ async def select_provider(request: Request):
         await db.commit()
         return {"status": "ok"}
     finally:
-        await db.close()
+        pass
 
 
 @router.post("/providers/deselect")
@@ -81,7 +115,7 @@ async def deselect_provider(request: Request):
         await db.commit()
         return {"status": "ok"}
     finally:
-        await db.close()
+        pass
 
 
 @router.get("/categories")
@@ -110,7 +144,7 @@ async def list_categories(account_id: int = 0):
 
         return cats
     finally:
-        await db.close()
+        pass
 
 
 @router.post("/categories/select")
@@ -129,7 +163,7 @@ async def select_category(request: Request):
         await db.commit()
         return {"status": "ok"}
     finally:
-        await db.close()
+        pass
 
 
 @router.post("/categories/deselect")
@@ -145,7 +179,7 @@ async def deselect_category(request: Request):
         await db.commit()
         return {"status": "ok"}
     finally:
-        await db.close()
+        pass
 
 
 DUMP_TRIGGER_FILE = "/data/.dump-trigger"
@@ -189,7 +223,7 @@ async def _load_categories_with_dump():
         )
         await db.commit()
     finally:
-        await db.close()
+        pass
 
     await _trigger_dump_regen()
     await _load_categories()
@@ -304,12 +338,14 @@ async def _load_categories():
         acct_row = await db.execute("SELECT COUNT(*) as cnt FROM m3u_accounts")
         acct_count = (await acct_row.fetchone())["cnt"]
 
-        await db.execute(
-            "UPDATE sync_state SET status = 'idle', message = ? WHERE id = 1",
-            (f"Loaded {cat_count} categories, {map_count} mappings, {acct_count} providers",),
-        )
-        await db.commit()
+        if not _refresh_running:
+            await db.execute(
+                "UPDATE sync_state SET status = 'idle', message = ? WHERE id = 1",
+                (f"Loaded {cat_count} categories, {map_count} mappings, {acct_count} providers",),
+            )
+            await db.commit()
         logger.info(f"Loaded {cat_count} categories, {map_count} movie mappings, {acct_count} providers")
+        return {"categories": cat_count, "mappings": map_count, "providers": acct_count}
     except Exception as e:
         logger.error(f"Failed to load categories: {e}")
         await db.execute(
@@ -317,24 +353,29 @@ async def _load_categories():
             (str(e)[:500],),
         )
         await db.commit()
+        raise
     finally:
-        await db.close()
+        pass
+
+
+async def _load_categories_counted() -> dict:
+    return await _load_categories()
 
 
 @router.get("/movies")
 async def list_movies(
     request: Request,
     genre: str = "",
-    category_id: int = 0,
     page: int = 1,
     page_size: int = 20,
     sort_by: str = "rating",
     sort_order: str = "desc",
     search: str = "",
     activated_only: bool = False,
-    language: str = "",
 ):
     account_ids = [int(x) for x in request.query_params.getlist("account_id") if x]
+    category_ids = [int(x) for x in request.query_params.getlist("category_id") if x]
+    languages = [x for x in request.query_params.getlist("language") if x]
 
     db = await get_db()
     try:
@@ -353,9 +394,10 @@ async def list_movies(
             conditions.append(f"m.account_id IN ({ph})")
             params.extend(account_ids)
 
-        if category_id:
-            conditions.append("m.id IN (SELECT movie_id FROM movie_categories WHERE category_id = ?)")
-            params.append(category_id)
+        if category_ids:
+            ph = ",".join("?" for _ in category_ids)
+            conditions.append(f"m.id IN (SELECT movie_id FROM movie_categories WHERE category_id IN ({ph}))")
+            params.extend(category_ids)
 
         if genre:
             conditions.append("m.genre LIKE ?")
@@ -365,9 +407,10 @@ async def list_movies(
             conditions.append("m.name LIKE ?")
             params.append(f"%{search}%")
 
-        if language:
-            conditions.append("m.language = ?")
-            params.append(language)
+        if languages:
+            ph = ",".join("?" for _ in languages)
+            conditions.append(f"m.language IN ({ph})")
+            params.extend(languages)
 
         where = " AND ".join(conditions)
 
@@ -385,11 +428,11 @@ async def list_movies(
         movies = [dict(r) for r in await rows.fetchall()]
         return {"count": count, "page": page, "page_size": page_size, "results": movies}
     finally:
-        await db.close()
+        pass
 
 
-HEADER_FETCH_SIZE = 20 * 1024 * 1024  # 20MB head cache
-TAIL_FETCH_SIZE = 20 * 1024 * 1024   # 20MB tail cache
+HEADER_FETCH_SIZE = 8 * 1024 * 1024   # 8MB head — gives pipe time to build buffer ahead of Plex
+TAIL_FETCH_SIZE = 256 * 1024          # 256KB tail — moov atom / seek table
 
 
 @router.get("/proxy-log")
@@ -408,6 +451,42 @@ async def debug_connections():
     }
 
 
+@router.get("/streams/active")
+async def active_streams():
+    pipes = get_all_pipes()
+    if not pipes:
+        return {"streams": []}
+    movie_ids = list(pipes.keys())
+    db = await get_db()
+    try:
+        placeholders = ",".join("?" for _ in movie_ids)
+        rows = await db.execute(
+            f"SELECT id, name, year, account_name, content_type FROM movies WHERE id IN ({placeholders})",
+            movie_ids,
+        )
+        movies = {r["id"]: dict(r) for r in await rows.fetchall()}
+    finally:
+        pass
+    streams = []
+    for mid, pipe in pipes.items():
+        movie = movies.get(mid, {})
+        entry = {**pipe}
+        entry["movie_name"] = movie.get("name", f"Movie {mid}")
+        entry["movie_year"] = movie.get("year")
+        entry["account_name"] = movie.get("account_name", "Unknown")
+        entry["content_type"] = movie.get("content_type", "video/x-matroska")
+        if pipe["started"] and not pipe["finished"] and not pipe["error"]:
+            entry["status"] = "streaming"
+        elif pipe["finished"]:
+            entry["status"] = "complete"
+        elif pipe["error"]:
+            entry["status"] = "error"
+        else:
+            entry["status"] = "starting"
+        streams.append(entry)
+    return {"streams": streams}
+
+
 @router.post("/movies/activate")
 async def activate_movies(request: Request):
     data = await request.json()
@@ -417,8 +496,6 @@ async def activate_movies(request: Request):
 
     db = await get_db()
     try:
-        # Refresh stream_ids from current mapping file before activation
-        # Picks the stream_id matching the movie's current provider (account_id)
         mapping = load_stream_mapping()
         updated_ids = 0
         for movie_id in movie_ids:
@@ -452,29 +529,40 @@ async def activate_movies(request: Request):
             logger.info(f"Refreshed stream_ids for {updated_ids} movies before activation")
 
         placeholders = ",".join("?" for _ in movie_ids)
-        await db.execute(
-            f"UPDATE movies SET activated = 1, stream_dead = 0, stream_dead_count = 0 WHERE id IN ({placeholders})",
+        needs_header = await db.execute(
+            f"SELECT id, uuid, stream_id, account_id, content_type, name, year FROM movies WHERE id IN ({placeholders}) AND stream_id IS NOT NULL",
             movie_ids,
         )
-        await db.commit()
+        to_validate = [dict(r) for r in await needs_header.fetchall()]
+
+        activated_ids = []
+        failed_ids = []
+
+        if to_validate:
+            activated_ids, failed_ids = await _fetch_headers_validated(to_validate)
+
+        no_stream = [mid for mid in movie_ids if mid not in {m["id"] for m in to_validate}]
+        if no_stream:
+            failed_ids.extend(no_stream)
+
         count_row = await db.execute("SELECT COUNT(*) as cnt FROM movies WHERE activated = 1")
         total = (await count_row.fetchone())["cnt"]
 
-        needs_header = await db.execute(
-            f"SELECT id, uuid, stream_id, account_id, content_type, name, year FROM movies WHERE id IN ({placeholders}) AND (header_data IS NULL OR header_size = 0) AND stream_id IS NOT NULL",
-            movie_ids,
-        )
-        to_fetch = [dict(r) for r in await needs_header.fetchall()]
-        if to_fetch:
-            asyncio.create_task(_fetch_headers(to_fetch))
-
-        return {"status": "ok", "activated": len(movie_ids), "total_activated": total, "headers_queued": len(to_fetch), "stream_ids_refreshed": updated_ids}
+        return {
+            "status": "ok",
+            "activated": len(activated_ids),
+            "failed": len(failed_ids),
+            "activated_ids": activated_ids,
+            "failed_ids": failed_ids,
+            "total_activated": total,
+            "stream_ids_refreshed": updated_ids,
+        }
     finally:
-        await db.close()
+        pass
 
 
 async def _refresh_activated_stream_ids():
-    """Periodically refresh stream_ids for activated movies against current mapping file."""
+    """Refresh stream_ids for activated movies. If stream_id changed, re-fetch head/tail sequentially."""
     mapping = load_stream_mapping()
     if not mapping:
         logger.warning("Cannot refresh stream_ids: no mapping file")
@@ -482,12 +570,16 @@ async def _refresh_activated_stream_ids():
 
     db = await get_db()
     try:
-        rows = await db.execute("SELECT id, account_id FROM movies WHERE activated = 1")
+        rows = await db.execute(
+            "SELECT id, account_id, stream_id, uuid, content_type, name, year FROM movies WHERE activated = 1"
+        )
         activated = [dict(r) for r in await rows.fetchall()]
 
         updated = 0
+        needs_refetch = []
         for movie in activated:
             movie_id = movie["id"]
+            old_stream_id = movie["stream_id"]
             if movie_id in mapping:
                 entries = mapping[movie_id]
                 info = pick_stream_for_account(entries, movie["account_id"])
@@ -500,20 +592,42 @@ async def _refresh_activated_stream_ids():
                 account_id = info.get("account_id")
                 account_name = info.get("account_name", "")
 
-                result = await db.execute(
-                    "UPDATE movies SET stream_id = ?, content_type = ?, account_id = ?, account_name = ? "
-                    "WHERE id = ? AND stream_id != ?",
-                    (stream_id, content_type, account_id, account_name, movie_id, stream_id),
-                )
-                if result.rowcount > 0:
+                if old_stream_id and str(old_stream_id) != str(stream_id):
+                    await db.execute(
+                        "UPDATE movies SET stream_id = ?, content_type = ?, account_id = ?, account_name = ? WHERE id = ?",
+                        (stream_id, content_type, account_id, account_name, movie_id),
+                    )
                     updated += 1
-                    logger.info(f"Refreshed stream_id for activated movie {movie_id}")
+                    needs_refetch.append({
+                        "id": movie_id,
+                        "uuid": movie["uuid"],
+                        "stream_id": stream_id,
+                        "content_type": content_type,
+                        "name": movie["name"],
+                        "year": movie["year"],
+                        "account_id": account_id,
+                    })
+                    logger.info("Stream_id changed for activated movie %d (%s): %s -> %s",
+                                movie_id, movie["name"], old_stream_id, stream_id)
+                else:
+                    result = await db.execute(
+                        "UPDATE movies SET stream_id = ?, content_type = ?, account_id = ?, account_name = ? "
+                        "WHERE id = ? AND (stream_id IS NULL OR stream_id != ?)",
+                        (stream_id, content_type, account_id, account_name, movie_id, stream_id),
+                    )
+                    if result.rowcount > 0:
+                        updated += 1
 
         if updated > 0:
             await db.commit()
-            logger.info(f"Refreshed stream_ids for {updated} activated movies")
+            logger.info("Refreshed stream_ids for %d activated movies", updated)
 
-        # Backfill bitrate for activated movies missing it
+        if needs_refetch:
+            logger.info("Re-fetching head/tail for %d activated movies with changed stream_ids (sequential)...",
+                        len(needs_refetch))
+            activated_ids, failed_ids = await _fetch_headers_validated(needs_refetch)
+            logger.info("Stream_id refresh re-fetch: %d ok, %d failed", len(activated_ids), len(failed_ids))
+
         missing_rows = await db.execute(
             "SELECT id FROM movies WHERE activated = 1 AND stream_bitrate_kbps IS NULL LIMIT 50"
         )
@@ -526,7 +640,7 @@ async def _refresh_activated_stream_ids():
 
         return updated
     finally:
-        await db.close()
+        pass
 
 
 CATALOG_VALIDATE_BATCH = 500
@@ -550,7 +664,7 @@ async def _deactivate_dead_movie(movie_id: int, name: str, year: int | None, rea
         await db.execute("UPDATE sync_state SET active_strm_count = ? WHERE id = 1", (strm_count,))
         await db.commit()
     finally:
-        await db.close()
+        pass
 
     plex_removed = await _plex_remove_movies([movie_id])
     logger.warning("Auto-deactivated movie %d (%s) — %s. Plex removed: %d", movie_id, name, reason, plex_removed)
@@ -570,7 +684,7 @@ async def _validate_catalog_batch():
         )
         batch = [dict(r) for r in await rows.fetchall()]
     finally:
-        await db.close()
+        pass
 
     if not batch:
         return
@@ -583,23 +697,11 @@ async def _validate_catalog_batch():
         uuid = movie["uuid"]
         stream_id = movie["stream_id"]
 
-        account_id = movie.get("account_id")
-        content_type = movie.get("content_type", "video/x-matroska")
-        ext = "mp4" if content_type == "video/mp4" else "mkv"
-        xc_path = get_xc_url(movie_id, ext)
-
-        if xc_path:
-            upstream_url = f"{DISPATCHARR_URL}{xc_path}"
-            req_headers = {"Range": "bytes=0-0"}
-        else:
-            upstream_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
-            req_headers = {"Range": "bytes=0-0"}
-            if DISPATCHARR_API_KEY:
-                req_headers["X-API-Key"] = DISPATCHARR_API_KEY
+        upstream_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
+        req_headers = {"Range": "bytes=0-0"}
 
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=15, write=10, pool=10), follow_redirects=True) as client:
-                resp = await client.get(upstream_url, headers=req_headers)
+            resp = await _probe_stream_status(upstream_url, req_headers)
 
             db2 = await get_db()
             try:
@@ -629,7 +731,7 @@ async def _validate_catalog_batch():
                     )
                     await db2.commit()
             finally:
-                await db2.close()
+                pass
         except Exception as e:
             logger.warning("Catalog validation: error checking movie %d: %s", movie_id, e)
 
@@ -645,7 +747,7 @@ async def _validate_catalog_full():
         count_row = await db.execute("SELECT COUNT(*) as cnt FROM movies WHERE activated = 1 AND stream_dead = 0 AND stream_id IS NOT NULL")
         total = (await count_row.fetchone())["cnt"]
     finally:
-        await db.close()
+        pass
 
     logger.info("Full catalog validation started: %d activated movies to check", total)
     checked = 0
@@ -663,7 +765,7 @@ async def _validate_catalog_full():
             )
             batch = [dict(r) for r in await rows.fetchall()]
         finally:
-            await db.close()
+            pass
 
         if not batch:
             break
@@ -676,23 +778,11 @@ async def _validate_catalog_full():
             uuid = movie["uuid"]
             stream_id = movie["stream_id"]
 
-            account_id = movie.get("account_id")
-            content_type = movie.get("content_type", "video/x-matroska")
-            ext = "mp4" if content_type == "video/mp4" else "mkv"
-            xc_path = get_xc_url(movie_id, ext)
-
-            if xc_path:
-                upstream_url = f"{DISPATCHARR_URL}{xc_path}"
-                req_headers = {"Range": "bytes=0-0"}
-            else:
-                upstream_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
-                req_headers = {"Range": "bytes=0-0"}
-                if DISPATCHARR_API_KEY:
-                    req_headers["X-API-Key"] = DISPATCHARR_API_KEY
+            upstream_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
+            req_headers = {"Range": "bytes=0-0"}
 
             try:
-                async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=15, write=10, pool=10), follow_redirects=True) as client:
-                    resp = await client.get(upstream_url, headers=req_headers)
+                resp = await _probe_stream_status(upstream_url, req_headers)
 
                 db2 = await get_db()
                 try:
@@ -722,7 +812,7 @@ async def _validate_catalog_full():
                         )
                     await db2.commit()
                 finally:
-                    await db2.close()
+                    pass
             except Exception as e:
                 logger.warning("Full validation: error checking movie %d: %s", movie_id, e)
 
@@ -748,7 +838,7 @@ async def _resurrect_dead_streams():
         )
         batch = [dict(r) for r in await rows.fetchall()]
     finally:
-        await db.close()
+        pass
 
     if not batch:
         return
@@ -762,23 +852,11 @@ async def _resurrect_dead_streams():
         uuid = movie["uuid"]
         stream_id = movie["stream_id"]
 
-        account_id = movie.get("account_id")
-        content_type = movie.get("content_type", "video/x-matroska")
-        ext = "mp4" if content_type == "video/mp4" else "mkv"
-        xc_path = get_xc_url(movie_id, ext)
-
-        if xc_path:
-            upstream_url = f"{DISPATCHARR_URL}{xc_path}"
-            req_headers = {"Range": "bytes=0-0"}
-        else:
-            upstream_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
-            req_headers = {"Range": "bytes=0-0"}
-            if DISPATCHARR_API_KEY:
-                req_headers["X-API-Key"] = DISPATCHARR_API_KEY
+        upstream_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
+        req_headers = {"Range": "bytes=0-0"}
 
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=15, write=10, pool=10), follow_redirects=True) as client:
-                resp = await client.get(upstream_url, headers=req_headers)
+            resp = await _probe_stream_status(upstream_url, req_headers)
 
             db2 = await get_db()
             try:
@@ -796,7 +874,7 @@ async def _resurrect_dead_streams():
                     )
                 await db2.commit()
             finally:
-                await db2.close()
+                pass
         except Exception as e:
             logger.warning("Resurrection check: error checking movie %d: %s", movie_id, e)
 
@@ -853,33 +931,172 @@ async def _fetch_provider_info(movie_id: int):
                     await db.commit()
                     logger.info("Provider info for movie %d: bitrate=%s kbps, duration=%ss", movie_id, bitrate, duration)
                 finally:
-                    await db.close()
+                    pass
             return {"bitrate": bitrate, "duration": duration}
     except Exception as e:
         logger.warning("Failed to fetch provider info for movie %d: %s", movie_id, e)
         return None
 
 
+async def _fetch_headers_validated(movies: list[dict]) -> tuple[list[int], list[int]]:
+    """Fetch head+tail for each movie. Returns (activated_ids, failed_ids).
+    Only marks movie activated=1 if head bytes are successfully retrieved.
+    Marks stream_dead=1 on failure."""
+    from proxy import _resolve_session as resolve_session
+    activated_ids = []
+    failed_ids = []
+
+    for i, movie in enumerate(movies):
+        if i > 0:
+            await asyncio.sleep(5)
+        movie_id = movie["id"]
+        movie_name = movie.get("name", "")
+        try:
+            uuid = movie["uuid"]
+            stream_id = movie["stream_id"]
+            content_type = movie.get("content_type", "video/x-matroska")
+
+            await _fetch_provider_info(movie_id)
+
+            base_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
+
+            result = await resolve_session(base_url, movie_id)
+            if not result:
+                logger.warning("Activate: session resolve failed for movie %d (%s)", movie_id, movie_name)
+                _log_event("error", movie_id, "Activate failed: session resolve failed", movie_name=movie_name)
+                await _mark_activation_dead(movie_id, movie_name, movie.get("year"), "session resolve failed")
+                failed_ids.append(movie_id)
+                continue
+
+            session_url, session_id = result
+
+            disp_host = urlparse(DISPATCHARR_URL).netloc.split(":")[0]
+            session_host = urlparse(session_url).netloc.split(":")[0]
+            if session_host != disp_host:
+                logger.error("Activate: movie %d resolved to external host %s — BLOCKED", movie_id, session_host)
+                _log_event("error", movie_id, f"Activate blocked: external host {session_host}", movie_name=movie_name)
+                failed_ids.append(movie_id)
+                continue
+
+            req_headers = {"Range": f"bytes=0-{HEADER_FETCH_SIZE - 1}"}
+
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(connect=30, read=60, write=30, pool=30),
+                follow_redirects=False,
+            ) as client:
+                resp = await client.get(session_url, headers=req_headers)
+                if resp.status_code >= 400:
+                    logger.warning("Activate: header fetch failed for movie %d (%s): HTTP %d", movie_id, movie_name, resp.status_code)
+                    _log_event("error", movie_id, f"Activate failed: HTTP {resp.status_code}", movie_name=movie_name)
+                    await _mark_activation_dead(movie_id, movie_name, movie.get("year"), f"header fetch HTTP {resp.status_code}")
+                    failed_ids.append(movie_id)
+                    continue
+
+                header_bytes = resp.content
+                if not header_bytes or len(header_bytes) == 0:
+                    logger.warning("Activate: empty header response for movie %d (%s)", movie_id, movie_name)
+                    _log_event("error", movie_id, "Activate failed: empty response", movie_name=movie_name)
+                    await _mark_activation_dead(movie_id, movie_name, movie.get("year"), "empty header response")
+                    failed_ids.append(movie_id)
+                    continue
+
+                file_size = None
+                cr = resp.headers.get("content-range", "")
+                if "/" in cr:
+                    total = cr.split("/")[-1]
+                    if total.isdigit():
+                        file_size = int(total)
+
+                tail_bytes = None
+                tail_offset = 0
+                if file_size and file_size > TAIL_FETCH_SIZE:
+                    tail_offset = file_size - TAIL_FETCH_SIZE
+                    tail_headers = {"Range": f"bytes={tail_offset}-{file_size - 1}"}
+                    try:
+                        tail_resp = await client.get(session_url, headers=tail_headers)
+                        if tail_resp.status_code < 400:
+                            tail_bytes = tail_resp.content
+                        else:
+                            logger.warning("Activate: tail fetch failed for movie %d: HTTP %d", movie_id, tail_resp.status_code)
+                    except Exception as te:
+                        logger.warning("Activate: tail fetch error for movie %d: %s", movie_id, te)
+
+                db = await get_db()
+                try:
+                    await db.execute(
+                        "UPDATE movies SET activated = 1, stream_dead = 0, stream_dead_count = 0, "
+                        "header_data = ?, header_size = ?, "
+                        "tail_data = ?, tail_size = ?, tail_offset = ?, "
+                        "file_size = CASE WHEN file_size IS NULL OR file_size = 0 THEN ? ELSE file_size END "
+                        "WHERE id = ?",
+                        (header_bytes, len(header_bytes), tail_bytes, len(tail_bytes) if tail_bytes else 0,
+                         tail_offset, file_size, movie_id),
+                    )
+                    await db.commit()
+                    activated_ids.append(movie_id)
+                    logger.info("Activated movie %d (%s): head=%d bytes, tail=%d bytes, file_size=%s",
+                                movie_id, movie_name, len(header_bytes), len(tail_bytes) if tail_bytes else 0, file_size)
+                    _log_event("info", movie_id, "Activated — head+tail cached",
+                               movie_name=movie_name,
+                               head_bytes=len(header_bytes), tail_bytes=len(tail_bytes) if tail_bytes else 0, file_size=file_size)
+                finally:
+                    pass
+
+        except Exception as e:
+            logger.error("Activate error for movie %d (%s): %s", movie_id, movie_name, e)
+            _log_event("error", movie_id, f"Activate exception: {e}", movie_name=movie_name)
+            await _mark_activation_dead(movie_id, movie_name, movie.get("year"), str(e))
+            failed_ids.append(movie_id)
+
+    return activated_ids, failed_ids
+
+
+async def _mark_activation_dead(movie_id: int, name: str, year: int | None, reason: str):
+    """Mark a movie as dead during activation — deactivate and clean up STRM/Plex if it was previously activated."""
+    db = await get_db()
+    try:
+        row = await db.execute("SELECT activated FROM movies WHERE id = ?", (movie_id,))
+        prev = await row.fetchone()
+        was_activated = prev and prev["activated"] == 1
+
+        await db.execute(
+            "UPDATE movies SET stream_dead = 1, stream_dead_count = 1, activated = 0, "
+            "header_data = NULL, header_size = 0, tail_data = NULL, tail_size = 0, "
+            "tail_offset = 0, stream_dead_checked_at = ? WHERE id = ?",
+            (datetime.now(timezone.utc).isoformat(), movie_id),
+        )
+        await db.commit()
+    finally:
+        pass
+
+    if was_activated:
+        movie_info = {"name": name, "year": year}
+        folder_name = _movie_folder_name(movie_info)
+        live_folder = os.path.join(STRM_OUTPUT_DIR, folder_name)
+        dead_folder = os.path.join(DEAD_DIR, folder_name)
+        if os.path.isdir(live_folder):
+            os.makedirs(DEAD_DIR, exist_ok=True)
+            shutil.move(live_folder, dead_folder)
+            logger.info("Moved STRM to dead: %s", folder_name)
+        await _plex_remove_movies([movie_id])
+
+    logger.warning("Activation failed — marked dead: movie %d (%s) — %s", movie_id, name, reason)
+
+
 async def _fetch_headers(movies: list[dict]):
+    """Legacy background header fetch — kept for non-activation code paths."""
     from proxy import _resolve_session as resolve_session
     for movie in movies:
         try:
             uuid = movie["uuid"]
             stream_id = movie["stream_id"]
             movie_id = movie["id"]
-            account_id = movie.get("account_id")
             content_type = movie.get("content_type", "video/x-matroska")
-            ext = "mp4" if content_type == "video/mp4" else "mkv"
 
             await _fetch_provider_info(movie_id)
 
-            xc_path = get_xc_url(movie_id, ext)
-            if xc_path:
-                base_url = f"{DISPATCHARR_URL}{xc_path}"
-            else:
-                base_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
+            base_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
 
-            # Resolve session ONCE — this creates one provider connection
             result = await resolve_session(base_url, movie_id)
             if not result:
                 logger.warning("Header fetch: could not resolve session for movie %d", movie_id)
@@ -887,13 +1104,18 @@ async def _fetch_headers(movies: list[dict]):
                 continue
 
             session_url, session_id = result
+
+            disp_host = urlparse(DISPATCHARR_URL).netloc.split(":")[0]
+            session_host = urlparse(session_url).netloc.split(":")[0]
+            if session_host != disp_host:
+                logger.error("Header fetch: session URL for movie %d resolved to external host %s — BLOCKED", movie_id, session_host)
+                _log_event("error", movie_id, f"Header fetch blocked: external host {session_host}")
+                continue
+
             logger.info("Header fetch: using session %s for movie %d", session_id, movie_id)
 
             req_headers = {"Range": f"bytes=0-{HEADER_FETCH_SIZE - 1}"}
-            if not xc_path and DISPATCHARR_API_KEY:
-                req_headers["X-API-Key"] = DISPATCHARR_API_KEY
 
-            # Use follow_redirects=False — we already have the session URL
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(connect=30, read=60, write=30, pool=30),
                 follow_redirects=False,
@@ -902,30 +1124,6 @@ async def _fetch_headers(movies: list[dict]):
                 if resp.status_code >= 400:
                     logger.warning("Header fetch failed for movie %d: HTTP %d", movie_id, resp.status_code)
                     _log_event("error", movie_id, f"Header fetch failed: HTTP {resp.status_code}")
-
-                    if resp.status_code >= 500:
-                        db_dead = await get_db()
-                        try:
-                            await db_dead.execute(
-                                "UPDATE movies SET stream_dead_count = COALESCE(stream_dead_count, 0) + 1 WHERE id = ?",
-                                (movie_id,),
-                            )
-                            row = await db_dead.execute("SELECT stream_dead_count FROM movies WHERE id = ?", (movie_id,))
-                            result = await row.fetchone()
-                            count = result["stream_dead_count"] if result else 1
-
-                            if count >= 3:
-                                await _deactivate_dead_movie(movie_id, movie.get("name", ""), movie.get("year"), f"header fetch HTTP {resp.status_code}, strike {count}/3")
-                                await db_dead.execute(
-                                    "UPDATE movies SET stream_dead = 1, stream_dead_checked_at = ? WHERE id = ?",
-                                    (datetime.now(timezone.utc).isoformat(), movie_id),
-                                )
-                                logger.warning("Marked movie %d stream as dead after %d strikes (HTTP %d)", movie_id, count, resp.status_code)
-                            else:
-                                _log_event("warn", movie_id, f"Header fetch error: HTTP {resp.status_code}, strike {count}/3")
-                            await db_dead.commit()
-                        finally:
-                            await db_dead.close()
                     continue
 
                 header_bytes = resp.content
@@ -937,14 +1135,11 @@ async def _fetch_headers(movies: list[dict]):
                     if total.isdigit():
                         file_size = int(total)
 
-                # Reuse SAME session URL for tail fetch — no new provider connection
                 tail_bytes = None
                 tail_offset = 0
                 if file_size and file_size > TAIL_FETCH_SIZE:
                     tail_offset = file_size - TAIL_FETCH_SIZE
                     tail_headers = {"Range": f"bytes={tail_offset}-{file_size - 1}"}
-                    if not xc_path and DISPATCHARR_API_KEY:
-                        tail_headers["X-API-Key"] = DISPATCHARR_API_KEY
                     try:
                         tail_resp = await client.get(session_url, headers=tail_headers)
                         if tail_resp.status_code < 400:
@@ -969,7 +1164,7 @@ async def _fetch_headers(movies: list[dict]):
                     _log_event("info", movie_id, "Header+tail cached",
                                head_bytes=len(header_bytes), tail_bytes=len(tail_bytes) if tail_bytes else 0, file_size=file_size)
                 finally:
-                    await db.close()
+                    pass
 
         except Exception as e:
             logger.error("Header fetch error for movie %d: %s", movie.get("id"), e)
@@ -1010,7 +1205,7 @@ async def deactivate_movies(request: Request):
 
         return {"status": "ok", "deactivated": len(movie_ids), "total_activated": total, "strm_removed": removed, "plex_removed": plex_removed}
     finally:
-        await db.close()
+        pass
 
 
 @router.post("/movies/deactivate-all")
@@ -1037,7 +1232,7 @@ async def deactivate_all():
 
         return {"status": "ok", "message": f"All movies deactivated, {removed} STRM folders removed, {plex_removed} removed from Plex"}
     finally:
-        await db.close()
+        pass
 
 
 async def _plex_remove_movies(movie_ids: list[int]):
@@ -1115,7 +1310,7 @@ async def activated_count():
         row = await db.execute("SELECT COUNT(*) as cnt FROM movies WHERE activated = 1")
         return {"count": (await row.fetchone())["cnt"]}
     finally:
-        await db.close()
+        pass
 
 
 @router.get("/genres")
@@ -1144,7 +1339,7 @@ async def list_genres(category_id: int = 0):
         sorted_genres = sorted(genre_counts.items(), key=lambda x: -x[1])
         return [{"name": g, "count": c} for g, c in sorted_genres]
     finally:
-        await db.close()
+        pass
 
 
 @router.get("/languages")
@@ -1161,7 +1356,7 @@ async def list_languages():
         unknown = (await unknown_row.fetchone())["cnt"]
         return {"languages": langs, "unknown": unknown}
     finally:
-        await db.close()
+        pass
 
 
 LANG_NAMES = {
@@ -1246,7 +1441,7 @@ async def detect_language(request: Request):
             "results": results,
         }
     finally:
-        await db.close()
+        pass
 
 
 @router.post("/movies/detect-language-all")
@@ -1340,7 +1535,7 @@ async def _bulk_detect_languages():
         )
         await db.commit()
     finally:
-        await db.close()
+        pass
 
 
 @router.get("/catalog/summary")
@@ -1390,7 +1585,7 @@ async def catalog_summary():
             "language_unknown": lang_unknown,
         }
     finally:
-        await db.close()
+        pass
 
 
 @router.get("/filters")
@@ -1400,7 +1595,7 @@ async def get_filters():
         rows = await db.execute("SELECT * FROM filter_configs ORDER BY genre")
         return [dict(r) for r in await rows.fetchall()]
     finally:
-        await db.close()
+        pass
 
 
 @router.post("/filters")
@@ -1423,7 +1618,7 @@ async def add_filter(request: Request):
         await db.commit()
         return {"status": "ok", "genre": genre}
     finally:
-        await db.close()
+        pass
 
 
 @router.put("/filters/{filter_id}")
@@ -1447,7 +1642,7 @@ async def update_filter(filter_id: int, request: Request):
         await db.commit()
         return {"status": "ok"}
     finally:
-        await db.close()
+        pass
 
 
 @router.delete("/filters/{filter_id}")
@@ -1458,7 +1653,7 @@ async def delete_filter(filter_id: int):
         await db.commit()
         return {"status": "ok"}
     finally:
-        await db.close()
+        pass
 
 
 @router.post("/sync/clear-catalog")
@@ -1472,7 +1667,7 @@ async def clear_catalog():
         await db.commit()
         return {"status": "ok", "message": "Catalog cleared (category mappings preserved)"}
     finally:
-        await db.close()
+        pass
 
 
 @router.post("/sync/catalog")
@@ -1494,7 +1689,7 @@ async def trigger_catalog_sync(request: Request):
             sel_cat_rows = await db.execute("SELECT category_id FROM selected_categories WHERE enabled = 1")
             category_ids = [r["category_id"] for r in await sel_cat_rows.fetchall()]
         finally:
-            await db.close()
+            pass
 
     if account_ids and not category_ids:
         db = await get_db()
@@ -1506,7 +1701,7 @@ async def trigger_catalog_sync(request: Request):
             )
             category_ids = [r["category_id"] for r in await rows.fetchall()]
         finally:
-            await db.close()
+            pass
 
     asyncio.create_task(_run_catalog_sync(max_movies, category_ids, account_ids))
     return {"status": "started", "message": f"Catalog sync started ({len(category_ids)} categories, {len(account_ids)} providers)"}
@@ -1527,7 +1722,7 @@ async def refresh_activated_ids():
 
 @router.get("/health/status")
 async def health_status():
-    """Get current health status of bridge, Dispatcharr, and rclone."""
+    """Get current health status of bridge, Dispatcharr, and Plex VOD library."""
     return get_health_status()
 
 
@@ -1541,7 +1736,7 @@ async def health_log():
 async def trigger_health_check():
     """Manually trigger a health check (normally runs every 2 hours)."""
     result = await run_health_checks()
-    return {"status": "ok", "result": result}
+    return {"status": result}
 
 
 @router.post("/movies/validate-catalog")
@@ -1594,7 +1789,7 @@ async def stream_health_stats():
             "never_validated": never_count,
         }
     finally:
-        await db.close()
+        pass
 
 
 async def _run_catalog_sync(max_movies: int = 0, category_ids: list = None, account_ids: list = None):
@@ -1622,7 +1817,7 @@ async def _run_catalog_sync(max_movies: int = 0, category_ids: list = None, acco
             )
             await db.commit()
         finally:
-            await db.close()
+            pass
 
 
 @router.post("/sync/clear-strm")
@@ -1643,7 +1838,7 @@ async def clear_strm():
         await db.commit()
         return {"status": "ok", "message": "All STRM files cleared"}
     finally:
-        await db.close()
+        pass
 
 
 @router.post("/sync/generate")
@@ -1665,7 +1860,7 @@ async def _run_generate():
             )
             await db.commit()
         finally:
-            await db.close()
+            pass
 
 
 @router.post("/sync/full")
@@ -1688,6 +1883,60 @@ async def _run_mapping_sync():
         logger.error(f"Stream mapping sync failed: {e}")
 
 
+@router.get("/schedule")
+async def get_schedule():
+    db = await get_db()
+    try:
+        row = await db.execute(
+            "SELECT refresh_interval_hours, last_scheduled_refresh, last_refresh_report FROM sync_state WHERE id = 1"
+        )
+        result = await row.fetchone()
+        return {
+            "refresh_interval_hours": result["refresh_interval_hours"] if result else 0,
+            "last_scheduled_refresh": result["last_scheduled_refresh"] if result else None,
+            "last_refresh_report": result["last_refresh_report"] if result else "",
+        }
+    finally:
+        pass
+
+
+@router.post("/schedule")
+async def set_schedule(request: Request):
+    data = await request.json()
+    hours = data.get("refresh_interval_hours", 0)
+    if hours not in (0, 4, 6, 8, 12):
+        return JSONResponse(status_code=400, content={"error": "interval must be 0, 4, 6, 8, or 12"})
+    db = await get_db()
+    try:
+        await db.execute(
+            "UPDATE sync_state SET refresh_interval_hours = ? WHERE id = 1", (hours,)
+        )
+        await db.commit()
+        label = "Off" if hours == 0 else f"every {hours}h"
+        logger.info("Catalog refresh schedule set to %s", label)
+        return {"status": "ok", "refresh_interval_hours": hours}
+    finally:
+        pass
+
+
+@router.post("/sync/refresh")
+async def trigger_manual_refresh():
+    global _refresh_running
+    if _refresh_running:
+        return JSONResponse(status_code=409, content={"error": "Refresh already running"})
+    _refresh_running = True
+    asyncio.create_task(_run_scheduled_refresh_guarded())
+    return {"status": "started", "message": "Manual catalog refresh started in background"}
+
+
+async def _run_scheduled_refresh_guarded():
+    global _refresh_running
+    try:
+        await _run_scheduled_refresh()
+    finally:
+        _refresh_running = False
+
+
 async def _run_full_sync():
     try:
         db = await get_db()
@@ -1695,7 +1944,7 @@ async def _run_full_sync():
             sel_rows = await db.execute("SELECT category_id FROM selected_categories WHERE enabled = 1")
             category_ids = [r["category_id"] for r in await sel_rows.fetchall()]
         finally:
-            await db.close()
+            pass
 
         await scrape_catalog(category_ids=category_ids)
         if is_cancelled():
@@ -1714,7 +1963,7 @@ async def _run_full_sync():
             )
             await db.commit()
         finally:
-            await db.close()
+            pass
 
 
 @router.post("/movies/{movie_id}/detect-language")
@@ -1751,7 +2000,7 @@ async def detect_single_language(movie_id: int):
         lang_name = LANG_NAMES.get(lang, lang)
         return {"id": movie_id, "language": lang, "language_name": lang_name}
     finally:
-        await db.close()
+        pass
 
 
 # --- Dead Movie System ---
@@ -1786,7 +2035,7 @@ async def list_dead_movies(
         movies = [dict(r) for r in await rows.fetchall()]
         return {"count": count, "page": page, "page_size": page_size, "results": movies}
     finally:
-        await db.close()
+        pass
 
 
 @router.post("/movies/dead/delete")
@@ -1824,7 +2073,7 @@ async def delete_dead_movies(request: Request):
 
         return {"status": "ok", "deleted": len(movies), "strm_removed": removed}
     finally:
-        await db.close()
+        pass
 
 
 @router.post("/movies/dead/delete-all")
@@ -1847,7 +2096,7 @@ async def delete_all_dead():
         await db.commit()
         return {"status": "ok", "deleted": len(movies)}
     finally:
-        await db.close()
+        pass
 
 
 @router.post("/movies/dead/restore")
@@ -1882,7 +2131,7 @@ async def restore_dead_movies(request: Request):
         await db.commit()
         return {"status": "ok", "restored": len(movies), "strm_restored": restored_strm}
     finally:
-        await db.close()
+        pass
 
 
 @router.post("/movies/dead/scan")
@@ -1907,6 +2156,8 @@ async def _run_dead_scan():
         page = 1
         async with httpx.AsyncClient(timeout=30.0) as client:
             while True:
+                if is_cancelled():
+                    break
                 resp = await client.get(
                     f"{DISPATCHARR_URL}/api/vod/movies/?page={page}&page_size=500",
                     headers=req_headers,
@@ -1924,6 +2175,15 @@ async def _run_dead_scan():
                     break
                 page += 1
                 await asyncio.sleep(0.05)
+
+        if is_cancelled():
+            if not _refresh_running:
+                await db.execute(
+                    "UPDATE sync_state SET status = 'idle', message = 'Dead scan cancelled' WHERE id = 1"
+                )
+                await db.commit()
+            logger.info("Dead scan cancelled by user")
+            return
 
         if not live_ids:
             await db.execute(
@@ -1964,13 +2224,14 @@ async def _run_dead_scan():
                     dead_activated.append(m)
 
         if not newly_dead:
-            await db.execute(
-                "UPDATE sync_state SET status = 'idle', message = ? WHERE id = 1",
-                (f"Dead scan complete: all {len(catalog_movies)} catalog movies still live",),
-            )
-            await db.commit()
+            if not _refresh_running:
+                await db.execute(
+                    "UPDATE sync_state SET status = 'idle', message = ? WHERE id = 1",
+                    (f"Dead scan complete: all {len(catalog_movies)} catalog movies still live",),
+                )
+                await db.commit()
             logger.info(f"Dead scan: 0 dead out of {len(catalog_movies)}")
-            return
+            return {"newly_dead": 0, "strm_moved": 0, "plex_removed": 0}
 
         dead_ids = [m["id"] for m in newly_dead]
         for did in dead_ids:
@@ -1999,12 +2260,14 @@ async def _run_dead_scan():
             plex_removed = await _plex_remove_movies([m["id"] for m in dead_activated])
 
         msg = f"Dead scan: {len(newly_dead)} dead ({moved} STRM moved, {plex_removed} removed from Plex)"
-        await db.execute(
-            "UPDATE sync_state SET status = 'idle', message = ? WHERE id = 1",
-            (msg,),
-        )
-        await db.commit()
+        if not _refresh_running:
+            await db.execute(
+                "UPDATE sync_state SET status = 'idle', message = ? WHERE id = 1",
+                (msg,),
+            )
+            await db.commit()
         logger.info(msg)
+        return {"newly_dead": len(newly_dead), "strm_moved": moved, "plex_removed": plex_removed}
     except Exception as e:
         logger.error(f"Dead scan failed: {e}")
         await db.execute(
@@ -2012,13 +2275,287 @@ async def _run_dead_scan():
             (str(e)[:500],),
         )
         await db.commit()
+        raise
     finally:
-        await db.close()
+        pass
+
+
+async def _run_dead_scan_counted() -> dict:
+    result = await _run_dead_scan()
+    return result or {"newly_dead": 0, "strm_moved": 0, "plex_removed": 0}
+
+
+async def _get_refresh_interval_hours() -> int:
+    db = await get_db()
+    try:
+        row = await db.execute("SELECT refresh_interval_hours FROM sync_state WHERE id = 1")
+        result = await row.fetchone()
+        return result["refresh_interval_hours"] if result and result["refresh_interval_hours"] else 0
+    except Exception:
+        return 0
+    finally:
+        pass
 
 
 async def start_dead_scan_scheduler():
     while True:
-        await asyncio.sleep(DEAD_SCAN_INTERVAL_HOURS * 3600)
-        logger.info("Scheduled maintenance: regenerating dumps + dead scan...")
-        await _trigger_dump_regen()
-        await _run_dead_scan()
+        interval = await _get_refresh_interval_hours()
+        if interval <= 0:
+            await asyncio.sleep(300)
+            continue
+        await asyncio.sleep(interval * 3600)
+        if _refresh_running:
+            logger.info("Scheduled refresh skipped — manual refresh already running")
+            continue
+        logger.info("Scheduled catalog refresh starting (interval: %dh)...", interval)
+        await _run_scheduled_refresh_guarded()
+
+
+async def _set_status(status: str, message: str):
+    db = await get_db()
+    try:
+        await db.execute(
+            "UPDATE sync_state SET status = ?, message = ? WHERE id = 1",
+            (status, message),
+        )
+        await db.commit()
+    finally:
+        pass
+
+
+async def _run_scheduled_refresh():
+    """Full refresh cycle: dump regen → categories → catalog refresh → apply mapping → refresh activated → dead scan."""
+    import time
+    start = time.time()
+    report = []
+
+    try:
+        # 1. Dump regen
+        await _set_status("refreshing", "Refresh: regenerating stream dumps...")
+        try:
+            ok = await _trigger_dump_regen()
+            report.append(f"Dump regen: {'OK' if ok else 'timed out'}")
+        except Exception as e:
+            report.append(f"Dump regen: FAILED ({e})")
+
+        # 2. Categories
+        await _set_status("refreshing", "Refresh: reloading categories...")
+        try:
+            cat_result = await _load_categories_counted()
+            report.append(f"Categories: {cat_result['categories']} categories, {cat_result['mappings']} mappings, {cat_result['providers']} providers")
+        except Exception as e:
+            report.append(f"Categories: FAILED ({e})")
+
+        # 3. Catalog refresh
+        await _set_status("refreshing", "Refresh: syncing catalog from Dispatcharr...")
+        try:
+            synced, total, uuid_changes = await _run_catalog_refresh_counted()
+            parts = [f"{synced} processed, {total} total"]
+            if uuid_changes:
+                parts.append(f"{uuid_changes} UUID changes")
+            report.append(f"Catalog: {', '.join(parts)}")
+        except Exception as e:
+            report.append(f"Catalog: FAILED ({e})")
+
+        # 4. Stream mapping
+        await _set_status("refreshing", "Refresh: applying stream mapping...")
+        try:
+            mapped = await apply_stream_mapping_to_db()
+            report.append(f"Stream mapping: {mapped} updated")
+        except Exception as e:
+            report.append(f"Stream mapping: FAILED ({e})")
+
+        # 5. Activated refresh
+        await _set_status("refreshing", "Refresh: checking activated movies for stream_id changes...")
+        try:
+            updated = await _refresh_activated_stream_ids()
+            report.append(f"Activated refresh: {updated} stream_ids changed")
+        except Exception as e:
+            report.append(f"Activated refresh: FAILED ({e})")
+
+        # 6. Dead scan
+        await _set_status("refreshing", "Refresh: scanning for dead movies...")
+        try:
+            dead_result = await _run_dead_scan_counted()
+            report.append(f"Dead scan: {dead_result['newly_dead']} newly dead, {dead_result['plex_removed']} removed from Plex")
+        except Exception as e:
+            report.append(f"Dead scan: FAILED ({e})")
+
+        import json as _json
+        elapsed = int(time.time() - start)
+        now_local = datetime.now().strftime("%b %d, %Y %I:%M %p")
+        new_entry = {"date": now_local, "elapsed": elapsed, "steps": report}
+
+        db = await get_db()
+        try:
+            row = await db.execute("SELECT last_refresh_report FROM sync_state WHERE id = 1")
+            result = await row.fetchone()
+            raw = result["last_refresh_report"] if result else ""
+            try:
+                archive = _json.loads(raw) if raw and raw.startswith("[") else []
+            except Exception:
+                archive = []
+            archive.insert(0, new_entry)
+            archive = archive[:10]
+            await db.execute(
+                "UPDATE sync_state SET status = 'idle', message = 'Refresh complete', "
+                "last_scheduled_refresh = ?, last_refresh_report = ? WHERE id = 1",
+                (datetime.now(timezone.utc).isoformat(), _json.dumps(archive)),
+            )
+            await db.commit()
+        finally:
+            pass
+
+        logger.info("Scheduled catalog refresh complete (%ds): %s", elapsed, "; ".join(report))
+
+    except Exception as e:
+        logger.error("Scheduled refresh crashed: %s", e)
+        await _set_status("idle", f"Refresh failed: {e}")
+
+
+_uuid_change_counter = 0
+
+
+async def _run_catalog_refresh():
+    """Re-scrape full VOD catalog from Dispatcharr to pick up new/changed movies."""
+    synced, total, uuid_changes = await _run_catalog_refresh_counted()
+    return synced
+
+
+async def _run_catalog_refresh_counted() -> tuple[int, int, int]:
+    global _uuid_change_counter
+    _uuid_change_counter = 0
+
+    db = await get_db()
+    try:
+        await db.execute(
+            "UPDATE sync_state SET status = 'scraping', message = 'Catalog refresh...' WHERE id = 1"
+        )
+        await db.commit()
+    finally:
+        pass
+
+    req_headers = {}
+    if DISPATCHARR_API_KEY:
+        req_headers["X-API-Key"] = DISPATCHARR_API_KEY
+
+    total_synced = 0
+    page = 1
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        while True:
+            if is_cancelled():
+                break
+            resp = await client.get(
+                f"{DISPATCHARR_URL}/api/vod/movies/?page={page}&page_size=500",
+                headers=req_headers,
+            )
+            if resp.status_code != 200:
+                logger.error(f"Catalog refresh: API error on page {page}: {resp.status_code}")
+                break
+            data = resp.json()
+            results = data.get("results", [])
+            if not results:
+                break
+
+            db = await get_db()
+            try:
+                for movie in results:
+                    await _upsert_movie_from_api(db, movie)
+                    total_synced += 1
+                await db.commit()
+                await db.execute(
+                    "UPDATE sync_state SET message = ? WHERE id = 1",
+                    (f"Catalog refresh: {total_synced} movies (page {page})...",),
+                )
+                await db.commit()
+            finally:
+                pass
+
+            if not data.get("next"):
+                break
+            page += 1
+            await asyncio.sleep(0.05)
+
+    db = await get_db()
+    try:
+        count_row = await db.execute("SELECT COUNT(*) as cnt FROM movies")
+        count = (await count_row.fetchone())["cnt"]
+        status = "cancelled" if is_cancelled() else "complete"
+        msg = f"Catalog refresh {status}: {total_synced} movies processed, {count} total"
+        if _refresh_running:
+            await db.execute(
+                "UPDATE sync_state SET total_movies = ?, message = ? WHERE id = 1",
+                (count, msg),
+            )
+        else:
+            await db.execute(
+                "UPDATE sync_state SET total_movies = ?, status = 'idle', message = ? WHERE id = 1",
+                (count, msg),
+            )
+        await db.commit()
+        logger.info(f"Catalog refresh {status}: {total_synced} processed, {count} total in DB")
+    finally:
+        pass
+
+    return total_synced, count, _uuid_change_counter
+
+
+async def _upsert_movie_from_api(db, movie):
+    """Insert or update a movie from Dispatcharr API response."""
+    import json
+    custom = movie.get("custom_properties") or {}
+    if isinstance(custom, str):
+        try:
+            custom = json.loads(custom)
+        except (json.JSONDecodeError, TypeError):
+            custom = {}
+
+    poster_url = None
+    logo = movie.get("logo")
+    if logo and logo.get("url"):
+        poster_url = logo["url"]
+
+    trailer_key = custom.get("youtube_trailer") or custom.get("trailer") or None
+
+    new_uuid = movie["uuid"]
+    movie_id = movie["id"]
+
+    row = await db.execute("SELECT uuid FROM movies WHERE id = ?", (movie_id,))
+    existing = await row.fetchone()
+    if existing and existing["uuid"] and existing["uuid"] != new_uuid:
+        global _uuid_change_counter
+        await db.execute(
+            "UPDATE movies SET header_data = NULL, header_size = 0, "
+            "tail_data = NULL, tail_size = 0, tail_offset = 0, file_size = NULL "
+            "WHERE id = ?",
+            (movie_id,),
+        )
+        _uuid_change_counter += 1
+        logger.info("UUID changed for movie %d (%s -> %s), cleared caches", movie_id, existing["uuid"], new_uuid)
+
+    await db.execute("""
+        INSERT INTO movies (id, uuid, name, year, rating, genre, description,
+                           tmdb_id, imdb_id, poster_url, cast_info, trailer_key, synced_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            uuid=excluded.uuid, name=excluded.name, year=excluded.year,
+            rating=excluded.rating, genre=excluded.genre,
+            description=excluded.description, tmdb_id=excluded.tmdb_id,
+            poster_url=excluded.poster_url, cast_info=excluded.cast_info,
+            trailer_key=excluded.trailer_key,
+            synced_at=excluded.synced_at
+    """, (
+        movie_id,
+        new_uuid,
+        movie.get("name", ""),
+        movie.get("year"),
+        float(movie.get("rating") or 0),
+        movie.get("genre", ""),
+        movie.get("description", ""),
+        movie.get("tmdb_id"),
+        movie.get("imdb_id"),
+        poster_url,
+        custom.get("cast", ""),
+        trailer_key,
+        datetime.now(timezone.utc).isoformat(),
+    ))

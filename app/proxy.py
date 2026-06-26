@@ -23,7 +23,8 @@ BUFFER_DIR = "/data/buffers"
 # One persistent connection per movie, throttled to match playback pace.
 # Bridge stays ~60s ahead of Plex, reads from Dispatcharr only as needed.
 
-PIPE_IDLE_TIMEOUT = 300     # 5 min with no Plex reads → close everything
+PIPE_IDLE_TIMEOUT = 900     # 15 min with no activity at all → close everything
+PLEX_IDLE_TIMEOUT = 180     # 3 min with no Plex reads → user stopped, close pipe
 PIPE_POLL_INTERVAL = 0.1    # seconds between checks when waiting for data
 PIPE_POLL_MAX_WAIT = 30     # max seconds to wait for data before giving up
 BUFFER_TARGET_SECS = 60     # informational — pipe reads at 1x bitrate continuously
@@ -47,6 +48,7 @@ class StreamPipe:
         self.upstream_url = upstream_url
         self.session_id = session_id
         self.file_size = file_size
+        self.duration_seconds = duration_seconds
         self.start_offset = start_offset
         self.buffer_path = os.path.join(BUFFER_DIR, f"movie_{movie_id}.buf")
         self.bytes_written: int = 0
@@ -55,6 +57,7 @@ class StreamPipe:
         self.error: str | None = None
         self.created_at = time.time()
         self.last_read_at = time.time()
+        self.last_plex_read = time.time()
         self.plex_position: int = start_offset
         self._download_task: asyncio.Task | None = None
         self._client: httpx.AsyncClient | None = None
@@ -78,7 +81,7 @@ class StreamPipe:
 
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(connect=30, read=600, write=30, pool=30),
-            follow_redirects=True,
+            follow_redirects=False,
             limits=httpx.Limits(max_connections=2, max_keepalive_connections=1),
         )
         self._download_task = asyncio.create_task(self._download_loop())
@@ -132,6 +135,7 @@ class StreamPipe:
                     f.write(chunk)
                     f.flush()
                     self.bytes_written += len(chunk)
+                    self.last_read_at = time.time()
 
                     if self.bytes_written > INITIAL_BURST and target_bps > 0:
                         elapsed = time.monotonic() - wall_start
@@ -178,6 +182,7 @@ class StreamPipe:
         Returns whatever is available — Plex handles partial 206 responses.
         """
         self.last_read_at = time.time()
+        self.last_plex_read = time.time()
         local_start = start - self.start_offset
 
         min_needed = local_start + STREAM_CHUNK
@@ -223,6 +228,10 @@ class StreamPipe:
     def is_idle(self) -> bool:
         return (time.time() - self.last_read_at) > PIPE_IDLE_TIMEOUT
 
+    @property
+    def is_plex_idle(self) -> bool:
+        return (time.time() - self.last_plex_read) > PLEX_IDLE_TIMEOUT
+
     async def close(self):
         if self._download_task and not self._download_task.done():
             self._download_task.cancel()
@@ -248,28 +257,45 @@ class StreamPipe:
     def status_dict(self) -> dict:
         now = time.time()
         buffer_ahead = (self.start_offset + self.bytes_written) - self.plex_position
+        total_downloaded = self.start_offset + self.bytes_written
+        download_pct = round(total_downloaded / self.file_size * 100, 1) if self.file_size > 0 else 0
+        plex_pct = round(self.plex_position / self.file_size * 100, 1) if self.file_size > 0 else 0
+        elapsed = now - self.created_at
+        actual_speed = round(self.bytes_written / elapsed) if elapsed > 1 else 0
+        duration = self.duration_seconds or 0
+        plex_time = round(duration * (self.plex_position / self.file_size)) if self.file_size > 0 and duration > 0 else 0
+        remaining_time = max(0, duration - plex_time) if duration > 0 else 0
         return {
             "movie_id": self.movie_id,
             "session_id": self.session_id,
             "bytes_written": self.bytes_written,
             "file_size": self.file_size,
+            "duration_seconds": duration,
             "start_offset": self.start_offset,
             "plex_position": self.plex_position,
+            "total_downloaded": total_downloaded,
+            "download_pct": download_pct,
+            "plex_pct": plex_pct,
             "buffer_ahead_bytes": buffer_ahead,
             "buffer_ahead_secs": round(buffer_ahead / self.bytes_per_second, 1) if self.bytes_per_second > 0 else 0,
             "bitrate_bps": round(self.bytes_per_second),
             "bitrate_source": self.bitrate_source,
+            "actual_speed_bps": actual_speed,
             "started": self.started,
             "finished": self.finished,
             "error": self.error,
-            "age_seconds": int(now - self.created_at),
+            "age_seconds": int(elapsed),
             "idle_seconds": int(now - self.last_read_at),
+            "plex_idle_seconds": int(now - self.last_plex_read),
+            "plex_time_seconds": plex_time,
+            "remaining_seconds": remaining_time,
             "buffer_exists": os.path.exists(self.buffer_path),
         }
 
 
 # --- Pipe Manager ---
 _movie_pipes: dict[int, StreamPipe] = {}
+_pipe_creating: dict[int, asyncio.Lock] = {}
 _pipe_manager_task: asyncio.Task | None = None
 
 
@@ -277,17 +303,28 @@ def get_all_pipes() -> dict:
     return {mid: pipe.status_dict() for mid, pipe in _movie_pipes.items()}
 
 
-async def _resolve_session(xc_url: str, movie_id: int) -> tuple[str, str | None] | None:
-    """Follow Dispatcharr's 301 redirect to get the session URL."""
+async def _resolve_session(base_url: str, movie_id: int) -> tuple[str, str | None] | None:
+    """Follow Dispatcharr's 301 redirect to get the session URL.
+
+    Dispatcharr v0.27.0+ puts session_id in the URL path for /proxy/vod/ routes
+    (e.g. /proxy/vod/movie/{uuid}/{session_id}?stream_id=X) and in the query
+    string for XC endpoints. We check both locations.
+    """
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
-            resp = await client.get(xc_url, headers={"Range": "bytes=0-0"})
+            resp = await client.get(base_url, headers={"Range": "bytes=0-0"})
             if resp.status_code in (301, 302):
                 location = resp.headers.get("location", "")
                 if location:
                     parsed = urlparse(location)
                     qs = parse_qs(parsed.query)
                     session_id = qs.get("session_id", [None])[0]
+                    if not session_id:
+                        path_parts = parsed.path.rstrip("/").split("/")
+                        for part in path_parts:
+                            if part.startswith("vod_"):
+                                session_id = part
+                                break
                     if location.startswith("/"):
                         base = urlparse(DISPATCHARR_URL)
                         resolved = f"{base.scheme}://{base.netloc}{location}"
@@ -299,7 +336,7 @@ async def _resolve_session(xc_url: str, movie_id: int) -> tuple[str, str | None]
                     logger.info("Resolved session for movie %d: %s", movie_id, session_id)
                     return (resolved_clean, session_id)
             elif resp.status_code < 400:
-                return (xc_url, None)
+                return (base_url, None)
             else:
                 logger.error("Session resolve failed for movie %d: HTTP %d", movie_id, resp.status_code)
     except Exception as e:
@@ -308,36 +345,80 @@ async def _resolve_session(xc_url: str, movie_id: int) -> tuple[str, str | None]
 
 
 async def _get_or_create_pipe(movie_id: int, file_size: int, duration_seconds: int | None,
+                               uuid: str | None = None, stream_id: int | None = None,
                                ext: str = "mkv", start_offset: int = 0,
                                stream_bitrate_kbps: int | None = None) -> StreamPipe | None:
-    """Get existing active pipe or create a new one for this movie."""
+    """Get existing active pipe or create a new one for this movie.
+
+    Uses Dispatcharr's /proxy/vod/ endpoint which routes through nginx's
+    streaming-optimized location (uwsgi_buffering off, 300s timeouts).
+    """
+    if movie_id not in _pipe_creating:
+        _pipe_creating[movie_id] = asyncio.Lock()
+    async with _pipe_creating[movie_id]:
+        return await _create_pipe_locked(movie_id, file_size, duration_seconds,
+                                          uuid, stream_id, ext, start_offset, stream_bitrate_kbps)
+
+
+async def _create_pipe_locked(movie_id: int, file_size: int, duration_seconds: int | None,
+                               uuid: str | None = None, stream_id: int | None = None,
+                               ext: str = "mkv", start_offset: int = 0,
+                               stream_bitrate_kbps: int | None = None) -> StreamPipe | None:
     existing = _movie_pipes.get(movie_id)
 
-    if existing and not existing.error and not existing.finished:
+    if existing and not existing.error:
         if existing.has_data_for(start_offset, start_offset):
             existing.last_read_at = time.time()
             return existing
-        logger.info("Plex seeked beyond buffer for movie %d, restarting pipe from offset %d",
-                     movie_id, start_offset)
+        # If pipe is actively downloading and the request is ahead but within
+        # reach (pipe will catch up), return it and let read_range wait.
+        if not existing.finished and start_offset >= existing.start_offset:
+            expected_end = existing.start_offset + existing.bytes_written
+            gap = start_offset - expected_end
+            if gap < 5 * 1024 * 1024:
+                existing.last_read_at = time.time()
+                return existing
+            logger.info("Plex seeked beyond buffer for movie %d (gap=%dKB), restarting pipe from offset %d",
+                         movie_id, gap // 1024, start_offset)
         await existing.close()
         existing.cleanup_buffer()
         del _movie_pipes[movie_id]
-    elif existing and (existing.error or existing.finished):
+    elif existing and existing.error:
         await existing.close()
         existing.cleanup_buffer()
         del _movie_pipes[movie_id]
 
-    from stream_mapper import get_xc_url
-    xc_path = get_xc_url(movie_id, ext)
-    if not xc_path:
-        logger.error("No XC URL for movie %d", movie_id)
+    if not uuid or not stream_id:
+        db = await get_db()
+        try:
+            row = await db.execute("SELECT uuid, stream_id FROM movies WHERE id = ?", (movie_id,))
+            movie = await row.fetchone()
+            if movie:
+                uuid = uuid or str(movie["uuid"])
+                stream_id = stream_id or movie["stream_id"]
+        finally:
+            pass
+
+    if not uuid or not stream_id:
+        logger.error("No uuid/stream_id for movie %d", movie_id)
         return None
 
-    # Use base XC URL directly — the download loop will follow the 301 redirect
-    # itself with the actual Range header. No separate session resolve that
-    # "uses up" the session before the real streaming request.
-    base_xc_url = f"{DISPATCHARR_URL}{xc_path}"
-    pipe = StreamPipe(movie_id, base_xc_url, file_size, duration_seconds, None, start_offset, stream_bitrate_kbps)
+    base_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
+    result = await _resolve_session(base_url, movie_id)
+    if not result:
+        logger.error("Session resolve failed for movie %d — cannot create pipe", movie_id)
+        return None
+
+    session_url, session_id = result
+
+    disp_host = urlparse(DISPATCHARR_URL).netloc.split(":")[0]
+    session_host = urlparse(session_url).netloc.split(":")[0]
+    if session_host != disp_host:
+        logger.error("Session URL for movie %d resolved to external host %s (expected %s) — BLOCKED to prevent VPN bypass",
+                      movie_id, session_host, disp_host)
+        return None
+
+    pipe = StreamPipe(movie_id, session_url, file_size, duration_seconds, session_id, start_offset, stream_bitrate_kbps)
     _movie_pipes[movie_id] = pipe
     await pipe.start()
     return pipe
@@ -352,22 +433,28 @@ async def close_movie_pipe(movie_id: int):
 
 
 async def _pipe_manager_loop():
-    """Background task: close idle pipes (5 min no activity = stop/pause timeout)."""
+    """Background task: close idle pipes (15 min no activity = stop/pause timeout)."""
     while True:
         await asyncio.sleep(10)
         try:
             to_cleanup = []
             for mid, pipe in list(_movie_pipes.items()):
                 if pipe.error:
-                    to_cleanup.append(mid)
+                    to_cleanup.append((mid, "error"))
+                elif pipe.is_plex_idle and pipe.started and not pipe.finished:
+                    to_cleanup.append((mid, "plex_idle"))
                 elif pipe.is_idle and pipe.started:
-                    to_cleanup.append(mid)
+                    to_cleanup.append((mid, "idle"))
 
-            for mid in to_cleanup:
+            for mid, reason in to_cleanup:
                 pipe = _movie_pipes.pop(mid, None)
                 if pipe:
-                    idle_secs = int(time.time() - pipe.last_read_at)
-                    logger.info("Closing idle pipe for movie %d (idle %ds) — clearing buffer", mid, idle_secs)
+                    if reason == "plex_idle":
+                        plex_idle = int(time.time() - pipe.last_plex_read)
+                        logger.info("Closing pipe for movie %d (Plex idle %ds, user stopped) — clean disconnect", mid, plex_idle)
+                    else:
+                        idle_secs = int(time.time() - pipe.last_read_at)
+                        logger.info("Closing idle pipe for movie %d (idle %ds) — clearing buffer", mid, idle_secs)
                     await pipe.close()
                     pipe.cleanup_buffer()
         except Exception as e:
@@ -435,11 +522,12 @@ MAX_LOG_ENTRIES = 200
 _proxy_log: deque = deque(maxlen=MAX_LOG_ENTRIES)
 
 
-def _log_event(level: str, movie_id: int | None, msg: str, **extra):
+def _log_event(level: str, movie_id: int | None, msg: str, movie_name: str | None = None, **extra):
     entry = {
         "ts": time.time(),
         "level": level,
         "movie_id": movie_id,
+        "movie_name": movie_name,
         "msg": msg,
         **extra,
     }
@@ -459,20 +547,14 @@ async def _check_if_stream_dead(movie_id: int) -> bool:
             result = await row.fetchone()
             return result and result["stream_dead"] == 1
         finally:
-            await db.close()
+            pass
     except Exception as e:
         logger.warning("Failed to check if stream is dead: %s", e)
         return False
 
 
 async def probe_file_size(uuid: str, stream_id: int, account_id: int | None = None, ext: str = "mkv", movie_id: int | None = None) -> int | None:
-    from stream_mapper import get_xc_url
-    xc_path = get_xc_url(movie_id, ext) if movie_id else None
-
-    if xc_path:
-        base_url = f"{DISPATCHARR_URL}{xc_path}"
-    else:
-        base_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
+    base_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
 
     result = await _resolve_session(base_url, movie_id or 0)
     if not result:
@@ -480,13 +562,10 @@ async def probe_file_size(uuid: str, stream_id: int, account_id: int | None = No
         return None
 
     session_url, _ = result
-    headers = {"Range": "bytes=0-0"}
-    if not xc_path and DISPATCHARR_API_KEY:
-        headers["X-API-Key"] = DISPATCHARR_API_KEY
 
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
-            resp = await client.get(session_url, headers=headers)
+            resp = await client.get(session_url, headers={"Range": "bytes=0-0"})
             cr = resp.headers.get("content-range", "")
             if "/" in cr:
                 total = cr.split("/")[-1]
@@ -539,7 +618,7 @@ async def vod_root(request: Request):
         html = "<html><body>\n" + "\n".join(links) + "\n</body></html>"
         return HTMLResponse(content=html)
     finally:
-        await db.close()
+        pass
 
 
 @router.api_route("/vod/{filename:path}", methods=["GET", "HEAD"])
@@ -552,7 +631,7 @@ async def vod_file(filename: str, request: Request):
     try:
         row = await db.execute(
             "SELECT uuid, stream_id, account_id, content_type, file_size, duration_seconds, stream_bitrate_kbps, "
-            "header_data, header_size, tail_data, tail_size, tail_offset FROM movies WHERE id = ?",
+            "name, header_data, header_size, tail_data, tail_size, tail_offset FROM movies WHERE id = ?",
             (movie_id,),
         )
         movie = await row.fetchone()
@@ -561,6 +640,7 @@ async def vod_file(filename: str, request: Request):
 
         uuid = movie["uuid"]
         stream_id = movie["stream_id"]
+        movie_name = movie["name"] or None
 
         if not stream_id:
             return Response(status_code=503, content="No stream mapping")
@@ -609,37 +689,13 @@ async def vod_file(filename: str, request: Request):
         tail_size = movie["tail_size"] or 0
         tail_offset = movie["tail_offset"] or 0
 
-        # Start pipe immediately on first GET — connection to Dispatcharr from byte 0
-        ext = "mp4" if content_type == "video/mp4" else "mkv"
-        if not _movie_pipes.get(movie_id):
-            asyncio.create_task(
-                _get_or_create_pipe(movie_id, file_size, duration_seconds, ext,
-                                    start_offset=0, stream_bitrate_kbps=stream_bitrate_kbps)
-            )
+        # --- Serve from cache FIRST (no provider connection needed) ---
 
-        # Serve from live pipe if it has data for this range
-        existing_pipe = _movie_pipes.get(movie_id)
-        if existing_pipe and not existing_pipe.error and not existing_pipe.finished and existing_pipe.has_data_for(range_start, range_start):
-            result = await existing_pipe.read_range(range_start, range_end)
-            if result:
-                data, serve_end = result
-                _log_event("info", movie_id, "Pipe served (early)", bytes=len(data), range_start=range_start, range_end=serve_end)
-                return Response(
-                    status_code=206,
-                    headers={
-                        "accept-ranges": "bytes",
-                        "content-type": content_type,
-                        "content-length": str(len(data)),
-                        "content-range": f"bytes {range_start}-{serve_end}/{file_size}",
-                    },
-                    content=data,
-                )
-
-        # Serve from cached head while pipe catches up (first 20MB)
+        # Serve from cached head
         if header_data and header_size > 0 and range_start < header_size:
             serve_end = min(range_end, header_size - 1)
             chunk = header_data[range_start:serve_end + 1]
-            _log_event("info", movie_id, "Header cache hit", bytes=len(chunk), range_start=range_start, range_end=serve_end)
+            _log_event("info", movie_id, "Served from cache (header)", movie_name=movie_name, bytes=len(chunk), range_start=range_start, range_end=serve_end)
             return Response(
                 status_code=206,
                 headers={
@@ -651,14 +707,14 @@ async def vod_file(filename: str, request: Request):
                 content=chunk,
             )
 
-        # Serve from cached tail (last 20MB)
+        # Serve from cached tail
         if tail_data and tail_size > 0 and range_start >= tail_offset:
             local_start = range_start - tail_offset
             local_end = min(range_end - tail_offset, tail_size - 1)
             if local_start < tail_size:
                 chunk = tail_data[local_start:local_end + 1]
                 serve_end = range_start + len(chunk) - 1
-                _log_event("info", movie_id, "Tail cache hit", bytes=len(chunk), range_start=range_start, range_end=serve_end)
+                _log_event("info", movie_id, "Served from cache (tail)", movie_name=movie_name, bytes=len(chunk), range_start=range_start, range_end=serve_end)
                 return Response(
                     status_code=206,
                     headers={
@@ -668,6 +724,33 @@ async def vod_file(filename: str, request: Request):
                         "content-range": f"bytes {range_start}-{serve_end}/{file_size}",
                     },
                     content=chunk,
+                )
+
+        # --- Cache miss — need streaming pipe ---
+
+        ext = "mp4" if content_type == "video/mp4" else "mkv"
+        if not _movie_pipes.get(movie_id):
+            await _get_or_create_pipe(movie_id, file_size, duration_seconds,
+                                      uuid=uuid, stream_id=stream_id, ext=ext,
+                                      start_offset=range_start, stream_bitrate_kbps=stream_bitrate_kbps)
+
+        # Serve from live pipe (or completed pipe) if it has data for this range
+        existing_pipe = _movie_pipes.get(movie_id)
+        if existing_pipe and not existing_pipe.error and existing_pipe.has_data_for(range_start, range_start):
+            result = await existing_pipe.read_range(range_start, range_end)
+            if result:
+                data, serve_end = result
+                source = "Served from buffer" if existing_pipe.finished else "Served from pipe"
+                _log_event("info", movie_id, source, movie_name=movie_name, bytes=len(data), range_start=range_start, range_end=serve_end)
+                return Response(
+                    status_code=206,
+                    headers={
+                        "accept-ranges": "bytes",
+                        "content-type": content_type,
+                        "content-length": str(len(data)),
+                        "content-range": f"bytes {range_start}-{serve_end}/{file_size}",
+                    },
+                    content=data,
                 )
 
         # Circuit breaker check
@@ -693,18 +776,19 @@ async def vod_file(filename: str, request: Request):
         # Wrapped in try/except: ANY failure trips the circuit breaker
         # immediately. One strike, full stop, no retries to the provider.
         try:
-            pipe = await _get_or_create_pipe(movie_id, file_size, duration_seconds, ext,
-                                               start_offset=0, stream_bitrate_kbps=stream_bitrate_kbps)
+            pipe = await _get_or_create_pipe(movie_id, file_size, duration_seconds,
+                                               uuid=uuid, stream_id=stream_id, ext=ext,
+                                               start_offset=range_start, stream_bitrate_kbps=stream_bitrate_kbps)
 
             if not pipe:
                 _record_failure(stream_id)
                 _record_failure_by_movie(movie_id)
-                _log_event("error", movie_id, "Failed to create pipe — breaker tripped")
+                _log_event("error", movie_id, "Failed to create pipe — breaker tripped", movie_name=movie_name)
                 await close_movie_pipe(movie_id)
                 return Response(status_code=502, content="Could not connect to upstream")
 
             if pipe.error:
-                _log_event("error", movie_id, f"Pipe error: {pipe.error} — breaker tripped")
+                _log_event("error", movie_id, f"Pipe error: {pipe.error} — breaker tripped", movie_name=movie_name)
                 _record_failure(stream_id)
                 _record_failure_by_movie(movie_id)
                 await close_movie_pipe(movie_id)
@@ -713,7 +797,7 @@ async def vod_file(filename: str, request: Request):
             result = await pipe.read_range(range_start, range_end)
 
             if result is None:
-                _log_event("warn", movie_id, "Pipe returned no data — breaker tripped")
+                _log_event("warn", movie_id, "Pipe returned no data — breaker tripped", movie_name=movie_name)
                 _record_failure(stream_id)
                 _record_failure_by_movie(movie_id)
                 await close_movie_pipe(movie_id)
@@ -722,8 +806,8 @@ async def vod_file(filename: str, request: Request):
             data, serve_end = result
             buffer_ahead = (pipe.start_offset + pipe.bytes_written) - pipe.plex_position
             buffer_secs = round(buffer_ahead / pipe.bytes_per_second, 1) if pipe.bytes_per_second > 0 else 0
-            _log_event("info", movie_id, "Pipe served", bytes=len(data),
-                       range_start=range_start, range_end=serve_end,
+            _log_event("info", movie_id, "Served from pipe", movie_name=movie_name,
+                       bytes=len(data), range_start=range_start, range_end=serve_end,
                        buffer_ahead_secs=buffer_secs)
 
             return Response(
@@ -743,7 +827,7 @@ async def vod_file(filename: str, request: Request):
             await close_movie_pipe(movie_id)
             return Response(status_code=502, content="Internal error")
     finally:
-        await db.close()
+        pass
 
 
 async def _handle_upstream_error(movie_id: int, stream_id: int, status_code: int):
@@ -766,19 +850,16 @@ async def _handle_upstream_error(movie_id: int, stream_id: int, status_code: int
                 result = await row.fetchone()
                 if result:
                     count = result["stream_dead_count"]
-                    if count >= 3:
-                        from api import _deactivate_dead_movie
-                        await _deactivate_dead_movie(movie_id, result["name"], result["year"],
-                                                     f"playback HTTP {status_code}, strike {count}/3")
-                        await db.execute("UPDATE movies SET stream_dead = 1 WHERE id = ?", (movie_id,))
-                        _log_event("warn", movie_id, f"Auto-deactivated: HTTP {status_code}, strike {count}/3",
-                                   stream_id=stream_id)
-                    else:
-                        _log_event("warn", movie_id, f"Stream error: HTTP {status_code}, strike {count}/3",
-                                   stream_id=stream_id)
+                    mname = result["name"] or None
+                    from api import _deactivate_dead_movie
+                    await _deactivate_dead_movie(movie_id, result["name"], result["year"],
+                                                 f"playback HTTP {status_code}")
+                    await db.execute("UPDATE movies SET stream_dead = 1 WHERE id = ?", (movie_id,))
+                    _log_event("warn", movie_id, f"Auto-deactivated: HTTP {status_code} (1-strike)",
+                               movie_name=mname, stream_id=stream_id)
                 await db.commit()
             finally:
-                await db.close()
+                pass
         except Exception as e:
             logger.error("Failed to handle stream error for movie %d: %s", movie_id, e)
 
