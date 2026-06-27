@@ -337,6 +337,15 @@ class StreamPipe:
         }
 
 
+# --- Probe Throttle ---
+# Prevents Plex library scans from burning movies via rapid provider connections.
+# Tracks uncached range requests per movie. If Plex probes again within PROBE_WINDOW
+# seconds, the movie enters a PROBE_COOLDOWN period. After cooldown, one more probe
+# triggers 2-strike dead marking.
+PROBE_WINDOW = 60          # seconds — rapid probes within this window trigger cooldown
+PROBE_COOLDOWN = 180       # seconds — wait this long before allowing another provider connection
+_probe_tracker: dict[int, dict] = {}  # {movie_id: {last_probe: float, strikes: int, cooldown_until: float}}
+
 # --- Pipe Manager ---
 _movie_pipes: dict[int, StreamPipe] = {}
 _pipe_creating: dict[int, asyncio.Lock] = {}
@@ -495,6 +504,7 @@ async def _create_pipe_locked(movie_id: int, file_size: int, duration_seconds: i
     if cached_size > 0 and actual_start != effective_offset:
         pipe.bytes_written = cached_size
     _movie_pipes[movie_id] = pipe
+    _probe_tracker.pop(movie_id, None)
     await pipe.start(resume_offset=effective_offset if effective_offset != actual_start else None)
     return pipe
 
@@ -962,6 +972,79 @@ async def vod_file(filename: str, request: Request):
                 except Exception as be:
                     logger.warning("Disk buffer read error for movie %d: %s", movie_id, be)
 
+        # --- Probe throttle (prevents Plex scans from burning movies) ---
+        # If we reach here, cache didn't cover this range. Before opening a provider
+        # connection, check if this looks like a rapid Plex scan pattern.
+        if not _movie_pipes.get(movie_id):
+            now = time.time()
+            tracker = _probe_tracker.get(movie_id)
+
+            if tracker:
+                # In cooldown — serve nothing for uncached ranges
+                if now < tracker.get("cooldown_until", 0):
+                    remaining = int(tracker["cooldown_until"] - now)
+                    _log_event("info", movie_id, f"Probe throttled — cooldown {remaining}s remaining",
+                               movie_name=movie_name, range_start=range_start)
+                    return Response(
+                        status_code=416,
+                        headers={"content-range": f"bytes */{file_size}"},
+                        content="Range not available during cooldown",
+                    )
+
+                # Post-cooldown probe — this is a new attempt after we delayed
+                if tracker.get("strikes", 0) >= 1 and tracker.get("cooldown_until", 0) > 0 and now >= tracker["cooldown_until"]:
+                    # Strike 2: Plex came back after cooldown. Mark dead.
+                    _log_event("warn", movie_id, "Probe 2-strike — marking dead",
+                               movie_name=movie_name)
+                    try:
+                        from api import _plex_remove_movies, _movie_folder_name, STRM_OUTPUT_DIR, DEAD_DIR
+                        db2 = await get_db()
+                        row2 = await db2.execute(
+                            "SELECT id, name, year, activated FROM movies WHERE id = ?", (movie_id,))
+                        m = await row2.fetchone()
+                        if m and m["activated"]:
+                            folder_name = _movie_folder_name(dict(m))
+                            live_folder = os.path.join(STRM_OUTPUT_DIR, folder_name)
+                            dead_folder = os.path.join(DEAD_DIR, folder_name)
+                            if os.path.isdir(live_folder):
+                                import shutil
+                                os.makedirs(DEAD_DIR, exist_ok=True)
+                                shutil.move(live_folder, dead_folder)
+                            await _plex_remove_movies([movie_id])
+                        from datetime import datetime as dt, timezone as tz
+                        dead_now = dt.now(tz.utc).isoformat()
+                        await db2.execute(
+                            "UPDATE movies SET dead = 1, dead_at = ?, activated = 0 WHERE id = ?",
+                            (dead_now, movie_id))
+                        await db2.commit()
+                    except Exception as e:
+                        logger.error("Failed to mark movie %d dead from probe throttle: %s", movie_id, e)
+                    _probe_tracker.pop(movie_id, None)
+                    return Response(status_code=410, content="Movie marked dead after repeated scan probes")
+
+                # Rapid re-probe within PROBE_WINDOW — enter cooldown (strike 1)
+                if now - tracker["last_probe"] < PROBE_WINDOW:
+                    tracker["strikes"] = tracker.get("strikes", 0) + 1
+                    tracker["cooldown_until"] = now + PROBE_COOLDOWN
+                    tracker["last_probe"] = now
+                    _log_event("warn", movie_id,
+                               f"Rapid probe detected (strike {tracker['strikes']}) — {PROBE_COOLDOWN}s cooldown",
+                               movie_name=movie_name, range_start=range_start)
+                    return Response(
+                        status_code=416,
+                        headers={"content-range": f"bytes */{file_size}"},
+                        content="Range not available during cooldown",
+                    )
+
+                # Probe outside the rapid window with no active cooldown — reset, allow
+                tracker["last_probe"] = now
+                tracker["strikes"] = 0
+                tracker["cooldown_until"] = 0
+
+            else:
+                # First probe for this movie — record it, allow connection
+                _probe_tracker[movie_id] = {"last_probe": now, "strikes": 0, "cooldown_until": 0}
+
         # --- Need streaming pipe (create or resume) ---
 
         ext = "mp4" if content_type == "video/mp4" else "mkv"
@@ -1081,21 +1164,28 @@ async def _handle_upstream_error(movie_id: int, stream_id: int, status_code: int
 
     if status_code >= 500:
         try:
+            from api import _plex_remove_movies, _movie_folder_name, STRM_OUTPUT_DIR, DEAD_DIR
             db = await get_db()
             try:
-                await db.execute(
-                    "UPDATE movies SET stream_dead_count = COALESCE(stream_dead_count, 0) + 1 WHERE id = ?",
-                    (movie_id,),
-                )
-                row = await db.execute("SELECT stream_dead_count, name, year FROM movies WHERE id = ?", (movie_id,))
+                row = await db.execute(
+                    "SELECT id, name, year, activated FROM movies WHERE id = ?", (movie_id,))
                 result = await row.fetchone()
                 if result:
-                    count = result["stream_dead_count"]
                     mname = result["name"] or None
-                    from api import _deactivate_dead_movie
-                    await _deactivate_dead_movie(movie_id, result["name"], result["year"],
-                                                 f"playback HTTP {status_code}")
-                    await db.execute("UPDATE movies SET stream_dead = 1 WHERE id = ?", (movie_id,))
+                    if result["activated"]:
+                        folder_name = _movie_folder_name(dict(result))
+                        live_folder = os.path.join(STRM_OUTPUT_DIR, folder_name)
+                        dead_folder = os.path.join(DEAD_DIR, folder_name)
+                        if os.path.isdir(live_folder):
+                            import shutil
+                            os.makedirs(DEAD_DIR, exist_ok=True)
+                            shutil.move(live_folder, dead_folder)
+                        await _plex_remove_movies([movie_id])
+                    from datetime import datetime as dt, timezone as tz
+                    dead_now = dt.now(tz.utc).isoformat()
+                    await db.execute(
+                        "UPDATE movies SET dead = 1, dead_at = ?, activated = 0, stream_dead = 1 WHERE id = ?",
+                        (dead_now, movie_id))
                     _log_event("warn", movie_id, f"Auto-deactivated: HTTP {status_code} (1-strike)",
                                movie_name=mname, stream_id=stream_id)
                 await db.commit()
