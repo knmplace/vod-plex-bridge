@@ -1590,8 +1590,9 @@ async def catalog_summary():
             "SELECT c.id, c.name, COALESCE(c.hidden, 0) as hidden, COUNT(mc.movie_id) as movie_count, "
             "SUM(CASE WHEN m.activated = 1 THEN 1 ELSE 0 END) as activated_count "
             "FROM vod_categories c "
-            "LEFT JOIN movie_categories mc ON c.id = mc.category_id "
-            "LEFT JOIN movies m ON mc.movie_id = m.id AND m.name != '' "
+            "JOIN movie_categories mc ON c.id = mc.category_id "
+            "JOIN movies m ON mc.movie_id = m.id AND m.name != '' "
+            "WHERE COALESCE(c.hidden, 0) = 0 "
             "GROUP BY c.id ORDER BY c.name"
         )
         categories = [dict(r) for r in await cat_rows.fetchall()]

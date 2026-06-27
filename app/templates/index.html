@@ -1010,6 +1010,7 @@
                     <div class="panel-header">By Category
                         <input type="text" class="search-input" id="summaryCatSearch" style="width:150px;margin:0;font-size:0.7rem;padding:0.2rem 0.4rem;" placeholder="Search..." oninput="renderCatalogSummary()">
                     </div>
+                    <div style="text-align:center;padding:0.3rem 0;font-size:0.7rem;color:var(--text-muted);border-bottom:1px solid var(--border);">Categories currently in catalog</div>
                     <div class="panel-body" style="max-height:350px;overflow-y:auto;">
                         <table class="summary-table compact">
                             <thead><tr><th>Category</th><th style="text-align:right">Total</th><th style="text-align:right">Active</th></tr></thead>
@@ -1975,11 +1976,8 @@
             }
             if (cats.length) {
                 catTbody.innerHTML = cats.map(c => {
-                    const isHidden = c.hidden === 1;
-                    const hideLabel = isHidden ? 'show' : 'hide';
-                    return `<tr class="${isHidden ? 'cat-hidden-row' : ''}">` +
-                        `<td>${c.name} <span class="cat-browse-tag" onclick="switchTab('browse');browseByCat('${c.id}','${c.name}');">browse</span>` +
-                        `<button class="cat-hide-btn" onclick="toggleCatHidden(${c.id},${isHidden ? 0 : 1})">${hideLabel}</button></td>` +
+                    return `<tr>` +
+                        `<td>${c.name}</td>` +
                         `<td class="num">${c.movie_count.toLocaleString()}</td>` +
                         `<td class="num" style="color:var(--success)">${(c.activated_count || 0).toLocaleString()}</td></tr>`;
                 }).join('');
