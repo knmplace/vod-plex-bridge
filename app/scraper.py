@@ -179,6 +179,10 @@ async def scrape_catalog(max_movies: int = 0, category_ids: list = None, account
                             if resp.status_code != 200:
                                 continue
                             movie = resp.json()
+                            if not movie.get("name", "").strip():
+                                logger.info(f"Skipping movie {movie_id}: empty name")
+                                remaining.discard(movie_id)
+                                continue
                             await _upsert_movie(db, movie)
                             total_synced += 1
                             remaining.discard(movie_id)
@@ -218,6 +222,8 @@ async def scrape_catalog(max_movies: int = 0, category_ids: list = None, account
                             break
                         if max_movies > 0 and total_synced >= max_movies:
                             break
+                        if not movie.get("name", "").strip():
+                            continue
                         await _upsert_movie(db, movie)
                         total_synced += 1
 
