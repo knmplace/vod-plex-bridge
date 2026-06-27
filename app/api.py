@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN, GLUETUN_API_URL
+from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN
 from database import get_db
 from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled
 from generator import generate_strm_files, sanitize_filename
@@ -59,10 +59,13 @@ async def get_status():
 @router.get("/vpn-ip")
 async def get_vpn_ip():
     try:
+        headers = {}
+        if DISPATCHARR_API_KEY:
+            headers["X-API-Key"] = DISPATCHARR_API_KEY
         async with httpx.AsyncClient(timeout=5) as client:
-            r = await client.get(f"{GLUETUN_API_URL}/v1/publicip/ip")
+            r = await client.get(f"{DISPATCHARR_URL}/api/core/settings/env/", headers=headers)
             data = r.json()
-            return {"ip": data.get("public_ip", ""), "country": data.get("country", ""), "city": data.get("city", "")}
+            return {"ip": data.get("public_ip", ""), "country": data.get("country_name", ""), "city": data.get("city", "")}
     except Exception:
         return {"ip": "", "country": "", "city": ""}
 

@@ -37,7 +37,6 @@ Edit `.env` with your values. The key settings:
 | `DATA_DIR` | Host path for bridge database and config files | `/opt/vod-plex-bridge/data` |
 | `PLEX_VOD_DIR` | Host path where .strm files are written — Plex reads from here | `/mnt/media/plex-vod` |
 | `TMDB_API_KEY` | TMDB API key for metadata enrichment | |
-| `GLUETUN_API_URL` | VPN container control API URL (optional, for IP display) | `http://192.168.x.x:8000` |
 
 ### Important Notes on Paths
 
@@ -141,7 +140,7 @@ The bridge connects to Dispatcharr's API to sync catalog data and proxy video st
 
 However you have Dispatcharr configured (direct connection, behind a VPN, etc.), the bridge uses that same path. No additional VPN or routing configuration is needed for the bridge itself.
 
-If Dispatcharr runs behind a VPN container and you want the bridge to display the VPN IP address, set `GLUETUN_API_URL` to the VPN container's control API endpoint.
+If `DISPATCHARR_API_KEY` is set, the bridge will display Dispatcharr's public IP address in the header (fetched from Dispatcharr's environment API).
 
 ## Updating
 
