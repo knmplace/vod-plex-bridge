@@ -71,10 +71,16 @@ async def get_vpn_ip():
 
 
 @router.get("/providers")
-async def list_providers():
+async def list_providers(browse: bool = False):
     db = await get_db()
     try:
-        rows = await db.execute("SELECT id, name FROM m3u_accounts ORDER BY name")
+        if browse:
+            rows = await db.execute(
+                "SELECT DISTINCT a.id, a.name FROM m3u_accounts a "
+                "JOIN movies m ON m.account_id = a.id WHERE m.name != '' ORDER BY a.name"
+            )
+        else:
+            rows = await db.execute("SELECT id, name FROM m3u_accounts ORDER BY name")
         accounts = [dict(r) for r in await rows.fetchall()]
 
         sel_rows = await db.execute("SELECT account_id FROM selected_accounts WHERE enabled = 1")
@@ -122,10 +128,20 @@ async def deselect_provider(request: Request):
 
 
 @router.get("/categories")
-async def list_categories(account_id: int = 0):
+async def list_categories(account_id: int = 0, browse: bool = False):
     db = await get_db()
     try:
-        if account_id:
+        if browse:
+            rows = await db.execute(
+                "SELECT c.id, c.name, c.category_type, COALESCE(c.hidden, 0) as hidden, "
+                "COUNT(mc.movie_id) as movie_count "
+                "FROM vod_categories c "
+                "JOIN movie_categories mc ON c.id = mc.category_id "
+                "JOIN movies m ON mc.movie_id = m.id AND m.name != '' "
+                "WHERE COALESCE(c.hidden, 0) = 0 "
+                "GROUP BY c.id ORDER BY c.name"
+            )
+        elif account_id:
             rows = await db.execute(
                 "SELECT c.id, c.name, c.category_type, c.movie_count, COALESCE(c.hidden, 0) as hidden "
                 "FROM vod_categories c "

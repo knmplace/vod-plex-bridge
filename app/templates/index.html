@@ -1424,8 +1424,9 @@
             msUpdateBtn(msId);
         }
 
-        function refreshProviderFilter() {
-            const items = allProviders.map(p => ({ value: String(p.id), label: p.name }));
+        async function refreshProviderFilter() {
+            const browseProviders = await fetchJSON('/api/providers?browse=true');
+            const items = browseProviders.map(p => ({ value: String(p.id), label: p.name }));
             buildMsDropdown('msProv', items);
         }
 
@@ -1568,8 +1569,9 @@
             document.getElementById('selectedCatCount').textContent = allCategories.filter(c => c.selected).length;
         }
 
-        function updateBrowseCatFilter() {
-            const items = allCategories.filter(c => !c.hidden).map(c => ({ value: String(c.id), label: `${c.name} (${c.movie_count.toLocaleString()})` }));
+        async function updateBrowseCatFilter() {
+            const browseCats = await fetchJSON('/api/categories?browse=true');
+            const items = browseCats.map(c => ({ value: String(c.id), label: `${c.name} (${c.movie_count.toLocaleString()})` }));
             buildMsDropdown('msCat', items);
         }
 
