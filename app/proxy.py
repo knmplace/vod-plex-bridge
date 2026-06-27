@@ -520,7 +520,7 @@ async def _pipe_manager_loop():
             for mid, pipe in list(_movie_pipes.items()):
                 if pipe.error:
                     to_cleanup.append((mid, "error"))
-                elif pipe.is_plex_idle and pipe.started and pipe.finished:
+                elif pipe.is_plex_idle and pipe.started and not pipe.finished:
                     to_cleanup.append((mid, "plex_idle"))
                 elif pipe.is_idle and pipe.started:
                     to_cleanup.append((mid, "full_idle"))
