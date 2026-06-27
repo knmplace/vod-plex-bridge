@@ -1559,23 +1559,9 @@
             const selectedProvs = allProviders.filter(p => p.selected);
             if (selectedProvs.length === 0) {
                 allCategories = [];
-            } else if (selectedProvs.length === 1) {
-                allCategories = await fetchJSON('/api/categories?account_id=' + selectedProvs[0].id);
             } else {
-                const catSets = await Promise.all(
-                    selectedProvs.map(p => fetchJSON('/api/categories?account_id=' + p.id))
-                );
-                const seen = new Set();
-                allCategories = [];
-                for (const cats of catSets) {
-                    for (const c of cats) {
-                        if (!seen.has(c.id)) {
-                            seen.add(c.id);
-                            allCategories.push(c);
-                        }
-                    }
-                }
-                allCategories.sort((a, b) => a.name.localeCompare(b.name));
+                const params = selectedProvs.map(p => 'account_id=' + p.id).join('&');
+                allCategories = await fetchJSON('/api/categories?' + params);
             }
             renderCategoryGrid();
             updateBrowseCatFilter();

@@ -128,7 +128,9 @@ async def deselect_provider(request: Request):
 
 
 @router.get("/categories")
-async def list_categories(account_id: int = 0, browse: bool = False):
+async def list_categories(request: Request, browse: bool = False):
+    import json as _json
+    account_ids = [int(x) for x in request.query_params.getlist("account_id") if x.isdigit()]
     db = await get_db()
     try:
         if browse:
@@ -141,19 +143,43 @@ async def list_categories(account_id: int = 0, browse: bool = False):
                 "WHERE COALESCE(c.hidden, 0) = 0 "
                 "GROUP BY c.id ORDER BY c.name"
             )
-        elif account_id:
+            cats = [dict(r) for r in await rows.fetchall()]
+        elif account_ids:
+            acct_set = set(account_ids)
+            placeholders = ",".join("?" for _ in account_ids)
             rows = await db.execute(
-                "SELECT c.id, c.name, c.category_type, c.movie_count, COALESCE(c.hidden, 0) as hidden "
+                "SELECT DISTINCT c.id, c.name, c.category_type, c.movie_count, COALESCE(c.hidden, 0) as hidden "
                 "FROM vod_categories c "
                 "JOIN vod_category_accounts ca ON c.id = ca.category_id "
-                "WHERE ca.account_id = ? ORDER BY c.name",
-                (account_id,),
+                f"WHERE ca.account_id IN ({placeholders}) ORDER BY c.name",
+                account_ids,
             )
+            cats = [dict(r) for r in await rows.fetchall()]
+
+            provider_movie_ids = None
+            all_acct_rows = await db.execute("SELECT id FROM m3u_accounts")
+            all_acct_ids = {r["id"] for r in await all_acct_rows.fetchall()}
+            if acct_set < all_acct_ids and os.path.exists(STREAM_MAPPING_FILE):
+                with open(STREAM_MAPPING_FILE) as f:
+                    stream_map = _json.load(f)
+                provider_movie_ids = set()
+                for mid_str, info in stream_map.items():
+                    entries = info if isinstance(info, list) else [info]
+                    if any(e.get("account_id") in acct_set for e in entries):
+                        provider_movie_ids.add(int(mid_str))
+
+            if provider_movie_ids is not None and os.path.exists(CATEGORY_MAPPING_FILE):
+                with open(CATEGORY_MAPPING_FILE) as f:
+                    dump_cats = _json.load(f)
+                cat_movie_map = {dc["id"]: set(dc.get("movie_ids", [])) for dc in dump_cats}
+                for c in cats:
+                    cat_movies = cat_movie_map.get(c["id"], set())
+                    c["movie_count"] = len(cat_movies & provider_movie_ids)
         else:
             rows = await db.execute(
                 "SELECT id, name, category_type, movie_count, COALESCE(hidden, 0) as hidden FROM vod_categories ORDER BY name"
             )
-        cats = [dict(r) for r in await rows.fetchall()]
+            cats = [dict(r) for r in await rows.fetchall()]
 
         sel_rows = await db.execute("SELECT category_id FROM selected_categories WHERE enabled = 1")
         selected = {r["category_id"] for r in await sel_rows.fetchall()}
