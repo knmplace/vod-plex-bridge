@@ -1345,6 +1345,7 @@
         }
 
         // --- Status ---
+        let _langWasActive = false;
         async function refreshStatus() {
             const s = await fetchJSON('/api/status');
             document.getElementById('totalMovies').textContent = s.total_movies?.toLocaleString() || '0';
@@ -1371,6 +1372,13 @@
                 text.textContent = 'Ready';
             }
             stopBtn.style.display = (s.status !== 'idle' || langActive) ? 'inline-block' : 'none';
+
+            if (_langWasActive && !langActive && s.status === 'idle') {
+                loadMovies(currentPage);
+                loadCatalogSummary();
+                refreshLanguageFilter();
+            }
+            _langWasActive = langActive;
 
             if (s.status !== 'idle' || langActive) {
                 setTimeout(refreshStatus, 2000);

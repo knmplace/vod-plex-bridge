@@ -1541,12 +1541,17 @@ async def _bulk_detect_languages():
 
         detected = 0
         skipped = 0
+        no_tmdb = 0
 
         async def fetch_lang(client, movie):
-            nonlocal detected, skipped
+            nonlocal detected, skipped, no_tmdb
             if is_cancelled():
                 return
-            url = f"https://api.themoviedb.org/3/movie/{movie['tmdb_id']}"
+            tmdb_id = movie['tmdb_id']
+            if not tmdb_id:
+                no_tmdb += 1
+                return
+            url = f"https://api.themoviedb.org/3/movie/{tmdb_id}"
             headers = {}
             params = {}
             if TMDB_READ_TOKEN:
@@ -1557,50 +1562,59 @@ async def _bulk_detect_languages():
                 try:
                     resp = await client.get(url, params=params, headers=headers)
                     if resp.status_code == 429:
-                        retry_after = int(resp.headers.get("Retry-After", "2"))
+                        retry_after = int(resp.headers.get("Retry-After", "4"))
+                        logger.debug(f"TMDB 429 for movie {movie['id']}, retry after {retry_after}s (attempt {attempt+1})")
                         await asyncio.sleep(retry_after + 1)
                         continue
+                    if resp.status_code == 404:
+                        skipped += 1
+                        return
                     if resp.status_code != 200:
+                        logger.warning(f"TMDB {resp.status_code} for tmdb_id={tmdb_id} movie={movie['id']}")
                         skipped += 1
                         return
                     lang = resp.json().get("original_language", "")
-                    await db.execute("UPDATE movies SET language = ? WHERE id = ?", (lang, movie["id"]))
-                    detected += 1
+                    if lang:
+                        await db.execute("UPDATE movies SET language = ? WHERE id = ?", (lang, movie["id"]))
+                        detected += 1
+                    else:
+                        skipped += 1
                     return
-                except Exception:
+                except Exception as e:
                     if attempt < 4:
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(2)
                         continue
+                    logger.warning(f"TMDB error for movie {movie['id']}: {e}")
                     skipped += 1
                     return
             skipped += 1
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            batch_size = 35
-            for i in range(0, total, batch_size):
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for i in range(0, total, 1):
                 if is_cancelled():
                     break
-                batch = movies[i:i + batch_size]
-                for m in batch:
-                    if is_cancelled():
-                        break
-                    await fetch_lang(client, m)
-                await db.commit()
-                await db.execute(
-                    "UPDATE sync_state SET lang_status = ? WHERE id = 1",
-                    (f"Detecting languages: {detected + skipped}/{total} ({detected} detected)...",),
-                )
-                await db.commit()
-                if i + batch_size < total:
-                    await asyncio.sleep(1)
+                await fetch_lang(client, movies[i])
+                if (i + 1) % 50 == 0:
+                    await db.commit()
+                    await db.execute(
+                        "UPDATE sync_state SET lang_status = ? WHERE id = 1",
+                        (f"Detecting languages: {detected + skipped + no_tmdb}/{total} ({detected} detected)...",),
+                    )
+                    await db.commit()
+                if (i + 1) % 35 == 0:
+                    await asyncio.sleep(10)
 
+        await db.commit()
         status_msg = "cancelled" if is_cancelled() else "complete"
+        skip_detail = f"{skipped} skipped"
+        if no_tmdb:
+            skip_detail += f", {no_tmdb} no TMDB ID"
         await db.execute(
             "UPDATE sync_state SET lang_status = ? WHERE id = 1",
-            (f"Language detection {status_msg}: {detected} detected, {skipped} skipped",),
+            (f"Language detection {status_msg}: {detected} detected, {skip_detail}",),
         )
         await db.commit()
-        logger.info(f"Bulk language detection {status_msg}: {detected} detected, {skipped} skipped out of {total}")
+        logger.info(f"Bulk language detection {status_msg}: {detected} detected, {skip_detail} out of {total}")
     except Exception as e:
         logger.error(f"Bulk language detection failed: {e}")
         await db.execute(
