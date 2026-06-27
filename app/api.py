@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN
 from database import get_db
 from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing
-from generator import generate_strm_files, sanitize_filename
+from generator import generate_strm_files, sanitize_filename, write_strm_for_movie
 from stream_mapper import apply_stream_mapping_to_db, load_stream_mapping, pick_stream_for_account
 from proxy import probe_file_size, get_proxy_log, get_all_pipes, _log_event, archive_proxy_log, cleanup_old_archives, list_log_archives, get_log_archive
 from health import run_health_checks, get_health_status, get_health_log, health_check_scheduler
@@ -1135,6 +1135,14 @@ async def _fetch_headers_validated(movies: list[dict]) -> tuple[list[int], list[
                     _log_event("info", movie_id, "Activated — head+tail cached",
                                movie_name=movie_name,
                                head_bytes=len(header_bytes), tail_bytes=len(tail_bytes) if tail_bytes else 0, file_size=file_size)
+
+                    full_row = await db.execute("SELECT * FROM movies WHERE id = ?", (movie_id,))
+                    full_movie = await full_row.fetchone()
+                    if full_movie:
+                        await write_strm_for_movie(dict(full_movie))
+                        strm_count = _count_strm_folders()
+                        await db.execute("UPDATE sync_state SET active_strm_count = ? WHERE id = 1", (strm_count,))
+                        await db.commit()
                 finally:
                     pass
 

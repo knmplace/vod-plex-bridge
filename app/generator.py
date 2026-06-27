@@ -168,6 +168,51 @@ async def generate_strm_files():
         pass
 
 
+async def write_strm_for_movie(movie):
+    """Write .strm + .nfo + poster for a single activated movie."""
+    name = movie["name"]
+    year = movie["year"]
+    movie_id = movie["id"]
+    if not name:
+        return False
+
+    clean_name = re.sub(r'\s*[-–]\s*\d{4}\s*$', '', name).strip()
+    clean_name = re.sub(r'\s*\(\d{4}\)\s*$', '', clean_name).strip()
+
+    if year:
+        folder_name = sanitize_filename(f"{clean_name} ({year})")
+        file_name = sanitize_filename(f"{clean_name} ({year})")
+    else:
+        folder_name = sanitize_filename(clean_name)
+        file_name = sanitize_filename(clean_name)
+
+    folder_path = os.path.join(STRM_OUTPUT_DIR, folder_name)
+    os.makedirs(folder_path, exist_ok=True)
+
+    strm_url = f"http://{BRIDGE_HOST}:{BRIDGE_PORT}/stream/{movie_id}.mp4"
+    strm_path = os.path.join(folder_path, f"{file_name}.strm")
+    with open(strm_path, "w", encoding="utf-8") as f:
+        f.write(strm_url)
+
+    nfo_path = os.path.join(folder_path, f"{file_name}.nfo")
+    with open(nfo_path, "w", encoding="utf-8") as f:
+        f.write(build_nfo(movie))
+
+    poster_url = movie.get("poster_url") or ""
+    poster_path = os.path.join(folder_path, "poster.jpg")
+    if poster_url and not os.path.exists(poster_path):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(poster_url)
+                if resp.status_code == 200:
+                    with open(poster_path, "wb") as f:
+                        f.write(resp.content)
+        except Exception:
+            pass
+
+    return True
+
+
 def build_nfo(movie) -> str:
     genres = ""
     if movie["genre"]:
