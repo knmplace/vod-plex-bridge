@@ -29,7 +29,7 @@ BUFFER_MAX_AGE = 86400      # 24 hours — delete stale buffer files
 BUFFER_CLEANUP_INTERVAL = 3600  # check every hour
 PIPE_POLL_INTERVAL = 0.1    # seconds between checks when waiting for data
 PIPE_POLL_MAX_WAIT = 30     # max seconds to wait for data before giving up
-BUFFER_TARGET_SECS = 60     # informational — pipe reads at 1x bitrate continuously
+BUFFER_TARGET_SECS = 60     # adaptive throttle target — speeds up/slows down around this
 DEFAULT_BITRATE = 500_000  # 4 Mbps = 500 KB/s fallback (bytes/sec)
 
 os.makedirs(BUFFER_DIR, exist_ok=True)
@@ -88,19 +88,35 @@ class StreamPipe:
             limits=httpx.Limits(max_connections=2, max_keepalive_connections=1),
         )
         self._download_task = asyncio.create_task(self._download_loop())
-        target_bps = self.bytes_per_second * 1.2
-        est_duration = (self.file_size / target_bps / 60) if target_bps > 0 else 0
+        base_bps = self.bytes_per_second
+        est_duration = (self.file_size / base_bps / 60) if base_bps > 0 else 0
         if resume_offset:
             logger.info("Pipe RESUMED for movie %d (cached=%dMB, resuming from offset %d, bitrate=%.0f B/s [%s])",
                          self.movie_id, self.bytes_written // (1024*1024), resume_offset, self.bytes_per_second, self.bitrate_source)
         else:
-            logger.info("Pipe started for movie %d (bitrate=%.0f B/s [%s], target=%.0f KB/s, est=%.0fmin, offset=%d)",
+            logger.info("Pipe started for movie %d (bitrate=%.0f B/s [%s], adaptive throttle, est=%.0fmin, offset=%d)",
                          self.movie_id, self.bytes_per_second, self.bitrate_source,
-                         target_bps / 1024, est_duration, self.start_offset)
+                         est_duration, self.start_offset)
+
+    def _adaptive_multiplier(self) -> float:
+        """Smooth adaptive rate based on how far download is ahead of Plex."""
+        if self.bytes_per_second <= 0:
+            return 1.2
+        total_downloaded = self.start_offset + self.bytes_written
+        buffer_ahead_secs = (total_downloaded - self.plex_position) / self.bytes_per_second
+        if buffer_ahead_secs < 10:
+            return 2.0
+        elif buffer_ahead_secs < 30:
+            return 1.5
+        elif buffer_ahead_secs < 60:
+            return 1.2
+        elif buffer_ahead_secs < 120:
+            return 1.0
+        else:
+            return 0.7
 
     async def _download_loop(self):
         CHUNK_SIZE = 65536  # 64KB iteration size from the stream
-        RATE_MULTIPLIER = 1.2  # stay slightly ahead of playback
         INITIAL_BURST = 2 * 1024 * 1024  # first 2MB at full speed
         LOG_INTERVAL = 30
         try:
@@ -137,10 +153,10 @@ class StreamPipe:
 
             _clear_failure_by_movie(self.movie_id)
 
-            target_bps = self.bytes_per_second * RATE_MULTIPLIER
             wall_start = time.monotonic()
             last_log = wall_start
             session_bytes = 0
+            last_multiplier = 1.2
 
             with open(self.buffer_path, file_mode) as f:
                 async for chunk in self._resp.aiter_bytes(CHUNK_SIZE):
@@ -150,7 +166,10 @@ class StreamPipe:
                     session_bytes += len(chunk)
                     self.last_read_at = time.time()
 
-                    if session_bytes > INITIAL_BURST and target_bps > 0:
+                    if session_bytes > INITIAL_BURST and self.bytes_per_second > 0:
+                        multiplier = self._adaptive_multiplier()
+                        last_multiplier = multiplier
+                        target_bps = self.bytes_per_second * multiplier
                         elapsed = time.monotonic() - wall_start
                         expected_time = session_bytes / target_bps
                         ahead = expected_time - elapsed
@@ -163,10 +182,11 @@ class StreamPipe:
                         actual_rate = session_bytes / elapsed if elapsed > 0 else 0
                         total_buffered = self.start_offset + self.bytes_written
                         pct = (total_buffered / self.file_size * 100) if self.file_size else 0
-                        logger.info("Pipe movie %d: %.1f%% (%dMB / %dMB) @ %.0f KB/s (target %.0f KB/s) elapsed %.0fs",
+                        buffer_ahead_secs = (total_buffered - self.plex_position) / self.bytes_per_second if self.bytes_per_second > 0 else 0
+                        logger.info("Pipe movie %d: %.1f%% (%dMB / %dMB) @ %.0f KB/s (x%.1f, buf %.0fs ahead) elapsed %.0fs",
                                     self.movie_id, pct,
                                     total_buffered // (1024*1024), self.file_size // (1024*1024),
-                                    actual_rate / 1024, target_bps / 1024, elapsed)
+                                    actual_rate / 1024, last_multiplier, buffer_ahead_secs, elapsed)
                         last_log = now
 
             self.finished = True
@@ -287,6 +307,7 @@ class StreamPipe:
         duration = self.duration_seconds or 0
         plex_time = round(duration * (self.plex_position / self.file_size)) if self.file_size > 0 and duration > 0 else 0
         remaining_time = max(0, duration - plex_time) if duration > 0 else 0
+        rate_multiplier = self._adaptive_multiplier()
         return {
             "movie_id": self.movie_id,
             "session_id": self.session_id,
@@ -303,6 +324,7 @@ class StreamPipe:
             "bitrate_bps": round(self.bytes_per_second),
             "bitrate_source": self.bitrate_source,
             "actual_speed_bps": actual_speed,
+            "rate_multiplier": rate_multiplier,
             "started": self.started,
             "finished": self.finished,
             "error": self.error,

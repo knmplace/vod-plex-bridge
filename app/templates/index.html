@@ -2611,7 +2611,8 @@
                 dlDetail = `${formatBytes(s.file_size)} downloaded`;
             } else if (s.started) {
                 dlDot = 'active'; dlLabel = 'Downloading';
-                dlDetail = `${dlSpeed} (target ${targetSpeed})<br>${formatBytes(s.total_downloaded)} / ${formatBytes(s.file_size)} (${dlPct}%)`;
+                const mult = s.rate_multiplier || 1.2;
+                dlDetail = `${dlSpeed} (x${mult.toFixed(1)})<br>${formatBytes(s.total_downloaded)} / ${formatBytes(s.file_size)} (${dlPct}%)`;
             } else {
                 dlDot = 'idle'; dlLabel = 'Starting';
             }
