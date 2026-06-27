@@ -607,6 +607,11 @@
             grid-template-columns: 1fr 1fr;
             gap: 1rem;
         }
+        .summary-grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 1rem;
+        }
         .summary-table {
             width: 100%;
             border-collapse: collapse;
@@ -626,6 +631,16 @@
         }
         .summary-table td.num { text-align: right; font-weight: 600; color: var(--accent); }
         .summary-table tr:hover { background: var(--bg-card-hover); }
+        .summary-table.compact td { padding: 0.25rem 0.4rem; font-size: 0.73rem; }
+        .summary-table.compact th { padding: 0.3rem 0.4rem; font-size: 0.65rem; }
+        .cat-hidden-row { opacity: 0.45; }
+        .cat-hide-btn {
+            cursor: pointer; font-size: 0.6rem; padding: 0.1rem 0.35rem;
+            border-radius: 3px; border: 1px solid var(--border); background: transparent;
+            color: var(--text-muted); margin-left: 0.3rem; vertical-align: middle;
+        }
+        .cat-hide-btn:hover { border-color: var(--warning); color: var(--warning); }
+        .cat-chip.hidden-cat { opacity: 0.4; text-decoration: line-through; }
 
         .cat-browse-tag {
             display: inline-block;
@@ -756,6 +771,7 @@
         @media (max-width: 768px) {
             .top-panels { grid-template-columns: 1fr; }
             .summary-grid { grid-template-columns: 1fr; }
+            .summary-grid-3 { grid-template-columns: 1fr; }
             .stream-segments { grid-template-columns: 1fr; }
         }
     </style>
@@ -806,8 +822,6 @@
             <span class="value" id="activeStrm">-</span>
             <span class="label">STRM</span>
         </div>
-        <button class="btn btn-primary" onclick="syncCatalog()">Sync Selected</button>
-        <button class="btn btn-outline" onclick="loadCategories()">Reload Categories</button>
         <button class="btn btn-warning" onclick="detectAllLanguages()">Detect All Languages</button>
         <button class="btn btn-outline" onclick="scanDead()">Scan Dead</button>
         <button class="btn btn-danger" onclick="clearCatalog()">Clear Catalog</button>
@@ -819,72 +833,6 @@
 
     <!-- BROWSE TAB -->
     <div class="tab-content active" id="tabBrowse">
-        <div class="top-panels">
-            <!-- Providers -->
-            <div class="panel" id="providerPanel">
-                <div class="panel-header collapsible" onclick="togglePanel('providerPanel')">
-                    <span><span class="collapse-arrow">&#9660;</span>Providers</span>
-                    <span class="badge" id="selectedProvCount">0</span>
-                </div>
-                <div class="panel-body">
-                    <div class="scroll-list" id="providerList">
-                        <div class="empty-state">Load categories first.</div>
-                    </div>
-                </div>
-                <div class="panel-footer">
-                    <button class="btn btn-outline" style="font-size:0.7rem;" onclick="selectAllProviders()">All</button>
-                    <button class="btn btn-outline" style="font-size:0.7rem;" onclick="clearProviders()">None</button>
-                </div>
-            </div>
-
-            <!-- Categories -->
-            <div class="panel" id="categoryPanel">
-                <div class="panel-header collapsible" onclick="togglePanel('categoryPanel')">
-                    <span><span class="collapse-arrow">&#9660;</span>Categories</span>
-                    <div style="display:flex;align-items:center;gap:0.5rem;" onclick="event.stopPropagation()">
-                        <span class="badge" id="selectedCatCount">0</span>
-                        <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="selectAllCategories()">All</button>
-                        <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="clearCategories()">None</button>
-                    </div>
-                </div>
-                <div class="panel-body">
-                    <div style="display:flex;gap:0.4rem;margin-bottom:0.4rem;">
-                        <select class="search-input" id="langFilter" style="width:auto;min-width:140px;margin-bottom:0;" onchange="renderCategoryGrid()">
-                            <option value="">All Languages</option>
-                            <option value="en">English / General</option>
-                            <option value="ES">Spanish</option>
-                            <option value="FR">French</option>
-                            <option value="DE">German</option>
-                            <option value="IT">Italian</option>
-                            <option value="EN">EN - Dubbed/Sub</option>
-                            <option value="NL">Dutch</option>
-                            <option value="GR">Greek</option>
-                            <option value="TR">Turkish</option>
-                            <option value="IN">Indian / Hindi</option>
-                            <option value="PL">Polish</option>
-                            <option value="RU">Russian</option>
-                            <option value="JP">Japanese</option>
-                            <option value="AR">Arabic</option>
-                            <option value="KR">Korean</option>
-                            <option value="PT">Portuguese</option>
-                            <option value="BR">Brazilian</option>
-                            <option value="IR">Persian</option>
-                            <option value="PH">Filipino</option>
-                            <option value="IL">Hebrew</option>
-                            <option value="AL">Albanian</option>
-                            <option value="BG">Bulgarian</option>
-                            <option value="RO">Romanian</option>
-                            <option value="other">Other Languages</option>
-                        </select>
-                        <input type="text" class="search-input" id="catSearch" style="margin-bottom:0;" placeholder="Search categories..." oninput="renderCategoryGrid()">
-                    </div>
-                    <div class="cat-grid" id="categoryGrid" style="max-height:300px;overflow-y:auto;">
-                        <div class="empty-state">Select a provider to see categories.</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- Movie Browser -->
         <div class="browse-section">
             <div class="panel">
@@ -955,36 +903,116 @@
 
     <!-- CATALOG TAB -->
     <div class="tab-content" id="tabCatalog">
+        <!-- Import Controls -->
         <div class="summary-section">
-            <div class="summary-grid">
+            <div class="panel" style="margin-bottom:1rem;">
+                <div class="panel-header">
+                    Catalog Import
+                    <div style="display:flex;gap:0.4rem;" onclick="event.stopPropagation()">
+                        <button class="btn btn-primary" style="font-size:0.72rem;padding:0.25rem 0.6rem;" onclick="syncCatalog()">Sync Selected</button>
+                        <button class="btn btn-outline" style="font-size:0.72rem;padding:0.25rem 0.6rem;" onclick="loadCategories()">Reload Categories</button>
+                    </div>
+                </div>
+                <div class="panel-body" style="padding:0.6rem 0.875rem;">
+                    <p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.75rem;">
+                        Select providers and categories below to control which movies are imported into your catalog. Click <strong>Reload Categories</strong> to fetch available categories from Dispatcharr, select the ones you want, then click <strong>Sync Selected</strong> to import movies. Right-click a category to hide it from browse results.
+                    </p>
+                    <div class="top-panels" style="padding:0;">
+                        <!-- Providers -->
+                        <div class="panel" id="providerPanel">
+                            <div class="panel-header collapsible" onclick="togglePanel('providerPanel')">
+                                <span><span class="collapse-arrow">&#9660;</span>Providers</span>
+                                <span class="badge" id="selectedProvCount">0</span>
+                            </div>
+                            <div class="panel-body">
+                                <div class="scroll-list" id="providerList">
+                                    <div class="empty-state">Click Reload Categories to load providers.</div>
+                                </div>
+                            </div>
+                            <div class="panel-footer">
+                                <button class="btn btn-outline" style="font-size:0.7rem;" onclick="selectAllProviders()">All</button>
+                                <button class="btn btn-outline" style="font-size:0.7rem;" onclick="clearProviders()">None</button>
+                            </div>
+                        </div>
+
+                        <!-- Categories -->
+                        <div class="panel" id="categoryPanel">
+                            <div class="panel-header collapsible" onclick="togglePanel('categoryPanel')">
+                                <span><span class="collapse-arrow">&#9660;</span>Categories</span>
+                                <div style="display:flex;align-items:center;gap:0.5rem;" onclick="event.stopPropagation()">
+                                    <span class="badge" id="selectedCatCount">0</span>
+                                    <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="selectAllCategories()">All</button>
+                                    <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="clearCategories()">None</button>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                <div style="display:flex;gap:0.4rem;margin-bottom:0.4rem;">
+                                    <select class="search-input" id="langFilter" style="width:auto;min-width:140px;margin-bottom:0;" onchange="renderCategoryGrid()">
+                                        <option value="">All Languages</option>
+                                        <option value="en">English / General</option>
+                                        <option value="ES">Spanish</option>
+                                        <option value="FR">French</option>
+                                        <option value="DE">German</option>
+                                        <option value="IT">Italian</option>
+                                        <option value="EN">EN - Dubbed/Sub</option>
+                                        <option value="NL">Dutch</option>
+                                        <option value="GR">Greek</option>
+                                        <option value="TR">Turkish</option>
+                                        <option value="IN">Indian / Hindi</option>
+                                        <option value="PL">Polish</option>
+                                        <option value="RU">Russian</option>
+                                        <option value="JP">Japanese</option>
+                                        <option value="AR">Arabic</option>
+                                        <option value="KR">Korean</option>
+                                        <option value="PT">Portuguese</option>
+                                        <option value="BR">Brazilian</option>
+                                        <option value="IR">Persian</option>
+                                        <option value="PH">Filipino</option>
+                                        <option value="IL">Hebrew</option>
+                                        <option value="AL">Albanian</option>
+                                        <option value="BG">Bulgarian</option>
+                                        <option value="RO">Romanian</option>
+                                        <option value="other">Other Languages</option>
+                                    </select>
+                                    <input type="text" class="search-input" id="catSearch" style="margin-bottom:0;" placeholder="Search categories..." oninput="renderCategoryGrid()">
+                                </div>
+                                <div class="cat-grid" id="categoryGrid" style="max-height:300px;overflow-y:auto;">
+                                    <div class="empty-state">Click Reload Categories to load.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary Row -->
+            <div class="summary-grid-3">
                 <div class="panel">
                     <div class="panel-header">By Provider</div>
-                    <div class="panel-body" style="max-height:500px;overflow-y:auto;">
-                        <table class="summary-table" id="summaryProviders">
-                            <thead><tr><th>Provider</th><th style="text-align:right">Total</th><th style="text-align:right">Activated</th></tr></thead>
-                            <tbody><tr><td colspan="3" class="empty-state">Loading...</td></tr></tbody>
+                    <div class="panel-body" style="max-height:350px;overflow-y:auto;">
+                        <table class="summary-table compact">
+                            <thead><tr><th>Provider</th><th style="text-align:right">Total</th><th style="text-align:right">Active</th></tr></thead>
+                            <tbody id="summaryProviders"><tr><td colspan="3" class="empty-state">Loading...</td></tr></tbody>
                         </table>
                     </div>
                 </div>
                 <div class="panel">
                     <div class="panel-header">By Language</div>
-                    <div class="panel-body" style="max-height:500px;overflow-y:auto;">
-                        <table class="summary-table" id="summaryLanguages">
-                            <thead><tr><th>Language</th><th style="text-align:right">Movies</th></tr></thead>
-                            <tbody><tr><td colspan="2" class="empty-state">Loading...</td></tr></tbody>
+                    <div class="panel-body" style="max-height:350px;overflow-y:auto;">
+                        <table class="summary-table compact">
+                            <thead><tr><th>Language</th><th style="text-align:right">Count</th></tr></thead>
+                            <tbody id="summaryLanguages"><tr><td colspan="2" class="empty-state">Loading...</td></tr></tbody>
                         </table>
                     </div>
                 </div>
-            </div>
-            <div style="margin-top:1rem;">
                 <div class="panel">
                     <div class="panel-header">By Category
-                        <input type="text" class="search-input" id="summaryCatSearch" style="width:200px;margin:0;" placeholder="Search categories..." oninput="renderCatalogSummary()">
+                        <input type="text" class="search-input" id="summaryCatSearch" style="width:150px;margin:0;font-size:0.7rem;padding:0.2rem 0.4rem;" placeholder="Search..." oninput="renderCatalogSummary()">
                     </div>
-                    <div class="panel-body" style="max-height:600px;overflow-y:auto;">
-                        <table class="summary-table" id="summaryCategories">
-                            <thead><tr><th>Category</th><th style="text-align:right">Total</th><th style="text-align:right">Activated</th></tr></thead>
-                            <tbody><tr><td colspan="3" class="empty-state">Loading...</td></tr></tbody>
+                    <div class="panel-body" style="max-height:350px;overflow-y:auto;">
+                        <table class="summary-table compact">
+                            <thead><tr><th>Category</th><th style="text-align:right">Total</th><th style="text-align:right">Active</th></tr></thead>
+                            <tbody id="summaryCategories"><tr><td colspan="3" class="empty-state">Loading...</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -1242,6 +1270,8 @@
                 tabs[1].classList.add('active');
                 document.getElementById('tabCatalog').classList.add('active');
                 loadCatalogSummary();
+                if (!allProviders.length) refreshProviders();
+                if (!allCategories.length) refreshCategories();
             } else if (tab === 'dead') {
                 tabs[2].classList.add('active');
                 document.getElementById('tabDead').classList.add('active');
@@ -1523,9 +1553,9 @@
             }
 
             container.innerHTML = filtered.map(c => `
-                <div class="cat-chip ${c.selected ? 'selected' : ''}"
+                <div class="cat-chip ${c.selected ? 'selected' : ''} ${c.hidden ? 'hidden-cat' : ''}"
                      onclick="toggleCategory(${c.id}, ${c.selected ? 'false' : 'true'})"
-                     oncontextmenu="event.preventDefault();browseByCat(${c.id},'${c.name.replace(/'/g,"\\'")}')">
+                     oncontextmenu="event.preventDefault();toggleCatHidden(${c.id},${c.hidden ? 0 : 1})">
                     <span>${c.name}</span>
                     <span class="count">${c.movie_count.toLocaleString()}</span>
                 </div>
@@ -1538,7 +1568,7 @@
         }
 
         function updateBrowseCatFilter() {
-            const items = allCategories.map(c => ({ value: String(c.id), label: `${c.name} (${c.movie_count.toLocaleString()})` }));
+            const items = allCategories.filter(c => !c.hidden).map(c => ({ value: String(c.id), label: `${c.name} (${c.movie_count.toLocaleString()})` }));
             buildMsDropdown('msCat', items);
         }
 
@@ -1911,7 +1941,7 @@
             const search = (document.getElementById('summaryCatSearch')?.value || '').toLowerCase();
 
             // Providers
-            const provTbody = document.querySelector('#summaryProviders tbody');
+            const provTbody = document.getElementById('summaryProviders');
             if (catalogData.providers.length) {
                 provTbody.innerHTML = catalogData.providers.map(p =>
                     `<tr><td>${p.account_name}</td><td class="num">${p.movie_count.toLocaleString()}</td><td class="num" style="color:var(--success)">${(p.activated_count || 0).toLocaleString()}</td></tr>`
@@ -1922,7 +1952,7 @@
             }
 
             // Languages
-            const langTbody = document.querySelector('#summaryLanguages tbody');
+            const langTbody = document.getElementById('summaryLanguages');
             if (catalogData.languages.length) {
                 langTbody.innerHTML = catalogData.languages.map(l =>
                     `<tr><td>${getLangName(l.language)}</td><td class="num">${l.cnt.toLocaleString()}</td></tr>`
@@ -1935,18 +1965,39 @@
             }
 
             // Categories
-            const catTbody = document.querySelector('#summaryCategories tbody');
+            const catTbody = document.getElementById('summaryCategories');
             let cats = catalogData.categories;
             if (search) {
                 cats = cats.filter(c => c.name.toLowerCase().includes(search));
             }
             if (cats.length) {
-                catTbody.innerHTML = cats.map(c =>
-                    `<tr><td>${c.name} <span class="cat-browse-tag" onclick="switchTab('browse');browseByCat('${c.id}','${c.name}');">browse</span></td><td class="num">${c.movie_count.toLocaleString()}</td><td class="num" style="color:var(--success)">${(c.activated_count || 0).toLocaleString()}</td></tr>`
-                ).join('');
+                catTbody.innerHTML = cats.map(c => {
+                    const isHidden = c.hidden === 1;
+                    const hideLabel = isHidden ? 'show' : 'hide';
+                    return `<tr class="${isHidden ? 'cat-hidden-row' : ''}">` +
+                        `<td>${c.name} <span class="cat-browse-tag" onclick="switchTab('browse');browseByCat('${c.id}','${c.name}');">browse</span>` +
+                        `<button class="cat-hide-btn" onclick="toggleCatHidden(${c.id},${isHidden ? 0 : 1})">${hideLabel}</button></td>` +
+                        `<td class="num">${c.movie_count.toLocaleString()}</td>` +
+                        `<td class="num" style="color:var(--success)">${(c.activated_count || 0).toLocaleString()}</td></tr>`;
+                }).join('');
             } else {
                 catTbody.innerHTML = '<tr><td colspan="3" class="empty-state">No categories found</td></tr>';
             }
+        }
+
+        async function toggleCatHidden(catId, hidden) {
+            await fetchJSON('/api/categories/hide', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({category_id: catId, hidden: hidden})
+            });
+            const cat = catalogData?.categories?.find(c => c.id === catId);
+            if (cat) cat.hidden = hidden;
+            const allCat = allCategories.find(c => c.id === catId);
+            if (allCat) allCat.hidden = hidden;
+            renderCatalogSummary();
+            renderCategoryGrid();
+            updateBrowseCatFilter();
         }
 
         // --- Trailer ---

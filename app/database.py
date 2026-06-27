@@ -139,6 +139,15 @@ async def init_db():
             FOREIGN KEY (account_id) REFERENCES m3u_accounts(id)
         );
     """)
+    for cat_col in [
+        "ALTER TABLE vod_categories ADD COLUMN hidden INTEGER DEFAULT 0",
+    ]:
+        try:
+            await db.execute(cat_col)
+            await db.commit()
+        except Exception:
+            pass
+
     for sync_col in [
         "ALTER TABLE sync_state ADD COLUMN refresh_interval_hours INTEGER DEFAULT 0",
         "ALTER TABLE sync_state ADD COLUMN last_scheduled_refresh TEXT",

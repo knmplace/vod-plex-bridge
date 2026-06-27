@@ -127,7 +127,7 @@ async def list_categories(account_id: int = 0):
     try:
         if account_id:
             rows = await db.execute(
-                "SELECT c.id, c.name, c.category_type, c.movie_count "
+                "SELECT c.id, c.name, c.category_type, c.movie_count, COALESCE(c.hidden, 0) as hidden "
                 "FROM vod_categories c "
                 "JOIN vod_category_accounts ca ON c.id = ca.category_id "
                 "WHERE ca.account_id = ? ORDER BY c.name",
@@ -135,7 +135,7 @@ async def list_categories(account_id: int = 0):
             )
         else:
             rows = await db.execute(
-                "SELECT id, name, category_type, movie_count FROM vod_categories ORDER BY name"
+                "SELECT id, name, category_type, movie_count, COALESCE(hidden, 0) as hidden FROM vod_categories ORDER BY name"
             )
         cats = [dict(r) for r in await rows.fetchall()]
 
@@ -181,6 +181,23 @@ async def deselect_category(request: Request):
         await db.execute("DELETE FROM selected_categories WHERE category_id = ?", (category_id,))
         await db.commit()
         return {"status": "ok"}
+    finally:
+        pass
+
+
+@router.post("/categories/hide")
+async def hide_category(request: Request):
+    data = await request.json()
+    category_id = data.get("category_id")
+    hidden = data.get("hidden", 1)
+    if not category_id:
+        return JSONResponse(status_code=400, content={"error": "category_id required"})
+
+    db = await get_db()
+    try:
+        await db.execute("UPDATE vod_categories SET hidden = ? WHERE id = ?", (hidden, category_id))
+        await db.commit()
+        return {"status": "ok", "hidden": hidden}
     finally:
         pass
 
@@ -401,6 +418,14 @@ async def list_movies(
             ph = ",".join("?" for _ in category_ids)
             conditions.append(f"m.id IN (SELECT movie_id FROM movie_categories WHERE category_id IN ({ph}))")
             params.extend(category_ids)
+        else:
+            conditions.append(
+                "m.id NOT IN ("
+                "SELECT mc2.movie_id FROM movie_categories mc2 "
+                "GROUP BY mc2.movie_id "
+                "HAVING SUM(CASE WHEN mc2.category_id IN (SELECT id FROM vod_categories WHERE hidden = 1) THEN 1 ELSE 0 END) = COUNT(*)"
+                ")"
+            )
 
         if genre:
             conditions.append("m.genre LIKE ?")
@@ -1546,7 +1571,7 @@ async def catalog_summary():
     db = await get_db()
     try:
         cat_rows = await db.execute(
-            "SELECT c.id, c.name, COUNT(mc.movie_id) as movie_count, "
+            "SELECT c.id, c.name, COALESCE(c.hidden, 0) as hidden, COUNT(mc.movie_id) as movie_count, "
             "SUM(CASE WHEN m.activated = 1 THEN 1 ELSE 0 END) as activated_count "
             "FROM vod_categories c "
             "LEFT JOIN movie_categories mc ON c.id = mc.category_id "

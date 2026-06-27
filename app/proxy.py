@@ -452,6 +452,17 @@ async def _pipe_manager_loop():
                     if reason == "plex_idle":
                         plex_idle = int(time.time() - pipe.last_plex_read)
                         logger.info("Closing pipe for movie %d (Plex idle %ds, user stopped) — clean disconnect", mid, plex_idle)
+                    elif reason == "error" and pipe.error and "HTTP 5" in pipe.error:
+                        logger.warning("Closing errored pipe for movie %d (%s) — marking dead", mid, pipe.error)
+                        try:
+                            db = await get_db()
+                            row = await db.execute("SELECT stream_id FROM movies WHERE id = ?", (mid,))
+                            movie = await row.fetchone()
+                            if movie:
+                                status_code_val = int(pipe.error.split()[-1]) if pipe.error.split()[-1].isdigit() else 500
+                                await _handle_upstream_error(mid, movie["stream_id"], status_code_val)
+                        except Exception as he:
+                            logger.error("Failed to mark movie %d dead from pipe manager: %s", mid, he)
                     else:
                         idle_secs = int(time.time() - pipe.last_read_at)
                         logger.info("Closing idle pipe for movie %d (idle %ds) — clearing buffer", mid, idle_secs)
@@ -791,6 +802,8 @@ async def vod_file(filename: str, request: Request):
                 _log_event("error", movie_id, f"Pipe error: {pipe.error} — breaker tripped", movie_name=movie_name)
                 _record_failure(stream_id)
                 _record_failure_by_movie(movie_id)
+                if "HTTP 5" in pipe.error:
+                    await _handle_upstream_error(movie_id, stream_id, int(pipe.error.split()[-1]) if pipe.error.split()[-1].isdigit() else 500)
                 await close_movie_pipe(movie_id)
                 return Response(status_code=502, content=f"Upstream error: {pipe.error}")
 
@@ -800,6 +813,9 @@ async def vod_file(filename: str, request: Request):
                 _log_event("warn", movie_id, "Pipe returned no data — breaker tripped", movie_name=movie_name)
                 _record_failure(stream_id)
                 _record_failure_by_movie(movie_id)
+                if pipe.error and "HTTP 5" in pipe.error:
+                    status_code_val = int(pipe.error.split()[-1]) if pipe.error.split()[-1].isdigit() else 500
+                    await _handle_upstream_error(movie_id, stream_id, status_code_val)
                 await close_movie_pipe(movie_id)
                 return Response(status_code=502, content="Stream data not available")
 
