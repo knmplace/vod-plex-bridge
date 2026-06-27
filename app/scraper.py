@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import httpx
 import logging
 import os
@@ -327,3 +328,142 @@ async def enrich_from_tmdb(batch_size: int = 50):
         return enriched
     finally:
         pass
+
+
+def _clean_title(name: str) -> str:
+    """Strip year suffixes, brackets, quality tags, and codec info from movie names for TMDB search."""
+    clean = re.sub(r'\s*[-–]\s*\d{4}\s*$', '', name).strip()
+    clean = re.sub(r'\s*\(\d{4}\)\s*$', '', clean).strip()
+    clean = re.sub(r'\[.*?\]', '', clean).strip()
+    clean = re.sub(r'\b(1080p|720p|480p|2160p|4K|WEB|HDTV|BluRay|BRRip|DVDRip|AAC|x264|x265|HEVC|VFF)\b.*', '', clean, flags=re.IGNORECASE).strip()
+    return clean
+
+
+def _title_similarity(a: str, b: str) -> float:
+    """Simple word-overlap similarity between two titles."""
+    wa = set(a.lower().split())
+    wb = set(b.lower().split())
+    if not wa or not wb:
+        return 0.0
+    return len(wa & wb) / max(len(wa), len(wb))
+
+
+async def search_tmdb_for_missing(batch_size: int = 50) -> dict:
+    """Search TMDB by title for movies that have no tmdb_id and haven't been searched yet.
+    Returns {found: int, not_found: int, skipped: int}."""
+    global _cancel
+
+    if not TMDB_API_KEY and not TMDB_READ_TOKEN:
+        logger.warning("TMDB API key not set, skipping title search")
+        return {"found": 0, "not_found": 0, "skipped": 0}
+
+    db = await get_db()
+    rows = await db.execute(
+        "SELECT id, name, year FROM movies "
+        "WHERE (tmdb_id IS NULL OR tmdb_id = '') AND tmdb_searched = 0 AND name != '' "
+        "LIMIT ?",
+        (batch_size,),
+    )
+    movies = [dict(r) for r in await rows.fetchall()]
+
+    if not movies:
+        return {"found": 0, "not_found": 0, "skipped": 0}
+
+    logger.info("TMDB title search: %d movies to look up", len(movies))
+
+    found = 0
+    not_found = 0
+    skipped = 0
+
+    headers = {}
+    params_base = {}
+    if TMDB_READ_TOKEN:
+        headers["Authorization"] = f"Bearer {TMDB_READ_TOKEN}"
+    else:
+        params_base["api_key"] = TMDB_API_KEY
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for movie in movies:
+            if _cancel:
+                break
+
+            movie_id = movie["id"]
+            raw_name = movie["name"]
+            year = movie["year"]
+
+            clean = _clean_title(raw_name)
+            if not clean or len(clean) < 2:
+                await db.execute("UPDATE movies SET tmdb_searched = 1 WHERE id = ?", (movie_id,))
+                skipped += 1
+                continue
+
+            try:
+                search_params = {**params_base, "query": clean}
+                if year:
+                    search_params["year"] = year
+
+                resp = await client.get(
+                    "https://api.themoviedb.org/3/search/movie",
+                    params=search_params,
+                    headers=headers,
+                )
+
+                if resp.status_code == 429:
+                    retry_after = int(resp.headers.get("Retry-After", "2"))
+                    await asyncio.sleep(retry_after)
+                    resp = await client.get(
+                        "https://api.themoviedb.org/3/search/movie",
+                        params=search_params,
+                        headers=headers,
+                    )
+
+                if resp.status_code != 200:
+                    skipped += 1
+                    continue
+
+                results = resp.json().get("results", [])
+                best = None
+                best_score = 0.0
+
+                for r in results[:5]:
+                    tmdb_title = r.get("title", "")
+                    tmdb_year = (r.get("release_date") or "")[:4]
+                    score = _title_similarity(clean, tmdb_title)
+                    if year and tmdb_year and str(year) == tmdb_year:
+                        score += 0.3
+                    if score > best_score:
+                        best_score = score
+                        best = r
+
+                if best and best_score >= 0.5:
+                    tmdb_id = str(best["id"])
+                    poster_path = best.get("poster_path")
+                    poster_url = f"https://image.tmdb.org/t/p/w600_and_h900_bestv2{poster_path}" if poster_path else None
+                    description = best.get("overview", "")
+                    lang = best.get("original_language", "")
+
+                    await db.execute(
+                        "UPDATE movies SET tmdb_id = ?, tmdb_searched = 1, "
+                        "poster_url = CASE WHEN poster_url IS NULL THEN ? ELSE poster_url END, "
+                        "description = CASE WHEN description = '' OR description IS NULL THEN ? ELSE description END, "
+                        "language = CASE WHEN language = '' OR language IS NULL THEN ? ELSE language END "
+                        "WHERE id = ?",
+                        (tmdb_id, poster_url, description, lang, movie_id),
+                    )
+                    found += 1
+                    logger.info("TMDB search matched: %s → %s (tmdb=%s, score=%.2f)",
+                                raw_name, best.get("title"), tmdb_id, best_score)
+                else:
+                    await db.execute("UPDATE movies SET tmdb_searched = 1 WHERE id = ?", (movie_id,))
+                    not_found += 1
+                    logger.info("TMDB search: no match for '%s' (best_score=%.2f)", raw_name, best_score)
+
+                await asyncio.sleep(0.25)
+
+            except Exception as e:
+                logger.warning("TMDB search error for movie %d (%s): %s", movie_id, raw_name, e)
+                skipped += 1
+
+    await db.commit()
+    logger.info("TMDB title search complete: %d found, %d not found, %d skipped", found, not_found, skipped)
+    return {"found": found, "not_found": not_found, "skipped": skipped}

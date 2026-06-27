@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN
 from database import get_db
-from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled
+from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing
 from generator import generate_strm_files, sanitize_filename
 from stream_mapper import apply_stream_mapping_to_db, load_stream_mapping, pick_stream_for_account
 from proxy import probe_file_size, get_proxy_log, get_all_pipes, _log_event
@@ -1830,6 +1830,8 @@ async def _run_catalog_sync(max_movies: int = 0, category_ids: list = None, acco
         await scrape_catalog(max_movies=max_movies, category_ids=category_ids, account_ids=account_ids)
         if not is_cancelled():
             await apply_stream_mapping_to_db()
+        if not is_cancelled():
+            await search_tmdb_for_missing()
 
         if lang_task:
             await lang_task
@@ -2162,6 +2164,59 @@ async def restore_dead_movies(request: Request):
         pass
 
 
+@router.post("/movies/tmdb-search")
+async def trigger_tmdb_search():
+    """Manually trigger TMDB title search for movies missing TMDB IDs."""
+    if not TMDB_API_KEY and not TMDB_READ_TOKEN:
+        return JSONResponse(status_code=400, content={"error": "TMDB API key not configured"})
+    asyncio.create_task(_run_tmdb_search())
+    return {"status": "started", "message": "TMDB title search started in background"}
+
+
+@router.post("/movies/tmdb-search/reset")
+async def reset_tmdb_search():
+    """Reset tmdb_searched flag so failed lookups can be retried."""
+    db = await get_db()
+    result = await db.execute(
+        "UPDATE movies SET tmdb_searched = 0 WHERE tmdb_searched = 1 AND (tmdb_id IS NULL OR tmdb_id = '')"
+    )
+    await db.commit()
+    return {"status": "ok", "reset": result.rowcount}
+
+
+async def _run_tmdb_search():
+    db = await get_db()
+    try:
+        count_row = await db.execute(
+            "SELECT COUNT(*) as cnt FROM movies WHERE (tmdb_id IS NULL OR tmdb_id = '') AND tmdb_searched = 0 AND name != ''"
+        )
+        total = (await count_row.fetchone())["cnt"]
+        await db.execute(
+            "UPDATE sync_state SET status = 'searching', message = ? WHERE id = 1",
+            (f"TMDB search: looking up {total} movies...",),
+        )
+        await db.commit()
+    finally:
+        pass
+
+    try:
+        result = await search_tmdb_for_missing(batch_size=500)
+        db = await get_db()
+        await db.execute(
+            "UPDATE sync_state SET status = 'idle', message = ? WHERE id = 1",
+            (f"TMDB search complete: {result['found']} found, {result['not_found']} not found, {result['skipped']} skipped",),
+        )
+        await db.commit()
+    except Exception as e:
+        logger.error("TMDB search task failed: %s", e)
+        db = await get_db()
+        await db.execute(
+            "UPDATE sync_state SET status = 'idle', message = ? WHERE id = 1",
+            (f"TMDB search failed: {str(e)[:200]}",),
+        )
+        await db.commit()
+
+
 @router.post("/movies/dead/scan")
 async def trigger_dead_scan():
     asyncio.create_task(_run_dead_scan())
@@ -2393,7 +2448,15 @@ async def _run_scheduled_refresh():
         except Exception as e:
             report.append(f"Stream mapping: FAILED ({e})")
 
-        # 5. Activated refresh
+        # 5. TMDB title search for missing metadata
+        await _set_status("refreshing", "Refresh: searching TMDB for unmatched movies...")
+        try:
+            tmdb_result = await search_tmdb_for_missing()
+            report.append(f"TMDB search: {tmdb_result['found']} found, {tmdb_result['not_found']} not found, {tmdb_result['skipped']} skipped")
+        except Exception as e:
+            report.append(f"TMDB search: FAILED ({e})")
+
+        # 6. Activated refresh
         await _set_status("refreshing", "Refresh: checking activated movies for stream_id changes...")
         try:
             updated = await _refresh_activated_stream_ids()
@@ -2401,7 +2464,7 @@ async def _run_scheduled_refresh():
         except Exception as e:
             report.append(f"Activated refresh: FAILED ({e})")
 
-        # 6. Dead scan
+        # 7. Dead scan
         await _set_status("refreshing", "Refresh: scanning for dead movies...")
         try:
             dead_result = await _run_dead_scan_counted()
