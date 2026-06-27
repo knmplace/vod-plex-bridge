@@ -1873,12 +1873,8 @@
             const pollUntilDone = () => {
                 setTimeout(async () => {
                     const s = await fetchJSON('/api/status');
-                    const langActive = s.lang_status && s.lang_status.includes('Detecting');
-                    updateOverlayProgress(s.message || '', s.lang_status || '');
+                    updateOverlayProgress(s.message || '');
                     if (s.status !== 'idle' && s.status !== 'error') {
-                        refreshStatus();
-                        pollUntilDone();
-                    } else if (langActive) {
                         refreshStatus();
                         pollUntilDone();
                     } else {
@@ -1982,27 +1978,8 @@
         }
 
         async function detectAllLanguages() {
-            showOverlay('Detecting Languages...');
             await fetchJSON('/api/movies/detect-language-all', {method: 'POST'});
             refreshStatus();
-            const pollUntilDone = () => {
-                setTimeout(async () => {
-                    const s = await fetchJSON('/api/status');
-                    const langActive = s.lang_status && s.lang_status.includes('Detecting');
-                    updateOverlayProgress('', s.lang_status || '');
-                    if (langActive) {
-                        refreshStatus();
-                        pollUntilDone();
-                    } else {
-                        hideOverlay();
-                        refreshStatus();
-                        refreshLanguageFilter();
-                        loadMovies(currentPage);
-                        loadCatalogSummary();
-                    }
-                }, 2000);
-            };
-            pollUntilDone();
         }
 
         async function refreshLanguageFilter() {

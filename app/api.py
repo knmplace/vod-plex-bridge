@@ -1517,7 +1517,14 @@ async def detect_language_all():
     return {"status": "started", "message": "Bulk language detection started in background"}
 
 
+_lang_detect_running = False
+
 async def _bulk_detect_languages():
+    global _lang_detect_running
+    if _lang_detect_running:
+        logger.info("Language detection already running, skipping")
+        return
+    _lang_detect_running = True
     db = await get_db()
     try:
         rows = await db.execute(
@@ -1533,15 +1540,19 @@ async def _bulk_detect_languages():
             await db.commit()
             return
 
+        est_minutes = max(1, round(total * 0.5 / 60))
         await db.execute(
             "UPDATE sync_state SET lang_status = ? WHERE id = 1",
-            (f"Detecting languages: 0/{total}...",),
+            (f"Detecting languages in background: 0/{total} (~{est_minutes} min remaining)...",),
         )
         await db.commit()
+        logger.info(f"Language detection started: {total} movies, estimated {est_minutes} min")
 
         detected = 0
         skipped = 0
         no_tmdb = 0
+        import time
+        start_time = time.time()
 
         async def fetch_lang(client, movie):
             nonlocal detected, skipped, no_tmdb
@@ -1590,31 +1601,36 @@ async def _bulk_detect_languages():
             skipped += 1
 
         async with httpx.AsyncClient(timeout=15.0) as client:
-            for i in range(0, total, 1):
+            for i in range(total):
                 if is_cancelled():
                     break
                 await fetch_lang(client, movies[i])
-                if (i + 1) % 50 == 0:
+                await asyncio.sleep(0.5)
+                processed = detected + skipped + no_tmdb
+                if processed % 25 == 0 and processed > 0:
                     await db.commit()
+                    elapsed = time.time() - start_time
+                    rate = processed / elapsed if elapsed > 0 else 2
+                    remaining = total - processed
+                    est_min = max(1, round(remaining / rate / 60))
                     await db.execute(
                         "UPDATE sync_state SET lang_status = ? WHERE id = 1",
-                        (f"Detecting languages: {detected + skipped + no_tmdb}/{total} ({detected} detected)...",),
+                        (f"Detecting languages in background: {processed}/{total} ({detected} detected, ~{est_min} min remaining)...",),
                     )
                     await db.commit()
-                if (i + 1) % 35 == 0:
-                    await asyncio.sleep(10)
 
         await db.commit()
+        elapsed_min = round((time.time() - start_time) / 60, 1)
         status_msg = "cancelled" if is_cancelled() else "complete"
-        skip_detail = f"{skipped} skipped"
+        skip_detail = f"{skipped} not found"
         if no_tmdb:
             skip_detail += f", {no_tmdb} no TMDB ID"
         await db.execute(
             "UPDATE sync_state SET lang_status = ? WHERE id = 1",
-            (f"Language detection {status_msg}: {detected} detected, {skip_detail}",),
+            (f"Language detection {status_msg}: {detected} detected, {skip_detail} ({elapsed_min} min)",),
         )
         await db.commit()
-        logger.info(f"Bulk language detection {status_msg}: {detected} detected, {skip_detail} out of {total}")
+        logger.info(f"Bulk language detection {status_msg}: {detected} detected, {skip_detail} out of {total} in {elapsed_min} min")
     except Exception as e:
         logger.error(f"Bulk language detection failed: {e}")
         await db.execute(
@@ -1623,7 +1639,7 @@ async def _bulk_detect_languages():
         )
         await db.commit()
     finally:
-        pass
+        _lang_detect_running = False
 
 
 @router.get("/catalog/summary")
@@ -1880,21 +1896,14 @@ async def stream_health_stats():
 
 async def _run_catalog_sync(max_movies: int = 0, category_ids: list = None, account_ids: list = None):
     try:
-        if not is_cancelled() and (TMDB_API_KEY or TMDB_READ_TOKEN):
-            lang_task = asyncio.create_task(_bulk_detect_languages())
-        else:
-            lang_task = None
-
         await scrape_catalog(max_movies=max_movies, category_ids=category_ids, account_ids=account_ids)
         if not is_cancelled():
             await apply_stream_mapping_to_db()
         if not is_cancelled():
             await search_tmdb_for_missing()
 
-        if lang_task:
-            await lang_task
-            if not is_cancelled():
-                await _bulk_detect_languages()
+        if not is_cancelled() and (TMDB_API_KEY or TMDB_READ_TOKEN):
+            asyncio.create_task(_bulk_detect_languages())
     except Exception as e:
         logger.error(f"Catalog sync failed: {e}")
         db = await get_db()
@@ -2542,6 +2551,11 @@ async def _run_scheduled_refresh():
             report.append(f"Dead scan: {dead_result['newly_dead']} newly dead, {dead_result['plex_removed']} removed from Plex")
         except Exception as e:
             report.append(f"Dead scan: FAILED ({e})")
+
+        # 8. Language detection (background)
+        if TMDB_API_KEY or TMDB_READ_TOKEN:
+            asyncio.create_task(_bulk_detect_languages())
+            report.append("Language detection: started in background")
 
         import json as _json
         elapsed = int(time.time() - start)
