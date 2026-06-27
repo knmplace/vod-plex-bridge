@@ -105,15 +105,15 @@ class StreamPipe:
         total_downloaded = self.start_offset + self.bytes_written
         buffer_ahead_secs = (total_downloaded - self.plex_position) / self.bytes_per_second
         if buffer_ahead_secs < 10:
-            return 2.0
-        elif buffer_ahead_secs < 30:
             return 1.5
+        elif buffer_ahead_secs < 30:
+            return 1.3
         elif buffer_ahead_secs < 60:
             return 1.2
         elif buffer_ahead_secs < 120:
             return 1.0
         else:
-            return 0.7
+            return 0.8
 
     async def _download_loop(self):
         CHUNK_SIZE = 65536  # 64KB iteration size from the stream
