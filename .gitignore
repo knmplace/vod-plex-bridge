@@ -8,7 +8,6 @@ __pycache__/
 docker-compose.yml
 SESSION_SUMMARY.md
 sessions/
-BUILD_SOP.md
 CLAUDE.md
 PROJECT-OVERVIEW.md
 .vscode/
