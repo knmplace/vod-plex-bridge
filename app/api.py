@@ -2531,81 +2531,162 @@ async def _run_catalog_refresh():
 
 
 async def _run_catalog_refresh_counted() -> tuple[int, int, int]:
+    """Two-phase catalog refresh: update existing movies, then discover new ones in selected categories."""
+    import json as _json
     global _uuid_change_counter
     _uuid_change_counter = 0
 
     db = await get_db()
-    try:
-        await db.execute(
-            "UPDATE sync_state SET status = 'scraping', message = 'Catalog refresh...' WHERE id = 1"
-        )
-        await db.commit()
-    finally:
-        pass
+
+    # --- Phase 1: Refresh existing catalog movies ---
+    rows = await db.execute("SELECT id FROM movies WHERE name != ''")
+    existing_ids = [r["id"] for r in await rows.fetchall()]
+    existing_id_set = set(existing_ids)
+    total_target = len(existing_ids)
+
+    await db.execute(
+        "UPDATE sync_state SET status = 'scraping', message = ? WHERE id = 1",
+        (f"Catalog refresh: updating 0/{total_target} existing movies...",),
+    )
+    await db.commit()
 
     req_headers = {}
     if DISPATCHARR_API_KEY:
         req_headers["X-API-Key"] = DISPATCHARR_API_KEY
 
-    total_synced = 0
-    page = 1
+    total_updated = 0
+    failed = 0
     async with httpx.AsyncClient(timeout=30.0) as client:
-        while True:
+        for i, movie_id in enumerate(existing_ids):
             if is_cancelled():
                 break
-            resp = await client.get(
-                f"{DISPATCHARR_URL}/api/vod/movies/?page={page}&page_size=500",
-                headers=req_headers,
-            )
-            if resp.status_code != 200:
-                logger.error(f"Catalog refresh: API error on page {page}: {resp.status_code}")
-                break
-            data = resp.json()
-            results = data.get("results", [])
-            if not results:
-                break
-
-            db = await get_db()
             try:
-                for movie in results:
+                resp = await client.get(
+                    f"{DISPATCHARR_URL}/api/vod/movies/{movie_id}/",
+                    headers=req_headers,
+                )
+                if resp.status_code == 200:
+                    movie = resp.json()
                     await _upsert_movie_from_api(db, movie)
-                    total_synced += 1
+                    total_updated += 1
+                elif resp.status_code == 404:
+                    failed += 1
+                    logger.info(f"Catalog refresh: movie {movie_id} no longer in Dispatcharr")
+                else:
+                    failed += 1
+            except Exception as e:
+                failed += 1
+                logger.warning(f"Catalog refresh: failed to fetch movie {movie_id}: {e}")
+
+            if (i + 1) % 50 == 0:
                 await db.commit()
                 await db.execute(
                     "UPDATE sync_state SET message = ? WHERE id = 1",
-                    (f"Catalog refresh: {total_synced} movies (page {page})...",),
+                    (f"Catalog refresh: updated {total_updated}/{total_target} existing movies...",),
                 )
                 await db.commit()
-            finally:
-                pass
+            await asyncio.sleep(0.02)
 
-            if not data.get("next"):
-                break
-            page += 1
-            await asyncio.sleep(0.05)
+    await db.commit()
 
-    db = await get_db()
-    try:
-        count_row = await db.execute("SELECT COUNT(*) as cnt FROM movies")
-        count = (await count_row.fetchone())["cnt"]
-        status = "cancelled" if is_cancelled() else "complete"
-        msg = f"Catalog refresh {status}: {total_synced} movies processed, {count} total"
-        if _refresh_running:
-            await db.execute(
-                "UPDATE sync_state SET total_movies = ?, message = ? WHERE id = 1",
-                (count, msg),
-            )
+    # --- Phase 2: Discover new movies in selected categories/providers ---
+    new_added = 0
+    if not is_cancelled():
+        sel_cat_rows = await db.execute("SELECT category_id FROM selected_categories WHERE enabled = 1")
+        selected_cats = [r["category_id"] for r in await sel_cat_rows.fetchall()]
+        sel_acct_rows = await db.execute("SELECT account_id FROM selected_accounts WHERE enabled = 1")
+        selected_accts = set(r["account_id"] for r in await sel_acct_rows.fetchall())
+
+        if selected_cats:
+            # Get movie IDs in selected categories from category_mapping dump
+            cat_movie_ids = set()
+            if os.path.exists(CATEGORY_MAPPING_FILE):
+                with open(CATEGORY_MAPPING_FILE) as f:
+                    dump_cats = _json.load(f)
+                selected_cat_set = set(selected_cats)
+                for dc in dump_cats:
+                    if dc["id"] in selected_cat_set:
+                        cat_movie_ids.update(dc.get("movie_ids", []))
+
+            # Filter by selected providers if any
+            if selected_accts and cat_movie_ids:
+                stream_map_file = os.environ.get("STREAM_MAPPING_FILE", "/data/stream_mapping.json")
+                if os.path.exists(stream_map_file):
+                    with open(stream_map_file) as f:
+                        stream_map = _json.load(f)
+                    provider_movie_ids = set()
+                    for mid_str, info in stream_map.items():
+                        entries = info if isinstance(info, list) else [info]
+                        if any(e.get("account_id") in selected_accts for e in entries):
+                            provider_movie_ids.add(int(mid_str))
+                    cat_movie_ids = cat_movie_ids & provider_movie_ids
+
+            # Find movies in selected categories that aren't in our catalog yet
+            new_movie_ids = cat_movie_ids - existing_id_set
+            if new_movie_ids:
+                logger.info(f"Catalog refresh: {len(new_movie_ids)} new movies found in selected categories")
+                await db.execute(
+                    "UPDATE sync_state SET message = ? WHERE id = 1",
+                    (f"Catalog refresh: adding {len(new_movie_ids)} new movies from selected categories...",),
+                )
+                await db.commit()
+
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    for i, movie_id in enumerate(sorted(new_movie_ids)):
+                        if is_cancelled():
+                            break
+                        try:
+                            resp = await client.get(
+                                f"{DISPATCHARR_URL}/api/vod/movies/{movie_id}/",
+                                headers=req_headers,
+                            )
+                            if resp.status_code == 200:
+                                movie = resp.json()
+                                await _upsert_movie_from_api(db, movie)
+                                new_added += 1
+                        except Exception as e:
+                            logger.warning(f"Catalog refresh: failed to add new movie {movie_id}: {e}")
+
+                        if (i + 1) % 50 == 0:
+                            await db.commit()
+                            await db.execute(
+                                "UPDATE sync_state SET message = ? WHERE id = 1",
+                                (f"Catalog refresh: added {new_added}/{len(new_movie_ids)} new movies...",),
+                            )
+                            await db.commit()
+                        await asyncio.sleep(0.02)
+                await db.commit()
+                logger.info(f"Catalog refresh: added {new_added} new movies")
+            else:
+                logger.info("Catalog refresh: no new movies in selected categories")
         else:
-            await db.execute(
-                "UPDATE sync_state SET total_movies = ?, status = 'idle', message = ? WHERE id = 1",
-                (count, msg),
-            )
-        await db.commit()
-        logger.info(f"Catalog refresh {status}: {total_synced} processed, {count} total in DB")
-    finally:
-        pass
+            logger.info("Catalog refresh: no selected categories, skipping new movie discovery")
 
-    return total_synced, count, _uuid_change_counter
+    # --- Final counts ---
+    count_row = await db.execute("SELECT COUNT(*) as cnt FROM movies WHERE name != ''")
+    count = (await count_row.fetchone())["cnt"]
+    status = "cancelled" if is_cancelled() else "complete"
+    parts = [f"{total_updated}/{total_target} updated"]
+    if failed:
+        parts.append(f"{failed} failed")
+    if new_added:
+        parts.append(f"{new_added} new")
+    parts.append(f"{count} total")
+    msg = f"Catalog refresh {status}: {', '.join(parts)}"
+    if _refresh_running:
+        await db.execute(
+            "UPDATE sync_state SET total_movies = ?, message = ? WHERE id = 1",
+            (count, msg),
+        )
+    else:
+        await db.execute(
+            "UPDATE sync_state SET total_movies = ?, status = 'idle', message = ? WHERE id = 1",
+            (count, msg),
+        )
+    await db.commit()
+    logger.info(f"Catalog refresh {status}: {', '.join(parts)}")
+
+    return total_updated + new_added, count, _uuid_change_counter
 
 
 async def _upsert_movie_from_api(db, movie):
