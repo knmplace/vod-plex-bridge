@@ -24,7 +24,7 @@ BUFFER_DIR = "/data/buffers"
 # Bridge stays ~60s ahead of Plex, reads from Dispatcharr only as needed.
 
 PIPE_IDLE_TIMEOUT = 900     # 15 min with no activity at all → close everything
-PLEX_IDLE_TIMEOUT = 5       # 5 sec with no Plex reads → disconnect upstream, keep buffer
+PLEX_IDLE_TIMEOUT = 30      # 30 sec with no Plex reads → disconnect upstream, keep buffer
 BUFFER_MAX_AGE = 86400      # 24 hours — delete stale buffer files
 BUFFER_CLEANUP_INTERVAL = 3600  # check every hour
 PIPE_POLL_INTERVAL = 0.1    # seconds between checks when waiting for data
