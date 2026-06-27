@@ -13,8 +13,8 @@ The bridge sits between Dispatcharr and Plex. It reads your VOD catalog from Dis
 graph LR
     A[IPTV Provider] <-->|"M3U streams"| B[Dispatcharr]
     B <-->|"VOD proxy API"| C[VOD Plex Bridge]
-    C -->|".strm files"| D[Shared Storage]
-    D -->|"reads .strm"| E[Plex Media Server]
+    C -->|"HTTP /vod/ endpoint"| D["rclone FUSE mount<br/>(on Plex host)"]
+    D -->|"virtual .mp4 files"| E[Plex Media Server]
     E -->|"stream request"| C
 
     style A fill:#e74c3c,color:#fff
@@ -27,7 +27,9 @@ graph LR
 **Key points:**
 - The bridge **never** connects directly to your IPTV provider — all traffic flows through Dispatcharr
 - However Dispatcharr routes its traffic (VPN, direct, etc.), the bridge inherits that routing
-- Plex reads `.strm` files that point back to the bridge, which proxies the actual video stream
+- The bridge serves activated movies as virtual `.mp4` files via an HTTP endpoint (`/vod/`)
+- **rclone** on the Plex host mounts this endpoint as a FUSE filesystem — Plex sees a normal directory of movie files
+- No shared storage (NFS/CIFS) is required between the bridge and Plex — rclone handles it over HTTP
 
 ## Features
 
@@ -48,7 +50,7 @@ graph LR
 
 ```mermaid
 graph TB
-    subgraph "Host Machine"
+    subgraph "Bridge Host"
         subgraph "Docker"
             B["VOD Plex Bridge<br/>:8585"]
             D["Dispatcharr<br/>:9191"]
@@ -56,22 +58,23 @@ graph TB
         end
         DB[("SQLite DB<br/>/data/vod_bridge.db")]
         MAP["Mapping Files<br/>/data/*.json"]
-        STRM["STRM Output<br/>/plex-vod/Movies/"]
     end
 
-    subgraph "Network"
+    subgraph "Plex Host"
+        RC["rclone FUSE mount<br/>/mnt/vod-bridge/"]
         PLEX["Plex Media Server<br/>:32400"]
-        PROVIDER["IPTV Provider"]
     end
+
+    PROVIDER["IPTV Provider"]
 
     B --> DB
     B --> MAP
-    B --> STRM
     B <--> D
     D <--> V
     V <--> PROVIDER
-    PLEX --> STRM
-    PLEX <--> B
+    B -->|"HTTP /vod/"| RC
+    RC --> PLEX
+    PLEX <-->|"stream requests"| B
 
     style B fill:#2ecc71,color:#fff
     style D fill:#3498db,color:#fff
@@ -80,7 +83,7 @@ graph TB
     style PROVIDER fill:#e74c3c,color:#fff
 ```
 
-> **Note:** Dispatcharr and the bridge can run on the same host or different hosts. Plex can be anywhere on your network. The only requirement is that all three can reach each other over the LAN.
+> **Note:** Dispatcharr and the bridge can run on the same host or different hosts. Plex can be anywhere on your network. The only requirements are: the bridge can reach Dispatcharr and Plex over the LAN, and the Plex host can reach the bridge's HTTP port (default 8585) for the rclone mount.
 
 ## Playback Flow
 
@@ -93,8 +96,8 @@ sequenceDiagram
     participant D as Dispatcharr
     participant S as Provider
 
-    P->>B: GET /stream/movie_123.mkv
-    Note over B: Check buffer cache first
+    P->>B: GET /vod/Movie Name (2025) [123].mp4
+    Note over B: rclone forwards Plex read to bridge<br/>Check buffer cache first
     alt Buffer exists on disk
         B-->>P: Serve from buffer
     else No buffer
@@ -104,7 +107,7 @@ sequenceDiagram
         D->>S: Stream request (through VPN)
         S-->>D: Video bytes
         D-->>B: Proxied video stream
-        Note over B: Single persistent connection<br/>Throttled to stream bitrate × 1.2
+        Note over B: Single persistent connection<br/>Adaptive throttle: 1.8x–0.8x based on buffer
         B->>B: Write to disk buffer
         B-->>P: Serve from buffer as it fills
     end
@@ -128,8 +131,8 @@ flowchart TD
     I --> J[Movies appear in Browse tab]
     J --> K{Activate movies}
     K --> L[Fetch 8MB head + 256KB tail cache]
-    L --> M[Generate .strm + .nfo + poster]
-    M --> N[Plex library scan picks them up]
+    L --> M[Movie appears in /vod/ endpoint]
+    M --> N["rclone refreshes → Plex sees new .mp4"]
 
     style A fill:#e67e22,color:#fff
     style F fill:#3498db,color:#fff
@@ -147,7 +150,8 @@ Before you start, you'll need:
 | **[Plex Media Server](https://www.plex.tv/)** | Plays the movies | Must be able to reach the bridge over your LAN |
 | **Docker + Docker Compose** | Runs the bridge | v20+ recommended |
 | **Shell access to Dispatcharr host** | Run the dump script to extract mapping data | SSH or direct terminal |
-| **Shared storage path** | Both the bridge and Plex need to read `.strm` files | Same host, NFS, CIFS, etc. |
+| **[rclone](https://rclone.org/)** | Mounts the bridge's HTTP endpoint as a local directory on the Plex host | Install on the **Plex host**, not the bridge |
+| **FUSE** | Required by rclone for filesystem mounting | `apt install fuse3` on the Plex host |
 | **TMDB API key** *(optional)* | Enriches metadata (posters, genres, descriptions) | Free at [themoviedb.org](https://www.themoviedb.org/settings/api) |
 
 ## Quick Start
@@ -169,7 +173,21 @@ DISPATCHARR_CONTAINER=your-container-name \
 BRIDGE_DATA_DIR=/path/to/bridge/data \
 bash setup/dump_mappings.sh
 
-# 4. Open http://your-bridge-ip:8585 and start browsing!
+# 4. Set up rclone on the Plex host (see BUILD_SOP.md Phase 6 for full details)
+#    On the Plex server:
+apt install rclone fuse3
+mkdir -p /root/.config/rclone
+cat > /root/.config/rclone/rclone.conf << EOF
+[vodbridge]
+type = http
+url = http://BRIDGE_IP:8585/vod/
+EOF
+rclone mount vodbridge: /mnt/vod-bridge --allow-other --dir-cache-time 1m \
+  --vfs-cache-mode full --vfs-cache-max-age 10m &
+
+# 5. Add /mnt/vod-bridge as a Movies library in Plex
+
+# 6. Open http://your-bridge-ip:8585 and start browsing!
 ```
 
 ## AI-Assisted Setup
@@ -222,7 +240,7 @@ All configuration is done through environment variables in `.env`:
 | `TMDB_READ_TOKEN` | No | — | TMDB v4 read access token (alternative to API key) |
 | `DISPATCHARR_API_KEY` | No | — | Dispatcharr API key (used for VPN IP display) |
 | `DATA_DIR` | No | `./data` | Host path for database and mapping files |
-| `PLEX_VOD_DIR` | No | `./plex-vod` | Host path for .strm output (Plex reads this) |
+| `PLEX_VOD_DIR` | No | `./plex-vod` | Host path for internal .strm/.nfo storage (Plex reads via rclone, not this path directly) |
 
 ## Updating
 
@@ -239,8 +257,10 @@ Your database and settings persist in the `DATA_DIR` volume. Re-run `setup/dump_
 | Problem | Check |
 |---------|-------|
 | Bridge can't reach Dispatcharr | Verify `DISPATCHARR_URL` — use the LAN IP, not `localhost` (unless using `network_mode: host`) |
-| Plex can't play movies | `BRIDGE_HOST` must be the LAN IP (not `0.0.0.0`). Check `.strm` file contents: URL inside must be reachable from Plex |
-| Movies in bridge but not Plex | Ensure Plex library path matches `PLEX_VOD_DIR`. Scan the library in Plex. Check `.strm` files exist |
+| Plex can't play movies | `BRIDGE_HOST` must be the LAN IP (not `0.0.0.0`). Verify rclone mount is active: `ls /mnt/vod-bridge/` on the Plex host |
+| Movies in bridge but not Plex | Check rclone mount shows `.mp4` files (`ls /mnt/vod-bridge/`). Scan the library in Plex. Verify Plex library points to the rclone mount path |
+| rclone mount is empty | No activated movies in the bridge, or bridge is unreachable. Test: `curl http://BRIDGE_IP:8585/vod/` |
+| rclone mount hangs | Bridge is down. Check `docker ps` and `curl http://BRIDGE_IP:8585/version` from the Plex host |
 | 0 categories showing | Run `setup/dump_mappings.sh` on the Dispatcharr host first. Select at least one provider. |
 | Stream stops after ~10 min | Update to latest version (fixed in v0.25.0+). Check Dispatcharr nginx has `uwsgi_buffering off` on `/proxy/` |
 | "Database is locked" | Should not occur in v0.27.1+. Restart the container if it does. |

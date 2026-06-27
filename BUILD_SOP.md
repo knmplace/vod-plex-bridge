@@ -35,6 +35,8 @@ These must be in place BEFORE you begin. If any are missing, help the user get t
 4. **Git** — To clone the repository.
 5. **Shell access** to the machine running Dispatcharr — The dump script uses `docker exec` to extract movie/category/account data from Dispatcharr's Django database directly. The user needs to be able to run `docker exec` commands against the Dispatcharr container (typically via SSH to that host, or locally if same machine).
 
+6. **rclone** — Installed on the **Plex server host** (not the bridge host). rclone mounts the bridge's HTTP endpoint as a local directory so Plex sees virtual movie files. Install from https://rclone.org/install/ or `apt install rclone`. FUSE support is also required (`apt install fuse3`).
+
 **Nice to have (optional):**
 - **TMDB API key** — Free, gives movie posters, genres, descriptions. Get one at https://www.themoviedb.org/settings/api
 - **Portainer** — If the user manages containers via Portainer, remind them to always redeploy through Portainer rather than `docker stop/rm/run` from CLI.
@@ -44,22 +46,21 @@ These must be in place BEFORE you begin. If any are missing, help the user get t
 ## What This Application Does
 
 ```
-┌──────────┐     ┌──────────────┐     ┌───────────────┐     ┌──────┐
-│   IPTV   │◄───►│  Dispatcharr  │◄───►│  VOD Plex     │◄───►│ Plex │
-│ Provider  │     │  (M3U proxy)  │     │  Bridge       │     │      │
-└──────────┘     └──────────────┘     └───────┬───────┘     └──┬───┘
-                                              │                 │
-                                         ┌────▼─────────────────▼────┐
-                                         │   Shared Storage          │
-                                         │   (.strm + .nfo + poster) │
-                                         └───────────────────────────┘
+┌──────────┐     ┌──────────────┐     ┌───────────────┐  rclone   ┌──────┐
+│   IPTV   │◄───►│  Dispatcharr  │◄───►│  VOD Plex     │◄─ FUSE ─►│ Plex │
+│ Provider  │     │  (M3U proxy)  │     │  Bridge       │  mount   │      │
+└──────────┘     └──────────────┘     └───────────────┘          └──────┘
+                                        serves /vod/           sees virtual
+                                        HTTP endpoint          .mp4 files via
+                                                               /mnt/vod-bridge/
 ```
 
 **Key facts:**
 - The bridge NEVER connects directly to the IPTV provider — all traffic goes through Dispatcharr
 - Dispatcharr is the M3U proxy that manages IPTV accounts and streams. It handles the upstream provider connection, VPN routing, and failover. The bridge talks to Dispatcharr's API only.
-- The bridge generates `.strm` files (text files with a URL) that Plex reads to stream movies
-- Both the bridge container AND Plex must be able to access the same `.strm` directory
+- The bridge exposes a `/vod/` HTTP endpoint that lists activated movies as virtual `.mp4` files
+- **rclone** on the Plex server mounts this endpoint as a FUSE filesystem, so Plex sees a local directory of real movie files
+- No shared storage (NFS/CIFS) is required between bridge and Plex — rclone handles it over HTTP
 - Head/tail caching (8 MB + 256 KB) lets Plex probe movies without opening provider connections
 - Probe throttle prevents Plex library scans from burning movies via rapid connection cycling
 - "Burning" a movie = the IPTV provider temporarily blocks access because it detected too many rapid connections to the same stream. The bridge's caching and throttling features are designed to prevent this.
@@ -106,10 +107,11 @@ Ask the user:
    - They need either an API key OR a v4 Read Access Token, not both
 
 ### Storage
-9. **"Can both the bridge and Plex access the same directory on disk?"**
-   - Same host: easy — both mount the same local path
-   - Different hosts: they need NFS, CIFS/SMB, or another network share
-   - If they don't have shared storage set up, help them create an NFS share or use a CIFS mount
+9. **"Can the Plex host reach the bridge over HTTP? (i.e., can you curl http://BRIDGE_IP:8585/version from the Plex server?)"**
+   - The bridge serves movies over HTTP via its `/vod/` endpoint — no shared filesystem needed
+   - rclone on the Plex host mounts this HTTP endpoint as a local directory
+   - If bridge and Plex are on the same host, rclone still works (just uses localhost)
+   - If on different hosts, the Plex host just needs HTTP access to the bridge port
 
 ### M3U Accounts
 10. **"How many M3U accounts do you have in Dispatcharr with VOD content? Do you know their names?"**
@@ -278,13 +280,121 @@ crontab -e
 
 ---
 
-## Phase 6: Configure Plex Library
+## Phase 6: Set Up rclone Virtual Mount on the Plex Host
+
+The bridge exposes a `/vod/` HTTP endpoint that serves activated movies as virtual `.mp4` files (e.g., `A Christmas Prayer (2025) [976419].mp4`). Plex can't read `.strm` files through this endpoint — it sees real video files. To make Plex see these files as a local directory, we use **rclone** to mount the bridge's `/vod/` endpoint as a FUSE filesystem on the Plex server.
+
+**This step is done on the Plex host, NOT on the bridge host.**
+
+### How It Works
+
+```
+Bridge (:8585/vod/)          rclone on Plex host          Plex
+serves HTML file listing ──► mounts as FUSE dir ────────► sees /mnt/vod-bridge/
+with virtual .mp4 files      at /mnt/vod-bridge/          as a normal movie folder
+                                                           with real .mp4 files
+```
+
+When Plex plays a movie, rclone forwards the HTTP request to the bridge's `/vod/{filename}` endpoint, which proxies the stream through Dispatcharr. Plex never knows it's not a local file.
+
+### Step 1: Install rclone on the Plex host
+
+```bash
+# Debian/Ubuntu
+apt install rclone
+
+# Or install latest from rclone.org
+curl https://rclone.org/install.sh | bash
+
+# Also need FUSE
+apt install fuse3
+```
+
+### Step 2: Configure rclone
+
+Create or edit the rclone config file:
+
+```bash
+mkdir -p /root/.config/rclone
+cat > /root/.config/rclone/rclone.conf << 'EOF'
+[vodbridge]
+type = http
+url = http://BRIDGE_IP:8585/vod/
+EOF
+```
+
+Replace `BRIDGE_IP` with the LAN IP of the machine running the bridge (the same value as `BRIDGE_HOST` in the bridge's `.env`). The port should match `BRIDGE_PORT` (default 8585).
+
+**Test the connection before mounting:**
+```bash
+rclone ls vodbridge:
+# Should list activated movies like:
+#   3027755361 A Christmas Prayer (2025) [976419].mp4
+```
+
+If this returns nothing, the bridge either has no activated movies or the IP/port is wrong.
+
+### Step 3: Create the mount point and systemd service
+
+```bash
+# Create mount point
+mkdir -p /mnt/vod-bridge
+
+# Create systemd service for automatic startup
+cat > /etc/systemd/system/rclone-vodbridge.service << 'EOF'
+[Unit]
+Description=rclone VOD Bridge FUSE mount
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStartPre=/bin/mkdir -p /mnt/vod-bridge
+ExecStart=/bin/rclone mount vodbridge: /mnt/vod-bridge --allow-other --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m
+ExecStop=/bin/fusermount -u /mnt/vod-bridge
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable and start
+systemctl daemon-reload
+systemctl enable rclone-vodbridge
+systemctl start rclone-vodbridge
+
+# Verify the mount
+ls /mnt/vod-bridge/
+# Should show .mp4 files for any activated movies
+```
+
+### Key rclone flags explained
+
+| Flag | Purpose |
+|------|---------|
+| `--allow-other` | Lets the `plex` user read the mount (not just root) |
+| `--dir-cache-time 1m` | Re-checks the file listing every 1 minute (picks up newly activated movies quickly) |
+| `--vfs-cache-mode full` | Enables full read caching — allows Plex to seek within files |
+| `--vfs-cache-max-age 10m` | Cached data expires after 10 minutes (keeps disk usage low) |
+
+### Troubleshooting rclone
+
+| Problem | Fix |
+|---------|-----|
+| `ls /mnt/vod-bridge/` hangs | Bridge is down or unreachable. Check `curl http://BRIDGE_IP:8585/vod/` |
+| Mount is empty | No activated movies in the bridge. Activate some first. |
+| `fusermount: mount failed: Operation not permitted` | Run as root, or add user to `fuse` group |
+| Plex can't read files | Check `--allow-other` is set, and `/etc/fuse.conf` has `user_allow_other` uncommented |
+| Movies don't appear after activation | Wait up to 1 minute (`--dir-cache-time`) or restart the rclone service |
+
+---
+
+## Phase 7: Configure Plex Library
 
 1. Open Plex Web → Settings → Libraries → Add Library
 2. Type: **Movies**
-3. Add Folder: browse to `PLEX_VOD_DIR/Movies`
-   - If bridge and Plex are on the same host, this is the same path
-   - If on different hosts, use the path where the network share is mounted on the Plex host
+3. Add Folder: **`/mnt/vod-bridge`** (the rclone mount point from Phase 6)
 4. Advanced settings:
    - Scanner: **Plex Movie**
    - Agent: **Plex Movie**
@@ -314,7 +424,7 @@ These features download the full movie file for analysis, which opens provider c
 
 ---
 
-## Phase 7: First Sync and Test
+## Phase 8: First Sync and Test
 
 1. Open the bridge UI: `http://BRIDGE_HOST:8585`
 2. Go to the **Catalog** tab
@@ -339,7 +449,7 @@ These features download the full movie file for analysis, which opens provider c
 
 ---
 
-## Phase 8: Post-Setup Recommendations
+## Phase 9: Post-Setup Recommendations
 
 ### Scheduled Refresh
 In the bridge UI → Settings tab:
@@ -364,24 +474,24 @@ Help the user identify which pattern matches their setup — this determines how
 
 ### Pattern A: Everything on One Host
 Bridge, Dispatcharr, and Plex all run on the same machine. Simplest setup.
-- Shared storage is just a local path (e.g., `/opt/vod-plex-bridge/plex-vod`)
-- `BRIDGE_HOST` = this machine's LAN IP
+- `BRIDGE_HOST` = this machine's LAN IP (not 127.0.0.1)
 - Dump script runs locally with `BRIDGE_DATA_DIR=./data`
-- Plex library path = same local path
+- rclone on the same host points to `http://BRIDGE_HOST:8585/vod/`
+- Plex library path = the rclone mount point (e.g., `/mnt/vod-bridge`)
 
 ### Pattern B: Bridge + Dispatcharr on One Host, Plex on Another
 - Bridge and Dispatcharr share a host, Plex is elsewhere
-- Shared storage needed between bridge host and Plex host (NFS, CIFS/SMB)
-- Bridge writes `.strm` files to the local path, Plex reads them via the network mount
-- The mount must be read-write for the bridge, at least read for Plex
+- rclone on the Plex host mounts the bridge's `/vod/` endpoint over HTTP — no shared filesystem needed
 - `BRIDGE_HOST` = LAN IP of the bridge/Dispatcharr host
+- Plex library path = rclone mount point on Plex host (e.g., `/mnt/vod-bridge`)
 
 ### Pattern C: All on Different Hosts
 - Each component on a separate machine
 - Dump script runs on Dispatcharr host, JSON files copied to bridge host
-- Shared storage between bridge host and Plex host
+- rclone on the Plex host mounts the bridge's `/vod/` endpoint
 - `BRIDGE_HOST` = LAN IP of the bridge host
 - Bridge needs network access to both Dispatcharr (API) and Plex (API)
+- Plex host needs HTTP access to the bridge port (default 8585)
 
 ### VPN Considerations
 - If Dispatcharr runs behind a VPN container (gluetun, wireguard, etc.):
@@ -432,7 +542,9 @@ Dispatcharr DB → dump_mappings.sh → JSON files → Bridge reads at startup
                                                      ↓
 Dispatcharr API → Bridge scraper → SQLite DB → UI shows catalog
                                                      ↓
-User activates → Bridge fetches head/tail cache → .strm/.nfo written
+User activates → Bridge fetches head/tail cache → movie appears in /vod/ listing
+                                                     ↓
+rclone on Plex host mounts /vod/ as FUSE → Plex sees virtual .mp4 files
                                                      ↓
 Plex scans → Bridge serves from cache (no provider connection)
                                                      ↓
