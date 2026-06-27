@@ -1760,8 +1760,8 @@ async def trigger_catalog_sync(request: Request):
 
     # If all providers are selected, skip provider filter (it's redundant)
     if account_ids:
-        all_acct_rows = await db.execute("SELECT DISTINCT account_id FROM m3u_accounts")
-        all_acct_ids = {r["account_id"] for r in await all_acct_rows.fetchall()}
+        all_acct_rows = await db.execute("SELECT id FROM m3u_accounts")
+        all_acct_ids = {r["id"] for r in await all_acct_rows.fetchall()}
         if set(account_ids) >= all_acct_ids:
             account_ids = []
             logger.info("All providers selected — skipping provider filter")
@@ -2641,8 +2641,8 @@ async def _run_catalog_refresh_counted() -> tuple[int, int, int]:
 
             # Filter by selected providers (skip if all providers selected)
             if selected_accts and cat_movie_ids:
-                all_acct_rows = await db.execute("SELECT DISTINCT account_id FROM m3u_accounts")
-                all_acct_ids = {r["account_id"] for r in await all_acct_rows.fetchall()}
+                all_acct_rows = await db.execute("SELECT id FROM m3u_accounts")
+                all_acct_ids = {r["id"] for r in await all_acct_rows.fetchall()}
                 if selected_accts >= all_acct_ids:
                     logger.info("Catalog refresh: all providers selected, skipping provider filter")
                 else:
