@@ -1747,30 +1747,27 @@ async def trigger_catalog_sync(request: Request):
     category_ids = data.get("category_ids", [])
     account_ids = data.get("account_ids", [])
 
-    if not category_ids and not account_ids:
-        db = await get_db()
-        try:
-            sel_acct_rows = await db.execute("SELECT account_id FROM selected_accounts WHERE enabled = 1")
-            account_ids = [r["account_id"] for r in await sel_acct_rows.fetchall()]
-            sel_cat_rows = await db.execute("SELECT category_id FROM selected_categories WHERE enabled = 1")
-            category_ids = [r["category_id"] for r in await sel_cat_rows.fetchall()]
-        finally:
-            pass
+    db = await get_db()
 
-    if account_ids and not category_ids:
-        db = await get_db()
-        try:
-            placeholders = ",".join("?" for _ in account_ids)
-            rows = await db.execute(
-                f"SELECT DISTINCT category_id FROM vod_category_accounts WHERE account_id IN ({placeholders})",
-                account_ids,
-            )
-            category_ids = [r["category_id"] for r in await rows.fetchall()]
-        finally:
-            pass
+    if not category_ids and not account_ids:
+        sel_acct_rows = await db.execute("SELECT account_id FROM selected_accounts WHERE enabled = 1")
+        account_ids = [r["account_id"] for r in await sel_acct_rows.fetchall()]
+        sel_cat_rows = await db.execute("SELECT category_id FROM selected_categories WHERE enabled = 1")
+        category_ids = [r["category_id"] for r in await sel_cat_rows.fetchall()]
+
+    if not category_ids:
+        return JSONResponse(status_code=400, content={"error": "No categories selected. Select at least one category before syncing."})
+
+    # If all providers are selected, skip provider filter (it's redundant)
+    if account_ids:
+        all_acct_rows = await db.execute("SELECT DISTINCT account_id FROM m3u_accounts")
+        all_acct_ids = {r["account_id"] for r in await all_acct_rows.fetchall()}
+        if set(account_ids) >= all_acct_ids:
+            account_ids = []
+            logger.info("All providers selected — skipping provider filter")
 
     asyncio.create_task(_run_catalog_sync(max_movies, category_ids, account_ids))
-    return {"status": "started", "message": f"Catalog sync started ({len(category_ids)} categories, {len(account_ids)} providers)"}
+    return {"status": "started", "message": f"Catalog sync started ({len(category_ids)} categories, {len(account_ids) if account_ids else 'all'} providers)"}
 
 
 @router.post("/sync/stop")
@@ -2642,18 +2639,25 @@ async def _run_catalog_refresh_counted() -> tuple[int, int, int]:
                     if dc["id"] in selected_cat_set:
                         cat_movie_ids.update(dc.get("movie_ids", []))
 
-            # Filter by selected providers if any
+            # Filter by selected providers (skip if all providers selected)
             if selected_accts and cat_movie_ids:
-                stream_map_file = os.environ.get("STREAM_MAPPING_FILE", "/data/stream_mapping.json")
-                if os.path.exists(stream_map_file):
-                    with open(stream_map_file) as f:
-                        stream_map = _json.load(f)
-                    provider_movie_ids = set()
-                    for mid_str, info in stream_map.items():
-                        entries = info if isinstance(info, list) else [info]
-                        if any(e.get("account_id") in selected_accts for e in entries):
-                            provider_movie_ids.add(int(mid_str))
-                    cat_movie_ids = cat_movie_ids & provider_movie_ids
+                all_acct_rows = await db.execute("SELECT DISTINCT account_id FROM m3u_accounts")
+                all_acct_ids = {r["account_id"] for r in await all_acct_rows.fetchall()}
+                if selected_accts >= all_acct_ids:
+                    logger.info("Catalog refresh: all providers selected, skipping provider filter")
+                else:
+                    stream_map_file = os.environ.get("STREAM_MAPPING_FILE", "/data/stream_mapping.json")
+                    if os.path.exists(stream_map_file):
+                        with open(stream_map_file) as f:
+                            stream_map = _json.load(f)
+                        provider_movie_ids = set()
+                        for mid_str, info in stream_map.items():
+                            entries = info if isinstance(info, list) else [info]
+                            if any(e.get("account_id") in selected_accts for e in entries):
+                                provider_movie_ids.add(int(mid_str))
+                        before = len(cat_movie_ids)
+                        cat_movie_ids = cat_movie_ids & provider_movie_ids
+                        logger.info(f"Catalog refresh: provider filter {before} -> {len(cat_movie_ids)} movies")
 
             # Find movies in selected categories that aren't in our catalog yet
             new_movie_ids = cat_movie_ids - existing_id_set

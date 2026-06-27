@@ -93,32 +93,33 @@ async def scrape_catalog(max_movies: int = 0, category_ids: list = None, account
     try:
         target_movie_ids = None
         if category_ids:
-            placeholders = ",".join("?" for _ in category_ids)
-            rows = await db.execute(
-                f"SELECT DISTINCT movie_id FROM movie_categories WHERE category_id IN ({placeholders})",
-                category_ids,
-            )
-            target_movie_ids = {r["movie_id"] for r in await rows.fetchall()}
+            mapping_file = os.environ.get("CATEGORY_MAPPING_FILE", "/data/category_mapping.json")
+            if os.path.exists(mapping_file):
+                with open(mapping_file) as f:
+                    dump_cats = json.load(f)
+                selected_cat_set = set(category_ids)
+                target_movie_ids = set()
+                for dc in dump_cats:
+                    if dc["id"] in selected_cat_set:
+                        target_movie_ids.update(dc.get("movie_ids", []))
+                logger.info(f"Category mapping: {len(target_movie_ids)} movies across {len(category_ids)} categories")
 
-            if not target_movie_ids:
-                mapping_file = os.environ.get("CATEGORY_MAPPING_FILE", "/data/category_mapping.json")
-                if os.path.exists(mapping_file):
-                    logger.info("movie_categories empty, reloading from dump file")
-                    with open(mapping_file) as f:
-                        dump_cats = json.load(f)
-                    for dc in dump_cats:
+                # Populate movie_categories table for future queries
+                for dc in dump_cats:
+                    if dc["id"] in selected_cat_set:
                         for mid in dc.get("movie_ids", []):
                             await db.execute(
                                 "INSERT OR IGNORE INTO movie_categories (movie_id, category_id) VALUES (?, ?)",
                                 (mid, dc["id"]),
                             )
-                    await db.commit()
-                    rows = await db.execute(
-                        f"SELECT DISTINCT movie_id FROM movie_categories WHERE category_id IN ({placeholders})",
-                        category_ids,
-                    )
-                    target_movie_ids = {r["movie_id"] for r in await rows.fetchall()}
-                    logger.info(f"After reload: {len(target_movie_ids)} target movies")
+                await db.commit()
+            else:
+                placeholders = ",".join("?" for _ in category_ids)
+                rows = await db.execute(
+                    f"SELECT DISTINCT movie_id FROM movie_categories WHERE category_id IN ({placeholders})",
+                    category_ids,
+                )
+                target_movie_ids = {r["movie_id"] for r in await rows.fetchall()}
 
             if target_movie_ids and account_ids:
                 stream_map_file = os.environ.get("STREAM_MAPPING_FILE", "/data/stream_mapping.json")
@@ -139,7 +140,7 @@ async def scrape_catalog(max_movies: int = 0, category_ids: list = None, account
 
             if not target_movie_ids:
                 await db.execute(
-                    "UPDATE sync_state SET status = 'idle', message = 'No movies in selected categories. Load categories first.' WHERE id = 1"
+                    "UPDATE sync_state SET status = 'idle', message = 'No movies in selected categories/providers. Try selecting more providers or reload categories.' WHERE id = 1"
                 )
                 await db.commit()
                 return 0

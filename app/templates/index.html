@@ -1823,12 +1823,24 @@
 
         // --- Sync ---
         async function syncCatalog() {
+            const selCats = allCategories.filter(c => c.selected);
+            if (selCats.length === 0) {
+                alert('No categories selected. Select at least one category before syncing.');
+                return;
+            }
             showOverlay('Syncing Catalog...');
-            await fetchJSON('/api/sync/catalog', {
+            const resp = await fetch('/api/sync/catalog', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({})
+                body: JSON.stringify({}),
+                cache: 'no-store'
             });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                hideOverlay();
+                alert(err.error || 'Sync failed');
+                return;
+            }
             refreshStatus();
             const pollUntilDone = () => {
                 setTimeout(async () => {
