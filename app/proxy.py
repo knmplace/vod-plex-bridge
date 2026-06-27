@@ -648,6 +648,8 @@ def _clear_failure_by_movie(movie_id: int):
 # --- Proxy Activity Log ---
 MAX_LOG_ENTRIES = 200
 _proxy_log: deque = deque(maxlen=MAX_LOG_ENTRIES)
+LOG_ARCHIVE_DIR = os.environ.get("LOG_ARCHIVE_DIR", "/data/proxy_logs")
+LOG_ARCHIVE_MAX_DAYS = 30
 
 
 def _log_event(level: str, movie_id: int | None, msg: str, movie_name: str | None = None, **extra):
@@ -664,6 +666,75 @@ def _log_event(level: str, movie_id: int | None, msg: str, movie_name: str | Non
 
 def get_proxy_log() -> list[dict]:
     return list(_proxy_log)
+
+
+def archive_proxy_log() -> str | None:
+    """Snapshot current log to a timestamped JSON file. Returns filename or None if empty."""
+    if not _proxy_log:
+        return None
+    os.makedirs(LOG_ARCHIVE_DIR, exist_ok=True)
+    from datetime import datetime
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    filename = f"proxy_log_{ts}.json"
+    filepath = os.path.join(LOG_ARCHIVE_DIR, filename)
+    import json
+    with open(filepath, "w") as f:
+        json.dump(list(_proxy_log), f)
+    logger.info(f"Archived {len(_proxy_log)} proxy log entries to {filename}")
+    return filename
+
+
+def cleanup_old_archives():
+    """Delete archive files older than LOG_ARCHIVE_MAX_DAYS."""
+    if not os.path.exists(LOG_ARCHIVE_DIR):
+        return
+    cutoff = time.time() - (LOG_ARCHIVE_MAX_DAYS * 86400)
+    removed = 0
+    for f in os.listdir(LOG_ARCHIVE_DIR):
+        if not f.endswith(".json"):
+            continue
+        fp = os.path.join(LOG_ARCHIVE_DIR, f)
+        if os.path.getmtime(fp) < cutoff:
+            os.remove(fp)
+            removed += 1
+    if removed:
+        logger.info(f"Cleaned up {removed} proxy log archives older than {LOG_ARCHIVE_MAX_DAYS} days")
+
+
+def list_log_archives() -> list[dict]:
+    """List archived log files, newest first."""
+    if not os.path.exists(LOG_ARCHIVE_DIR):
+        return []
+    archives = []
+    for f in sorted(os.listdir(LOG_ARCHIVE_DIR), reverse=True):
+        if not f.endswith(".json"):
+            continue
+        fp = os.path.join(LOG_ARCHIVE_DIR, f)
+        stat = os.stat(fp)
+        import json
+        with open(fp) as fh:
+            try:
+                entries = json.load(fh)
+                count = len(entries)
+            except Exception:
+                count = 0
+        archives.append({
+            "filename": f,
+            "size": stat.st_size,
+            "entries": count,
+            "mtime": stat.st_mtime,
+        })
+    return archives
+
+
+def get_log_archive(filename: str) -> list[dict] | None:
+    """Load a specific archive file."""
+    fp = os.path.join(LOG_ARCHIVE_DIR, filename)
+    if not os.path.exists(fp) or ".." in filename:
+        return None
+    import json
+    with open(fp) as f:
+        return json.load(f)
 
 
 async def _check_if_stream_dead(movie_id: int) -> bool:

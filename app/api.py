@@ -14,7 +14,7 @@ from database import get_db
 from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing
 from generator import generate_strm_files, sanitize_filename
 from stream_mapper import apply_stream_mapping_to_db, load_stream_mapping, pick_stream_for_account
-from proxy import probe_file_size, get_proxy_log, get_all_pipes, _log_event
+from proxy import probe_file_size, get_proxy_log, get_all_pipes, _log_event, archive_proxy_log, cleanup_old_archives, list_log_archives, get_log_archive
 from health import run_health_checks, get_health_status, get_health_log, health_check_scheduler
 
 logger = logging.getLogger(__name__)
@@ -482,6 +482,27 @@ TAIL_FETCH_SIZE = 256 * 1024          # 256KB tail — moov atom / seek table
 @router.get("/proxy-log")
 async def proxy_log():
     return get_proxy_log()
+
+
+@router.get("/proxy-log/archives")
+async def proxy_log_archives():
+    return list_log_archives()
+
+
+@router.get("/proxy-log/archives/{filename}")
+async def proxy_log_archive_detail(filename: str):
+    data = get_log_archive(filename)
+    if data is None:
+        return JSONResponse(status_code=404, content={"error": "Archive not found"})
+    return data
+
+
+@router.post("/proxy-log/archive-now")
+async def proxy_log_archive_now():
+    fname = archive_proxy_log()
+    if not fname:
+        return {"status": "empty", "message": "No log entries to archive"}
+    return {"status": "ok", "filename": fname}
 
 
 @router.get("/debug/connections")
@@ -2409,6 +2430,19 @@ async def start_dead_scan_scheduler():
             continue
         logger.info("Scheduled catalog refresh starting (interval: %dh)...", interval)
         await _run_scheduled_refresh_guarded()
+
+
+LOG_ARCHIVE_INTERVAL = int(os.environ.get("LOG_ARCHIVE_INTERVAL", 4 * 3600))
+
+
+async def start_log_archive_scheduler():
+    while True:
+        await asyncio.sleep(LOG_ARCHIVE_INTERVAL)
+        try:
+            archive_proxy_log()
+            cleanup_old_archives()
+        except Exception as e:
+            logger.error(f"Log archive failed: {e}")
 
 
 async def _set_status(status: str, message: str):
