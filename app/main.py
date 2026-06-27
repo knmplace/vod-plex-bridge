@@ -14,7 +14,7 @@ from health import health_check_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-APP_VERSION = "0.29.1"
+APP_VERSION = "0.29.2"
 
 
 @asynccontextmanager

@@ -1003,6 +1003,7 @@ async def vod_file(filename: str, request: Request):
                             "SELECT id, name, year, activated FROM movies WHERE id = ?", (movie_id,))
                         m = await row2.fetchone()
                         if m and m["activated"]:
+                            await _plex_remove_movies([movie_id])
                             folder_name = _movie_folder_name(dict(m))
                             live_folder = os.path.join(STRM_OUTPUT_DIR, folder_name)
                             dead_folder = os.path.join(DEAD_DIR, folder_name)
@@ -1010,7 +1011,6 @@ async def vod_file(filename: str, request: Request):
                                 import shutil
                                 os.makedirs(DEAD_DIR, exist_ok=True)
                                 shutil.move(live_folder, dead_folder)
-                            await _plex_remove_movies([movie_id])
                         from datetime import datetime as dt, timezone as tz
                         dead_now = dt.now(tz.utc).isoformat()
                         await db2.execute(
@@ -1173,6 +1173,7 @@ async def _handle_upstream_error(movie_id: int, stream_id: int, status_code: int
                 if result:
                     mname = result["name"] or None
                     if result["activated"]:
+                        await _plex_remove_movies([movie_id])
                         folder_name = _movie_folder_name(dict(result))
                         live_folder = os.path.join(STRM_OUTPUT_DIR, folder_name)
                         dead_folder = os.path.join(DEAD_DIR, folder_name)
@@ -1180,7 +1181,6 @@ async def _handle_upstream_error(movie_id: int, stream_id: int, status_code: int
                             import shutil
                             os.makedirs(DEAD_DIR, exist_ok=True)
                             shutil.move(live_folder, dead_folder)
-                        await _plex_remove_movies([movie_id])
                     from datetime import datetime as dt, timezone as tz
                     dead_now = dt.now(tz.utc).isoformat()
                     await db.execute(

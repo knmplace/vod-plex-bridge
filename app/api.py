@@ -747,17 +747,22 @@ async def _deactivate_dead_movie(movie_id: int, name: str, year: int | None, rea
     try:
         await db.execute("UPDATE movies SET activated = 0 WHERE id = ?", (movie_id,))
         await db.commit()
+    finally:
+        pass
 
-        movie_info = {"name": name, "year": year}
-        _remove_strm_folders([movie_info])
+    plex_removed = await _plex_remove_movies([movie_id])
 
-        strm_count = _count_strm_folders()
+    movie_info = {"name": name, "year": year}
+    _remove_strm_folders([movie_info])
+
+    strm_count = _count_strm_folders()
+    db = await get_db()
+    try:
         await db.execute("UPDATE sync_state SET active_strm_count = ? WHERE id = 1", (strm_count,))
         await db.commit()
     finally:
         pass
 
-    plex_removed = await _plex_remove_movies([movie_id])
     logger.warning("Auto-deactivated movie %d (%s) — %s. Plex removed: %d", movie_id, name, reason, plex_removed)
 
 
@@ -1161,6 +1166,7 @@ async def _mark_activation_dead(movie_id: int, name: str, year: int | None, reas
         pass
 
     if was_activated:
+        await _plex_remove_movies([movie_id])
         movie_info = {"name": name, "year": year}
         folder_name = _movie_folder_name(movie_info)
         live_folder = os.path.join(STRM_OUTPUT_DIR, folder_name)
@@ -1169,7 +1175,6 @@ async def _mark_activation_dead(movie_id: int, name: str, year: int | None, reas
             os.makedirs(DEAD_DIR, exist_ok=True)
             shutil.move(live_folder, dead_folder)
             logger.info("Moved STRM to dead: %s", folder_name)
-        await _plex_remove_movies([movie_id])
 
     logger.warning("Activation failed — marked dead: movie %d (%s) — %s", movie_id, name, reason)
 
@@ -1283,6 +1288,8 @@ async def deactivate_movies(request: Request):
         )
         await db.commit()
 
+        plex_removed = await _plex_remove_movies(movie_ids)
+
         removed = _remove_strm_folders(movies)
 
         strm_count = _count_strm_folders()
@@ -1291,8 +1298,6 @@ async def deactivate_movies(request: Request):
 
         count_row = await db.execute("SELECT COUNT(*) as cnt FROM movies WHERE activated = 1")
         total = (await count_row.fetchone())["cnt"]
-
-        plex_removed = await _plex_remove_movies(movie_ids)
 
         return {"status": "ok", "deactivated": len(movie_ids), "total_activated": total, "strm_removed": removed, "plex_removed": plex_removed}
     finally:
@@ -1309,6 +1314,8 @@ async def deactivate_all():
         await db.execute("UPDATE movies SET activated = 0")
         await db.commit()
 
+        plex_removed = await _plex_remove_movies(active_ids) if active_ids else 0
+
         removed = 0
         if os.path.exists(STRM_OUTPUT_DIR):
             for item in os.listdir(STRM_OUTPUT_DIR):
@@ -1318,8 +1325,6 @@ async def deactivate_all():
                     removed += 1
         await db.execute("UPDATE sync_state SET active_strm_count = 0 WHERE id = 1")
         await db.commit()
-
-        plex_removed = await _plex_remove_movies(active_ids) if active_ids else 0
 
         return {"status": "ok", "message": f"All movies deactivated, {removed} STRM folders removed, {plex_removed} removed from Plex"}
     finally:
@@ -2275,13 +2280,13 @@ async def mark_movies_dead(request: Request):
 
         for m in movies:
             if m["activated"]:
+                await _plex_remove_movies([m["id"]])
                 folder_name = _movie_folder_name(m)
                 live_folder = os.path.join(STRM_OUTPUT_DIR, folder_name)
                 dead_folder = os.path.join(DEAD_DIR, folder_name)
                 if os.path.isdir(live_folder):
                     os.makedirs(DEAD_DIR, exist_ok=True)
                     shutil.move(live_folder, dead_folder)
-                await _plex_remove_movies([m["id"]])
 
         now = datetime.now(timezone.utc).isoformat()
         await db.execute(
@@ -2454,6 +2459,10 @@ async def _run_dead_scan():
             )
         await db.commit()
 
+        plex_removed = 0
+        if dead_activated:
+            plex_removed = await _plex_remove_movies([m["id"] for m in dead_activated])
+
         os.makedirs(DEAD_DIR, exist_ok=True)
         moved = 0
         for m in dead_activated:
@@ -2467,10 +2476,6 @@ async def _run_dead_scan():
         strm_count = _count_strm_folders()
         await db.execute("UPDATE sync_state SET active_strm_count = ? WHERE id = 1", (strm_count,))
         await db.commit()
-
-        plex_removed = 0
-        if dead_activated:
-            plex_removed = await _plex_remove_movies([m["id"] for m in dead_activated])
 
         msg = f"Dead scan: {len(newly_dead)} dead ({moved} STRM moved, {plex_removed} removed from Plex)"
         if not _refresh_running:
