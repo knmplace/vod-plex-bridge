@@ -29,13 +29,6 @@ def _account_to_provider(account_id: int) -> str:
     return f"account_{account_id}"
 
 
-def get_xc_url(movie_id: int, ext: str = "mkv") -> str | None:
-    from config import DISPATCHARR_XC_USERNAME, DISPATCHARR_XC_PASSWORD
-    if not DISPATCHARR_XC_USERNAME or not DISPATCHARR_XC_PASSWORD:
-        return None
-    return f"/movie/{DISPATCHARR_XC_USERNAME}/{DISPATCHARR_XC_PASSWORD}/{movie_id}.{ext}"
-
-
 def load_stream_mapping() -> dict:
     if not os.path.exists(MAPPING_FILE):
         logger.warning(f"Stream mapping file not found: {MAPPING_FILE}")

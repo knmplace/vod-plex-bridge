@@ -12,6 +12,4 @@ PLEX_URL = os.environ.get("PLEX_URL", "")
 PLEX_TOKEN = os.environ.get("PLEX_TOKEN", "")
 PLEX_LIBRARY_ID = os.environ.get("PLEX_LIBRARY_ID", "7")
 
-DISPATCHARR_XC_USERNAME = os.environ.get("DISPATCHARR_XC_USERNAME", "")
-DISPATCHARR_XC_PASSWORD = os.environ.get("DISPATCHARR_XC_PASSWORD", "")
 
