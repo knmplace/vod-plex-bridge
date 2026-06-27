@@ -1541,49 +1541,58 @@ async def _bulk_detect_languages():
 
         detected = 0
         skipped = 0
-        sem = asyncio.Semaphore(4)
 
         async def fetch_lang(client, movie):
             nonlocal detected, skipped
-            async with sem:
-                if is_cancelled():
-                    return
+            if is_cancelled():
+                return
+            url = f"https://api.themoviedb.org/3/movie/{movie['tmdb_id']}"
+            headers = {}
+            params = {}
+            if TMDB_READ_TOKEN:
+                headers["Authorization"] = f"Bearer {TMDB_READ_TOKEN}"
+            else:
+                params["api_key"] = TMDB_API_KEY
+            for attempt in range(5):
                 try:
-                    url = f"https://api.themoviedb.org/3/movie/{movie['tmdb_id']}"
-                    headers = {}
-                    params = {}
-                    if TMDB_READ_TOKEN:
-                        headers["Authorization"] = f"Bearer {TMDB_READ_TOKEN}"
-                    else:
-                        params["api_key"] = TMDB_API_KEY
                     resp = await client.get(url, params=params, headers=headers)
                     if resp.status_code == 429:
                         retry_after = int(resp.headers.get("Retry-After", "2"))
-                        await asyncio.sleep(retry_after)
-                        resp = await client.get(url, params=params, headers=headers)
+                        await asyncio.sleep(retry_after + 1)
+                        continue
                     if resp.status_code != 200:
                         skipped += 1
                         return
                     lang = resp.json().get("original_language", "")
                     await db.execute("UPDATE movies SET language = ? WHERE id = ?", (lang, movie["id"]))
                     detected += 1
-                    await asyncio.sleep(0.25)
+                    return
                 except Exception:
+                    if attempt < 4:
+                        await asyncio.sleep(1)
+                        continue
                     skipped += 1
+                    return
+            skipped += 1
 
         async with httpx.AsyncClient(timeout=10.0) as client:
-            batch_size = 40
+            batch_size = 35
             for i in range(0, total, batch_size):
                 if is_cancelled():
                     break
                 batch = movies[i:i + batch_size]
-                await asyncio.gather(*[fetch_lang(client, m) for m in batch])
+                for m in batch:
+                    if is_cancelled():
+                        break
+                    await fetch_lang(client, m)
                 await db.commit()
                 await db.execute(
                     "UPDATE sync_state SET lang_status = ? WHERE id = 1",
                     (f"Detecting languages: {detected + skipped}/{total} ({detected} detected)...",),
                 )
                 await db.commit()
+                if i + batch_size < total:
+                    await asyncio.sleep(1)
 
         status_msg = "cancelled" if is_cancelled() else "complete"
         await db.execute(
