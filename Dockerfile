@@ -1,5 +1,8 @@
 FROM python:3.12-slim
 
+ENV TZ=America/New_York
+RUN ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime && echo "America/New_York" > /etc/timezone
+
 WORKDIR /app
 
 COPY requirements.txt .
