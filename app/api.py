@@ -2257,6 +2257,43 @@ async def restore_dead_movies(request: Request):
         pass
 
 
+@router.post("/movies/mark-dead")
+async def mark_movies_dead(request: Request):
+    data = await request.json()
+    movie_ids = data.get("movie_ids", [])
+    if not movie_ids:
+        return JSONResponse(status_code=400, content={"error": "movie_ids required"})
+
+    db = await get_db()
+    try:
+        placeholders = ",".join("?" for _ in movie_ids)
+        rows = await db.execute(
+            f"SELECT id, name, year, activated FROM movies WHERE id IN ({placeholders})",
+            movie_ids,
+        )
+        movies = [dict(r) for r in await rows.fetchall()]
+
+        for m in movies:
+            if m["activated"]:
+                folder_name = _movie_folder_name(m)
+                live_folder = os.path.join(STRM_OUTPUT_DIR, folder_name)
+                dead_folder = os.path.join(DEAD_DIR, folder_name)
+                if os.path.isdir(live_folder):
+                    os.makedirs(DEAD_DIR, exist_ok=True)
+                    shutil.move(live_folder, dead_folder)
+                await _plex_remove_movies([m["id"]])
+
+        now = datetime.now(timezone.utc).isoformat()
+        await db.execute(
+            f"UPDATE movies SET dead = 1, dead_at = ?, activated = 0 WHERE id IN ({placeholders})",
+            [now] + movie_ids,
+        )
+        await db.commit()
+        return {"status": "ok", "marked": len(movies)}
+    finally:
+        pass
+
+
 @router.post("/movies/tmdb-search")
 async def trigger_tmdb_search():
     """Manually trigger TMDB title search for movies missing TMDB IDs."""
