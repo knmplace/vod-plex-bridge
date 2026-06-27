@@ -1494,6 +1494,17 @@
             });
             const prov = allProviders.find(p => p.id === id);
             if (prov) prov.selected = select;
+            // If deselecting and no providers remain, clear all category selections
+            if (!select && allProviders.filter(p => p.selected).length === 0) {
+                for (const c of allCategories.filter(c => c.selected)) {
+                    await fetchJSON('/api/categories/deselect', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({category_id: c.id})
+                    });
+                    c.selected = false;
+                }
+            }
             renderProviderList();
             refreshCategories();
         }
@@ -1522,6 +1533,15 @@
                 });
                 p.selected = false;
             }
+            // Deselect all categories when no providers selected
+            for (const c of allCategories.filter(c => c.selected)) {
+                await fetchJSON('/api/categories/deselect', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({category_id: c.id})
+                });
+                c.selected = false;
+            }
             renderProviderList();
             refreshCategories();
         }
@@ -1530,7 +1550,7 @@
         async function refreshCategories() {
             const selectedProvs = allProviders.filter(p => p.selected);
             if (selectedProvs.length === 0) {
-                allCategories = await fetchJSON('/api/categories');
+                allCategories = [];
             } else if (selectedProvs.length === 1) {
                 allCategories = await fetchJSON('/api/categories?account_id=' + selectedProvs[0].id);
             } else {
