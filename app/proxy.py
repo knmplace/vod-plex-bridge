@@ -24,7 +24,9 @@ BUFFER_DIR = "/data/buffers"
 # Bridge stays ~60s ahead of Plex, reads from Dispatcharr only as needed.
 
 PIPE_IDLE_TIMEOUT = 900     # 15 min with no activity at all → close everything
-PLEX_IDLE_TIMEOUT = 180     # 3 min with no Plex reads → user stopped, close pipe
+PLEX_IDLE_TIMEOUT = 5       # 5 sec with no Plex reads → disconnect upstream, keep buffer
+BUFFER_MAX_AGE = 86400      # 24 hours — delete stale buffer files
+BUFFER_CLEANUP_INTERVAL = 3600  # check every hour
 PIPE_POLL_INTERVAL = 0.1    # seconds between checks when waiting for data
 PIPE_POLL_MAX_WAIT = 30     # max seconds to wait for data before giving up
 BUFFER_TARGET_SECS = 60     # informational — pipe reads at 1x bitrate continuously
@@ -73,11 +75,12 @@ class StreamPipe:
             self.bytes_per_second = DEFAULT_BITRATE
             self.bitrate_source = "fallback"
 
-    async def start(self):
+    async def start(self, resume_offset: int | None = None):
         async with self._lock:
             if self.started:
                 return
             self.started = True
+            self._resume_offset = resume_offset
 
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(connect=30, read=600, write=30, pool=30),
@@ -87,9 +90,13 @@ class StreamPipe:
         self._download_task = asyncio.create_task(self._download_loop())
         target_bps = self.bytes_per_second * 1.2
         est_duration = (self.file_size / target_bps / 60) if target_bps > 0 else 0
-        logger.info("Pipe started for movie %d (bitrate=%.0f B/s [%s], target=%.0f KB/s, est=%.0fmin, offset=%d, streaming=single-connection)",
-                     self.movie_id, self.bytes_per_second, self.bitrate_source,
-                     target_bps / 1024, est_duration, self.start_offset)
+        if resume_offset:
+            logger.info("Pipe RESUMED for movie %d (cached=%dMB, resuming from offset %d, bitrate=%.0f B/s [%s])",
+                         self.movie_id, self.bytes_written // (1024*1024), resume_offset, self.bytes_per_second, self.bitrate_source)
+        else:
+            logger.info("Pipe started for movie %d (bitrate=%.0f B/s [%s], target=%.0f KB/s, est=%.0fmin, offset=%d)",
+                         self.movie_id, self.bytes_per_second, self.bitrate_source,
+                         target_bps / 1024, est_duration, self.start_offset)
 
     async def _download_loop(self):
         CHUNK_SIZE = 65536  # 64KB iteration size from the stream
@@ -97,13 +104,17 @@ class StreamPipe:
         INITIAL_BURST = 2 * 1024 * 1024  # first 2MB at full speed
         LOG_INTERVAL = 30
         try:
-            offset = self.start_offset
+            if self._resume_offset is not None:
+                offset = self._resume_offset
+                file_mode = "ab"
+            else:
+                offset = self.start_offset
+                file_mode = "wb"
+                with open(self.buffer_path + ".meta", "w") as mf:
+                    mf.write(str(self.start_offset))
+
             range_header = f"bytes={offset}-"
 
-            # ONE persistent streaming connection — just like a browser player.
-            # The response stays open, we read chunks as they arrive, and pace
-            # ourselves with wall-clock sleeps. Dispatcharr sees one continuous
-            # consumer for the entire movie duration.
             self._resp = await self._client.send(
                 self._client.build_request("GET", self.upstream_url,
                                            headers={"Range": range_header}),
@@ -129,17 +140,19 @@ class StreamPipe:
             target_bps = self.bytes_per_second * RATE_MULTIPLIER
             wall_start = time.monotonic()
             last_log = wall_start
+            session_bytes = 0
 
-            with open(self.buffer_path, "wb") as f:
+            with open(self.buffer_path, file_mode) as f:
                 async for chunk in self._resp.aiter_bytes(CHUNK_SIZE):
                     f.write(chunk)
                     f.flush()
                     self.bytes_written += len(chunk)
+                    session_bytes += len(chunk)
                     self.last_read_at = time.time()
 
-                    if self.bytes_written > INITIAL_BURST and target_bps > 0:
+                    if session_bytes > INITIAL_BURST and target_bps > 0:
                         elapsed = time.monotonic() - wall_start
-                        expected_time = self.bytes_written / target_bps
+                        expected_time = session_bytes / target_bps
                         ahead = expected_time - elapsed
                         if ahead > 0.05:
                             await asyncio.sleep(ahead)
@@ -147,19 +160,20 @@ class StreamPipe:
                     now = time.monotonic()
                     if now - last_log >= LOG_INTERVAL:
                         elapsed = now - wall_start
-                        actual_rate = self.bytes_written / elapsed if elapsed > 0 else 0
-                        pct = (self.bytes_written / self.file_size * 100) if self.file_size else 0
+                        actual_rate = session_bytes / elapsed if elapsed > 0 else 0
+                        total_buffered = self.start_offset + self.bytes_written
+                        pct = (total_buffered / self.file_size * 100) if self.file_size else 0
                         logger.info("Pipe movie %d: %.1f%% (%dMB / %dMB) @ %.0f KB/s (target %.0f KB/s) elapsed %.0fs",
                                     self.movie_id, pct,
-                                    self.bytes_written // (1024*1024), self.file_size // (1024*1024),
+                                    total_buffered // (1024*1024), self.file_size // (1024*1024),
                                     actual_rate / 1024, target_bps / 1024, elapsed)
                         last_log = now
 
             self.finished = True
             elapsed = time.monotonic() - wall_start
-            logger.info("Pipe complete for movie %d: %d bytes in %.0fs (avg %.0f KB/s)",
-                        self.movie_id, self.bytes_written, elapsed,
-                        (self.bytes_written / elapsed / 1024) if elapsed > 0 else 0)
+            logger.info("Pipe complete for movie %d: %d bytes this session (%d total) in %.0fs (avg %.0f KB/s)",
+                        self.movie_id, session_bytes, self.bytes_written, elapsed,
+                        (session_bytes / elapsed / 1024) if elapsed > 0 else 0)
 
         except asyncio.CancelledError:
             self.finished = True
@@ -232,7 +246,7 @@ class StreamPipe:
     def is_plex_idle(self) -> bool:
         return (time.time() - self.last_plex_read) > PLEX_IDLE_TIMEOUT
 
-    async def close(self):
+    async def close(self, keep_buffer: bool = True):
         if self._download_task and not self._download_task.done():
             self._download_task.cancel()
             try:
@@ -244,7 +258,12 @@ class StreamPipe:
                 await self._client.aclose()
             except Exception:
                 pass
-        logger.info("Pipe closed for movie %d (buffered %d bytes)", self.movie_id, self.bytes_written)
+        self.finished = True
+        if keep_buffer:
+            logger.info("Pipe closed for movie %d (buffered %d bytes, buffer retained)", self.movie_id, self.bytes_written)
+        else:
+            self.cleanup_buffer()
+            logger.info("Pipe closed for movie %d (buffer deleted)", self.movie_id)
 
     def cleanup_buffer(self):
         try:
@@ -253,6 +272,9 @@ class StreamPipe:
                 logger.info("Buffer cleared for movie %d", self.movie_id)
         except Exception as e:
             logger.warning("Failed to remove buffer %s: %s", self.buffer_path, e)
+
+    def buffer_end_offset(self) -> int:
+        return self.start_offset + self.bytes_written
 
     def status_dict(self) -> dict:
         now = time.time()
@@ -296,7 +318,6 @@ class StreamPipe:
 # --- Pipe Manager ---
 _movie_pipes: dict[int, StreamPipe] = {}
 _pipe_creating: dict[int, asyncio.Lock] = {}
-_pipe_manager_task: asyncio.Task | None = None
 
 
 def get_all_pipes() -> dict:
@@ -370,8 +391,6 @@ async def _create_pipe_locked(movie_id: int, file_size: int, duration_seconds: i
         if existing.has_data_for(start_offset, start_offset):
             existing.last_read_at = time.time()
             return existing
-        # If pipe is actively downloading and the request is ahead but within
-        # reach (pipe will catch up), return it and let read_range wait.
         if not existing.finished and start_offset >= existing.start_offset:
             expected_end = existing.start_offset + existing.bytes_written
             gap = start_offset - expected_end
@@ -380,13 +399,45 @@ async def _create_pipe_locked(movie_id: int, file_size: int, duration_seconds: i
                 return existing
             logger.info("Plex seeked beyond buffer for movie %d (gap=%dKB), restarting pipe from offset %d",
                          movie_id, gap // 1024, start_offset)
-        await existing.close()
-        existing.cleanup_buffer()
+        await existing.close(keep_buffer=False)
         del _movie_pipes[movie_id]
     elif existing and existing.error:
-        await existing.close()
-        existing.cleanup_buffer()
+        await existing.close(keep_buffer=False)
         del _movie_pipes[movie_id]
+
+    buffer_path = os.path.join(BUFFER_DIR, f"movie_{movie_id}.buf")
+    cached_size = 0
+    cached_start = 0
+    if os.path.exists(buffer_path):
+        cached_size = os.path.getsize(buffer_path)
+        meta_path = buffer_path + ".meta"
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path) as mf:
+                    cached_start = int(mf.read().strip())
+            except Exception:
+                cached_start = 0
+
+    if cached_size > 0 and start_offset >= cached_start and start_offset < cached_start + cached_size:
+        resume_offset = cached_start + cached_size
+        logger.info("Resuming movie %d from cached buffer: %dMB cached (offset %d-%d), Plex at %d, new pipe from %d",
+                     movie_id, cached_size // (1024*1024), cached_start, resume_offset, start_offset, resume_offset)
+        actual_start = cached_start
+        effective_offset = resume_offset
+    else:
+        if cached_size > 0:
+            logger.info("Buffer exists for movie %d but doesn't cover offset %d (buffer: %d-%d), replacing",
+                         movie_id, start_offset, cached_start, cached_start + cached_size)
+            try:
+                os.remove(buffer_path)
+                meta_path = buffer_path + ".meta"
+                if os.path.exists(meta_path):
+                    os.remove(meta_path)
+            except Exception:
+                pass
+        actual_start = start_offset
+        effective_offset = start_offset
+        cached_size = 0
 
     if not uuid or not stream_id:
         db = await get_db()
@@ -418,24 +469,30 @@ async def _create_pipe_locked(movie_id: int, file_size: int, duration_seconds: i
                       movie_id, session_host, disp_host)
         return None
 
-    pipe = StreamPipe(movie_id, session_url, file_size, duration_seconds, session_id, start_offset, stream_bitrate_kbps)
+    pipe = StreamPipe(movie_id, session_url, file_size, duration_seconds, session_id, actual_start, stream_bitrate_kbps)
+    if cached_size > 0 and actual_start != effective_offset:
+        pipe.bytes_written = cached_size
     _movie_pipes[movie_id] = pipe
-    await pipe.start()
+    await pipe.start(resume_offset=effective_offset if effective_offset != actual_start else None)
     return pipe
 
 
-async def close_movie_pipe(movie_id: int):
-    """Close and clean up a movie's pipe."""
+async def close_movie_pipe(movie_id: int, keep_buffer: bool = False):
+    """Close a movie's pipe. Error paths should pass keep_buffer=False."""
     pipe = _movie_pipes.pop(movie_id, None)
     if pipe:
-        await pipe.close()
-        pipe.cleanup_buffer()
+        await pipe.close(keep_buffer=keep_buffer)
 
 
 async def _pipe_manager_loop():
-    """Background task: close idle pipes (15 min no activity = stop/pause timeout)."""
+    """Background task: manage pipe lifecycle.
+
+    Plex idle (5s): disconnect upstream, keep buffer on disk for resume.
+    Full idle (15 min): remove pipe object from memory, buffer stays for 24h.
+    Error: delete buffer, mark dead if provider error.
+    """
     while True:
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
         try:
             to_cleanup = []
             for mid, pipe in list(_movie_pipes.items()):
@@ -444,14 +501,16 @@ async def _pipe_manager_loop():
                 elif pipe.is_plex_idle and pipe.started and not pipe.finished:
                     to_cleanup.append((mid, "plex_idle"))
                 elif pipe.is_idle and pipe.started:
-                    to_cleanup.append((mid, "idle"))
+                    to_cleanup.append((mid, "full_idle"))
 
             for mid, reason in to_cleanup:
                 pipe = _movie_pipes.pop(mid, None)
                 if pipe:
                     if reason == "plex_idle":
                         plex_idle = int(time.time() - pipe.last_plex_read)
-                        logger.info("Closing pipe for movie %d (Plex idle %ds, user stopped) — clean disconnect", mid, plex_idle)
+                        logger.info("Plex idle %ds for movie %d — disconnecting upstream, buffer retained (%dMB)",
+                                    plex_idle, mid, pipe.bytes_written // (1024*1024))
+                        await pipe.close(keep_buffer=True)
                     elif reason == "error" and pipe.error and "HTTP 5" in pipe.error:
                         logger.warning("Closing errored pipe for movie %d (%s) — marking dead", mid, pipe.error)
                         try:
@@ -463,20 +522,56 @@ async def _pipe_manager_loop():
                                 await _handle_upstream_error(mid, movie["stream_id"], status_code_val)
                         except Exception as he:
                             logger.error("Failed to mark movie %d dead from pipe manager: %s", mid, he)
+                        await pipe.close(keep_buffer=False)
+                    elif reason == "error":
+                        logger.info("Closing errored pipe for movie %d (%s) — clearing buffer", mid, pipe.error)
+                        await pipe.close(keep_buffer=False)
                     else:
                         idle_secs = int(time.time() - pipe.last_read_at)
-                        logger.info("Closing idle pipe for movie %d (idle %ds) — clearing buffer", mid, idle_secs)
-                    await pipe.close()
-                    pipe.cleanup_buffer()
+                        logger.info("Full idle %ds for movie %d — removing from memory, buffer stays on disk", idle_secs, mid)
+                        await pipe.close(keep_buffer=True)
         except Exception as e:
             logger.error("Pipe manager error: %s", e)
 
 
+async def _buffer_cleanup_loop():
+    """Hourly cleanup: delete buffer files older than 24 hours."""
+    while True:
+        await asyncio.sleep(BUFFER_CLEANUP_INTERVAL)
+        try:
+            now = time.time()
+            cleaned = 0
+            for fname in os.listdir(BUFFER_DIR):
+                fpath = os.path.join(BUFFER_DIR, fname)
+                if not os.path.isfile(fpath):
+                    continue
+                mtime = os.path.getmtime(fpath)
+                if now - mtime > BUFFER_MAX_AGE:
+                    movie_id_match = re.search(r'movie_(\d+)', fname)
+                    mid = int(movie_id_match.group(1)) if movie_id_match else None
+                    if mid and mid in _movie_pipes:
+                        continue
+                    os.remove(fpath)
+                    cleaned += 1
+            if cleaned:
+                logger.info("Buffer cleanup: removed %d stale files (>24h)", cleaned)
+        except Exception as e:
+            logger.error("Buffer cleanup error: %s", e)
+
+
+_pipe_manager_task: asyncio.Task | None = None
+_buffer_cleanup_task: asyncio.Task | None = None
+
+
 def start_pipe_manager():
-    global _pipe_manager_task
+    global _pipe_manager_task, _buffer_cleanup_task
     if _pipe_manager_task is None or _pipe_manager_task.done():
         _pipe_manager_task = asyncio.create_task(_pipe_manager_loop())
-        logger.info("Pipe manager started")
+        logger.info("Pipe manager started (plex_idle=%ds, full_idle=%ds)", PLEX_IDLE_TIMEOUT, PIPE_IDLE_TIMEOUT)
+    if _buffer_cleanup_task is None or _buffer_cleanup_task.done():
+        _buffer_cleanup_task = asyncio.create_task(_buffer_cleanup_loop())
+        logger.info("Buffer cleanup task started (max_age=%dh, interval=%dh)",
+                     BUFFER_MAX_AGE // 3600, BUFFER_CLEANUP_INTERVAL // 3600)
 
 
 # --- Circuit Breaker ---
@@ -737,7 +832,44 @@ async def vod_file(filename: str, request: Request):
                     content=chunk,
                 )
 
-        # --- Cache miss — need streaming pipe ---
+        # --- Serve from disk buffer (no active pipe, but buffer file exists) ---
+        buffer_path = os.path.join(BUFFER_DIR, f"movie_{movie_id}.buf")
+        if not _movie_pipes.get(movie_id) and os.path.exists(buffer_path):
+            buf_size = os.path.getsize(buffer_path)
+            buf_start = 0
+            meta_path = buffer_path + ".meta"
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path) as mf:
+                        buf_start = int(mf.read().strip())
+                except Exception:
+                    pass
+            local_start = range_start - buf_start
+            if buf_size > 0 and local_start >= 0 and local_start < buf_size:
+                local_end = min(range_end - buf_start, buf_size - 1)
+                try:
+                    with open(buffer_path, "rb") as bf:
+                        bf.seek(local_start)
+                        chunk = bf.read(min(STREAM_CHUNK, local_end - local_start + 1))
+                    if chunk:
+                        serve_end = range_start + len(chunk) - 1
+                        os.utime(buffer_path)
+                        _log_event("info", movie_id, f"Served from disk buffer ({buf_size // (1024*1024)}MB cached)",
+                                   movie_name=movie_name, bytes=len(chunk), range_start=range_start, range_end=serve_end)
+                        return Response(
+                            status_code=206,
+                            headers={
+                                "accept-ranges": "bytes",
+                                "content-type": content_type,
+                                "content-length": str(len(chunk)),
+                                "content-range": f"bytes {range_start}-{serve_end}/{file_size}",
+                            },
+                            content=chunk,
+                        )
+                except Exception as be:
+                    logger.warning("Disk buffer read error for movie %d: %s", movie_id, be)
+
+        # --- Need streaming pipe (create or resume) ---
 
         ext = "mp4" if content_type == "video/mp4" else "mkv"
         if not _movie_pipes.get(movie_id):
