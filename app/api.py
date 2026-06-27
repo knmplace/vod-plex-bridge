@@ -2063,7 +2063,7 @@ async def list_dead_movies(
 ):
     db = await get_db()
     try:
-        conditions = ["m.dead = 1", "m.name != ''"]
+        conditions = ["(m.dead = 1 OR m.stream_dead = 1)", "m.name != ''"]
         params = []
         if search:
             conditions.append("m.name LIKE ?")
