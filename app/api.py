@@ -1737,7 +1737,7 @@ async def clear_catalog():
     try:
         await db.execute("DELETE FROM movies")
         await db.execute(
-            "UPDATE sync_state SET total_movies = 0, message = 'Catalog cleared' WHERE id = 1"
+            "UPDATE sync_state SET total_movies = 0, message = 'Catalog cleared', lang_status = '' WHERE id = 1"
         )
         await db.commit()
         return {"status": "ok", "message": "Catalog cleared (category mappings preserved)"}
