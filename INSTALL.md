@@ -7,30 +7,27 @@ This guide walks you through setting up VOD Plex Bridge from scratch. It assumes
 ```
 Your Network:
 
-┌──────────────────────────────────────────────────────────┐
-│                     LAN (192.168.x.x)                    │
-│                                                          │
-│  ┌─────────────┐    ┌──────────────┐    ┌────────────┐  │
-│  │ Dispatcharr  │◄──►│  VOD Plex    │◄──►│   Plex     │  │
-│  │ :9191        │    │  Bridge      │    │   :32400   │  │
-│  │              │    │  :8585       │    │            │  │
-│  │ (manages M3U │    │              │    │ (plays     │  │
-│  │  accounts +  │    │ (catalogs,   │    │  movies)   │  │
-│  │  proxies VOD)│    │  caches,     │    │            │  │
-│  └──────┬───────┘    │  streams)    │    └─────┬──────┘  │
-│         │            └──────┬───────┘          │         │
-│         │                   │                  │         │
-│    ┌────▼───────────────────▼──────────────────▼────┐    │
-│    │          Shared Storage (NAS / local dir)       │    │
-│    │          /plex-vod/Movies/                       │    │
-│    │          (bridge writes .strm, Plex reads them) │    │
-│    └─────────────────────────────────────────────────┘    │
-│         │                                                │
-│    ┌────▼────┐                                           │
-│    │   VPN   │ (optional — only Dispatcharr needs this)  │
-│    └────┬────┘                                           │
-│         │                                                │
-└─────────┼────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                     LAN (192.168.x.x)                        │
+│                                                              │
+│  ┌─────────────┐    ┌──────────────┐    ┌────────────────┐  │
+│  │ Dispatcharr  │◄──►│  VOD Plex    │◄──►│   Plex :32400  │  │
+│  │ :9191        │    │  Bridge      │    │                │  │
+│  │              │    │  :8585       │    │  rclone FUSE   │  │
+│  │ (manages M3U │    │              │    │  mount from    │  │
+│  │  accounts +  │    │ (catalogs,   │    │  Bridge /vod/  │  │
+│  │  proxies VOD)│    │  caches,     │    │  → /mnt/       │  │
+│  └──────┬───────┘    │  streams)    │    │    vod-bridge/ │  │
+│         │            └──────────────┘    └────────────────┘  │
+│         │                   │ serves /vod/       ▲           │
+│         │                   │ HTTP endpoint       │           │
+│         │                   └────────────────────┘           │
+│         │                    rclone reads over HTTP           │
+│    ┌────▼────┐                                               │
+│    │   VPN   │ (optional — only Dispatcharr needs this)      │
+│    └────┬────┘                                               │
+│         │                                                    │
+└─────────┼────────────────────────────────────────────────────┘
           │
     ┌─────▼──────┐
     │ IPTV       │
@@ -42,11 +39,11 @@ Your Network:
 
 1. **Dispatcharr** — Your existing M3U manager. It already handles your IPTV accounts and has a VOD proxy built in. The bridge reads movie data from it and streams video through it.
 
-2. **VOD Plex Bridge** — The new piece. A Docker container that catalogs movies, caches stream headers, and proxies video to Plex. This is what you're installing.
+2. **VOD Plex Bridge** — The new piece. A Docker container that catalogs movies, caches stream headers, and proxies video to Plex. This is what you're installing. It exposes a `/vod/` HTTP endpoint that lists activated movies as virtual `.mp4` files.
 
-3. **Plex Media Server** — Your existing Plex instance. You point a Movies library at a shared directory where the bridge writes `.strm` files.
+3. **Plex Media Server** — Your existing Plex instance. **rclone** on the Plex host mounts the bridge's `/vod/` endpoint as a local FUSE directory. Plex sees this as a normal folder of movie files.
 
-**Shared storage** is a directory that both the bridge and Plex can access. If they're on the same host, it's just a local folder. If they're on different hosts, use NFS or CIFS (network share).
+**No shared storage (NFS/CIFS) is required** between the bridge and Plex. rclone handles the connection over HTTP. The Plex host just needs to reach the bridge's port (default 8585) over the LAN.
 
 ---
 
@@ -59,7 +56,8 @@ Before starting, confirm you have:
 - [ ] **Plex Media Server** installed and running (e.g., `http://192.168.x.x:32400`)
 - [ ] **Docker** and **Docker Compose** installed on the host where you'll run the bridge
 - [ ] **Shell access** (SSH or terminal) to the host where Dispatcharr's Docker container runs
-- [ ] **A shared path** that both the bridge and Plex can read/write (if they're on different hosts, set up NFS/CIFS first)
+- [ ] **rclone** installed on the **Plex host** (not the bridge host) — [rclone.org/install](https://rclone.org/install/)
+- [ ] **FUSE** installed on the Plex host — `apt install fuse3` (Debian/Ubuntu)
 - [ ] *(Optional)* A **TMDB API key** — get one free at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api)
 
 ### Gathering Your Info
@@ -73,7 +71,6 @@ You'll need these values during setup. Write them down:
 | Plex URL | Your Plex browser URL (without `/web`) | `http://192.168.1.50:32400` |
 | Plex token | [Plex support article](https://support.plex.tv/articles/204059436/) — look in the XML or URL | `abc123xyz...` |
 | Bridge host IP | The LAN IP of the machine where you'll run the bridge | `192.168.1.100` |
-| Shared storage path | Where both bridge and Plex can access `.strm` files | `/mnt/media/plex-vod` |
 
 ---
 
@@ -114,32 +111,11 @@ PLEX_VOD_DIR=./plex-vod                      # Where .strm files go
 
 ### Important: Understanding BRIDGE_HOST
 
-`BRIDGE_HOST` is the most common source of "Plex can't play movies" issues. Here's why:
-
-When you activate a movie, the bridge creates a `.strm` file containing a URL like:
-```
-http://192.168.1.100:8585/stream/movie_12345.mkv
-```
-
-Plex reads this URL and tries to connect to it. If `BRIDGE_HOST` is set to `0.0.0.0` or `127.0.0.1`, Plex won't be able to reach the bridge. **It must be the actual LAN IP of the machine running the bridge.**
+`BRIDGE_HOST` is the most common source of "Plex can't play movies" issues. This is the LAN IP that rclone on the Plex host uses to reach the bridge. If `BRIDGE_HOST` is set to `0.0.0.0` or `127.0.0.1`, the rclone mount and Plex playback will fail. **It must be the actual LAN IP of the machine running the bridge.**
 
 ### Important: Understanding PLEX_VOD_DIR
 
-This is the directory where the bridge writes `.strm`, `.nfo`, and poster files. Plex reads from this same directory. Both must see the same files:
-
-**Same host (bridge and Plex on the same machine):**
-```
-PLEX_VOD_DIR=/opt/vod-plex-bridge/plex-vod
-# Plex library points to: /opt/vod-plex-bridge/plex-vod/Movies
-```
-
-**Different hosts (bridge on host A, Plex on host B):**
-```
-# Use a network share that both can access:
-PLEX_VOD_DIR=/mnt/nas/plex-vod
-# Plex library also points to: /mnt/nas/plex-vod/Movies
-# (The mount path may differ on each host, but the files must be the same)
-```
+This is a local directory inside the bridge container used for internal `.strm`/`.nfo` file storage. **Plex does NOT read from this directory directly.** Plex reads movies through the rclone FUSE mount, which connects to the bridge's `/vod/` HTTP endpoint. The default value (`./plex-vod`) is fine for most setups.
 
 ## Step 3: Prepare Docker Compose
 
@@ -225,18 +201,94 @@ docker compose logs -f
 
 The bridge UI is now at `http://your-bridge-ip:8585`.
 
-## Step 7: Configure Plex
+## Step 7: Set Up rclone on the Plex Host
+
+The bridge exposes a `/vod/` HTTP endpoint that lists activated movies as virtual `.mp4` files. rclone mounts this endpoint as a FUSE filesystem on the Plex server, so Plex sees a normal directory of movie files.
+
+**Run all of the following on the Plex host (NOT the bridge host).**
+
+### Install rclone and FUSE
+
+```bash
+apt install rclone fuse3
+```
+
+Or install the latest rclone from [rclone.org/install](https://rclone.org/install/).
+
+### Configure rclone
+
+```bash
+mkdir -p /root/.config/rclone
+cat > /root/.config/rclone/rclone.conf << EOF
+[vodbridge]
+type = http
+url = http://BRIDGE_IP:8585/vod/
+EOF
+```
+
+Replace `BRIDGE_IP` with your bridge host's LAN IP (the `BRIDGE_HOST` value from Step 2).
+
+**Test the connection:**
+```bash
+rclone ls vodbridge:
+# Should list any activated movies (empty if none activated yet — that's OK)
+```
+
+### Create a systemd service for automatic startup
+
+```bash
+cat > /etc/systemd/system/rclone-vodbridge.service << 'EOF'
+[Unit]
+Description=rclone VOD Bridge FUSE mount
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStartPre=/bin/mkdir -p /mnt/vod-bridge
+ExecStart=/bin/rclone mount vodbridge: /mnt/vod-bridge --allow-other --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m
+ExecStop=/bin/fusermount -u /mnt/vod-bridge
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable rclone-vodbridge
+systemctl start rclone-vodbridge
+```
+
+**Verify the mount:**
+```bash
+ls /mnt/vod-bridge/
+# Shows .mp4 files for any activated movies
+```
+
+### Important: FUSE permissions
+
+If Plex runs as a non-root user (e.g., `plex`), it needs permission to read the FUSE mount. The `--allow-other` flag handles this, but FUSE must be configured to allow it:
+
+```bash
+# Uncomment 'user_allow_other' in /etc/fuse.conf:
+sed -i 's/#user_allow_other/user_allow_other/' /etc/fuse.conf
+```
+
+## Step 8: Configure Plex
 
 1. Open Plex Web → **Settings** → **Libraries**
 2. Click **Add Library** → Choose **Movies**
-3. **Add Folder** → Browse to the path where the bridge writes `.strm` files
-   - This is `PLEX_VOD_DIR/Movies` from your `.env`
-   - Inside the Docker container, it's `/plex-vod/Movies`
-   - On the host, it's whatever you set `PLEX_VOD_DIR` to
+3. **Add Folder** → Browse to **`/mnt/vod-bridge`** (the rclone mount point from Step 7)
 4. Under **Advanced**:
    - Scanner: **Plex Movie**
    - Agent: **Plex Movie**
 5. Click **Add Library**
+
+**IMPORTANT — Disable these to prevent Plex from downloading entire movies for analysis:**
+- Generate video preview thumbnails: **OFF**
+- Generate intro video markers: **OFF**
+- Generate credits video markers: **OFF**
 
 **Find your library section ID:**
 - Go to the library in Plex Web
@@ -244,7 +296,7 @@ The bridge UI is now at `http://your-bridge-ip:8585`.
 - Set `PLEX_LIBRARY_ID=7` in your `.env` file
 - Restart the bridge: `docker compose restart`
 
-## Step 8: First Sync
+## Step 9: First Sync
 
 1. Open the bridge UI at `http://your-bridge-ip:8585`
 2. Go to the **Catalog** tab
@@ -272,7 +324,7 @@ Host 192.168.1.100:
   ├── Dispatcharr (:9191)
   ├── VOD Plex Bridge (:8585)
   ├── Plex (:32400)
-  └── /opt/vod-plex-bridge/plex-vod/Movies/  ← shared local directory
+  └── rclone mount: /mnt/vod-bridge/ → http://192.168.1.100:8585/vod/
 ```
 
 `.env`:
@@ -280,7 +332,6 @@ Host 192.168.1.100:
 DISPATCHARR_URL=http://192.168.1.100:9191
 PLEX_URL=http://192.168.1.100:32400
 BRIDGE_HOST=192.168.1.100
-PLEX_VOD_DIR=/opt/vod-plex-bridge/plex-vod
 ```
 
 ### Pattern B: Bridge + Dispatcharr on One Host, Plex on Another
@@ -290,18 +341,17 @@ Common when Plex runs on a dedicated media server.
 ```
 Host A (192.168.1.100):              Host B (192.168.1.50):
   ├── Dispatcharr (:9191)              ├── Plex (:32400)
-  ├── VOD Plex Bridge (:8585)          └── /mnt/nas/plex-vod/  ← NFS mount
-  └── /mnt/nas/plex-vod/  ← NFS mount
+  └── VOD Plex Bridge (:8585)          └── rclone mount: /mnt/vod-bridge/
+                                             → http://192.168.1.100:8585/vod/
 ```
 
-Both hosts mount the same NAS share. The bridge writes `.strm` files, Plex reads them.
+No shared storage needed. rclone on Host B connects to the bridge on Host A over HTTP.
 
 `.env`:
 ```
 DISPATCHARR_URL=http://192.168.1.100:9191
 PLEX_URL=http://192.168.1.50:32400
 BRIDGE_HOST=192.168.1.100
-PLEX_VOD_DIR=/mnt/nas/plex-vod
 ```
 
 ### Pattern C: All on Different Hosts
@@ -310,10 +360,10 @@ PLEX_VOD_DIR=/mnt/nas/plex-vod
 Host A (Dispatcharr):  192.168.1.100:9191
 Host B (Bridge):       192.168.1.200:8585
 Host C (Plex):         192.168.1.50:32400
-NAS:                   192.168.1.10 → /Media/plex-vod/
+  └── rclone mount: /mnt/vod-bridge/ → http://192.168.1.200:8585/vod/
 ```
 
-All three hosts mount the NAS share. The dump script runs on Host A, copies JSON files to Host B's data directory.
+The dump script runs on Host A, copies JSON files to Host B's data directory. rclone on Host C mounts the bridge's `/vod/` endpoint from Host B.
 
 ---
 
@@ -346,22 +396,24 @@ If this fails, check:
 - Is a firewall blocking the port?
 
 ### Plex can't play activated movies
-1. Check what's inside the `.strm` file:
-   ```bash
-   cat plex-vod/Movies/SomeMovie*/SomeMovie*.strm
-   ```
-2. The URL inside should look like `http://192.168.x.x:8585/stream/...`
-3. Try opening that URL in a browser — it should start downloading video
-4. If it doesn't work, check `BRIDGE_HOST` in your `.env`
+1. Check the rclone mount is active: `ls /mnt/vod-bridge/` on the Plex host
+2. Check the bridge is reachable: `curl http://BRIDGE_IP:8585/vod/` from the Plex host
+3. If rclone mount is empty, check that you have activated movies in the bridge UI
+4. If the bridge is unreachable, check `BRIDGE_HOST` in your `.env` and Docker port mapping
+
+### rclone mount issues
+- **Mount hangs or is empty:** Bridge is down or unreachable. Test with `curl http://BRIDGE_IP:8585/version`
+- **Permission denied:** Check `--allow-other` flag and `user_allow_other` in `/etc/fuse.conf`
+- **Movies don't appear after activation:** rclone caches the directory listing. Wait up to 1 minute (`--dir-cache-time 1m`) or restart the service: `systemctl restart rclone-vodbridge`
 
 ### Categories show 0 movies
 - Did you run `setup/dump_mappings.sh`? Check that `data/category_mapping.json` exists and isn't empty
 - Did you select at least one provider in the Catalog tab?
 
 ### Movies activate but don't appear in Plex
-- Check that `.strm` files were created: `ls plex-vod/Movies/`
+- Check that the rclone mount shows the movie: `ls /mnt/vod-bridge/` on the Plex host
 - Scan the library in Plex: Settings → Libraries → your VOD library → Scan
-- Verify Plex's library folder matches `PLEX_VOD_DIR/Movies`
+- Verify Plex's library folder points to the rclone mount path (e.g., `/mnt/vod-bridge`)
 
 ### Stream stops or movie gets "burned"
 - Update to the latest version (streaming fixes were in v0.25.0+)
