@@ -1018,7 +1018,7 @@
                 </div>
                 <div class="panel">
                     <div class="panel-header">By Language</div>
-                    <div class="panel-body" style="max-height:350px;overflow-y:auto;">
+                    <div class="panel-body" style="max-height:500px;overflow-y:auto;">
                         <table class="summary-table compact">
                             <thead><tr><th>Language</th><th style="text-align:right">Count</th></tr></thead>
                             <tbody id="summaryLanguages"><tr><td colspan="2" class="empty-state">Loading...</td></tr></tbody>
@@ -1360,6 +1360,7 @@
             } else {
                 tabs[0].classList.add('active');
                 document.getElementById('tabBrowse').classList.add('active');
+                loadMovies(currentPage);
             }
         }
 
