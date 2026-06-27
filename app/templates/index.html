@@ -1879,6 +1879,7 @@
                         loadMovies(1);
                         refreshActivatedCount();
                         refreshLanguageFilter();
+                        loadCatalogSummary();
                     }
                 }, 2000);
             };
@@ -1914,6 +1915,7 @@
             refreshActivatedCount();
             refreshLanguageFilter();
             loadMovies(1);
+            loadCatalogSummary();
         }
 
         async function clearStrm() {
@@ -1988,6 +1990,7 @@
                         refreshStatus();
                         refreshLanguageFilter();
                         loadMovies(currentPage);
+                        loadCatalogSummary();
                     }
                 }, 2000);
             };
@@ -2154,6 +2157,7 @@
                 }
                 refreshActivatedCount();
                 refreshStatus();
+                loadCatalogSummary();
             } catch (e) {
                 btn.innerHTML = '&#10007;';
                 setTimeout(() => { btn.innerHTML = '&#9889;'; }, 2000);
@@ -2240,6 +2244,7 @@
             updateDeadSelectionBar();
             loadDeadMovies(deadPage);
             refreshDeadBadge();
+            loadCatalogSummary();
         }
 
         async function restoreDeadSelected() {
@@ -2254,6 +2259,7 @@
             loadDeadMovies(deadPage);
             refreshDeadBadge();
             refreshStatus();
+            loadCatalogSummary();
         }
 
         async function deleteAllDead() {
@@ -2261,6 +2267,7 @@
             await fetchJSON('/api/movies/dead/delete-all', {method: 'POST'});
             loadDeadMovies(1);
             refreshDeadBadge();
+            loadCatalogSummary();
         }
 
         async function restoreAllDead() {
@@ -2277,6 +2284,7 @@
             loadDeadMovies(1);
             refreshDeadBadge();
             refreshStatus();
+            loadCatalogSummary();
         }
 
         function debounceDeadSearch() {
@@ -2301,6 +2309,7 @@
                         refreshDeadBadge();
                         loadMovies(currentPage);
                         refreshActivatedCount();
+                        loadCatalogSummary();
                     }
                 }, 2000);
             };
@@ -2322,6 +2331,7 @@
                         hideOverlay();
                         refreshStatus();
                         loadMovies(currentPage);
+                        loadCatalogSummary();
                     }
                 }, 2000);
             };
