@@ -212,7 +212,7 @@ docker compose logs -f
 **Test the bridge is accessible:**
 ```bash
 curl -s http://BRIDGE_HOST:8585/version
-# Should return: {"version":"0.29.1"}
+# Should return: {"version":"0.29.3"}
 ```
 
 If it doesn't work:
@@ -227,6 +227,14 @@ If it doesn't work:
 The bridge needs mapping files that tell it which movies belong to which provider accounts. These are extracted from Dispatcharr's database using `docker exec` — the script runs Django ORM commands inside the Dispatcharr container to query the database directly. This means:
 - You must run this script on the same machine that hosts the Dispatcharr Docker container
 - The user running the script must have permission to run `docker exec` (usually root or docker group)
+
+**The scripts are in the repo under `setup/`.** Before running, the user needs to set two environment variables:
+- `DISPATCHARR_CONTAINER` — the Docker container name for Dispatcharr (find it with `docker ps`)
+- `BRIDGE_DATA_DIR` — the path to the bridge's `data/` volume on the host
+
+There is also a `dump_vod_data.sh` in the repo root — this is the production version with hardcoded defaults for the development environment. Users should use `setup/dump_mappings.sh` instead, which uses generic defaults.
+
+> **Security note:** These scripts only extract account **names and IDs** — no passwords, usernames, or server URLs are included in the output. The bridge routes all traffic through Dispatcharr's proxy, so provider credentials are never needed.
 
 **Run this on the host where Dispatcharr's Docker container is running:**
 
@@ -243,7 +251,7 @@ bash setup/dump_mappings.sh
 3. Copy the three output JSON files back to the bridge's `data/` directory:
    - `stream_mapping.json` — maps movie IDs to stream IDs and provider accounts
    - `category_mapping.json` — maps categories to movie IDs
-   - `account_credentials.json` — maps account IDs to names (for UI labels)
+   - `account_credentials.json` — maps account IDs to names only (for UI labels, no credentials)
 
 **Verify the dump worked:**
 ```bash
@@ -439,7 +447,7 @@ User stops → 30s idle timeout → clean disconnect → buffer retained on disk
 | `/data/vod_bridge.db` | SQLite database (movies, settings, cache) |
 | `/data/stream_mapping.json` | Movie → provider stream ID mapping |
 | `/data/category_mapping.json` | Category → movie ID mapping |
-| `/data/account_credentials.json` | Account names for UI labels |
+| `/data/account_credentials.json` | Account IDs → names for UI labels (no credentials) |
 | `/data/buffers/` | Disk buffer files during playback |
 | `/plex-vod/Movies/` | .strm + .nfo + poster output for Plex |
 | `/plex-vod/Movies/.dead/` | Movies marked dead (moved here) |

@@ -17,7 +17,4 @@ app/cache.py
 /data/
 /buffers/
 PICKUP.md
-dump_stream_mapping.sh
-dump_vod_data.sh
-resync_stream_ids.py
 images/

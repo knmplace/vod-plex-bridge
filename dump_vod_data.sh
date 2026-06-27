@@ -1,39 +1,14 @@
 #!/bin/bash
-# =============================================================================
-# VOD Plex Bridge — Dispatcharr Data Dump
-# =============================================================================
-# Extracts stream mappings, account info, and category mappings from your
-# Dispatcharr instance. The bridge needs these files to know which movies
-# belong to which provider accounts and categories.
-#
-# Run this on the same host where your Dispatcharr Docker container is running.
-#
-# Usage:
-#   bash setup/dump_mappings.sh
-#
-# Environment variables (override defaults):
-#   DISPATCHARR_CONTAINER  Docker container name (default: dispatcharr)
-#   BRIDGE_DATA_DIR        Path to the bridge's /data volume (default: ./data)
-#
-# Schedule via cron (every 6 hours) to keep mappings current:
-#   0 */6 * * * /path/to/vod-plex-bridge/setup/dump_mappings.sh
-# =============================================================================
+# Run on .94 host to dump stream mappings + category mappings from Dispatcharr.
+# Usage: bash /etc/docker/plexbridge/repo/dump_vod_data.sh
+# Add to cron: 0 */6 * * * /etc/docker/plexbridge/repo/dump_vod_data.sh
 
-set -e
-
-DISPATCHARR_CONTAINER="${DISPATCHARR_CONTAINER:-dispatcharr}"
-BRIDGE_DATA_DIR="${BRIDGE_DATA_DIR:-./data}"
+DISPATCHARR_CONTAINER="${DISPATCHARR_CONTAINER:-dispatcharr-IPTV2-94}"
+BRIDGE_DATA_DIR="${BRIDGE_DATA_DIR:-/etc/docker/plexbridge/data}"
 
 mkdir -p "$BRIDGE_DATA_DIR"
 
-echo "$(date): Starting Dispatcharr data dump..."
-echo "  Container: $DISPATCHARR_CONTAINER"
-echo "  Output dir: $BRIDGE_DATA_DIR"
-
-# --- 1. Stream Mappings ---
-# Maps each movie ID to its stream IDs, container extensions, and provider accounts.
-# The bridge uses this to route playback through the correct provider.
-echo -n "  Dumping stream mappings... "
+# 1. Dump stream mappings — ALL providers per movie (not just one winner)
 docker exec "$DISPATCHARR_CONTAINER" python3 -c "
 import os, sys, json, logging
 logging.disable(logging.CRITICAL)
@@ -77,13 +52,8 @@ with open('/tmp/stream_mapping.json', 'w') as f:
     json.dump(output, f)
 " 2>/dev/null
 docker cp "$DISPATCHARR_CONTAINER":/tmp/stream_mapping.json "$BRIDGE_DATA_DIR/stream_mapping.json" 2>/dev/null
-STREAM_COUNT=$(python3 -c "import json; print(len(json.load(open('$BRIDGE_DATA_DIR/stream_mapping.json'))))" 2>/dev/null || echo "?")
-echo "$STREAM_COUNT movies"
 
-# --- 2. Account Info ---
-# Maps M3U account IDs to names (used for provider labels in the UI).
-# NOTE: Only exports account ID and name — no credentials are included.
-echo -n "  Dumping account info... "
+# 2. Dump M3U account info (names only — no credentials)
 docker exec "$DISPATCHARR_CONTAINER" python3 -c "
 import os, sys, json, logging
 logging.disable(logging.CRITICAL)
@@ -105,13 +75,8 @@ with open('/tmp/account_credentials.json', 'w') as f:
     json.dump(accounts, f)
 " 2>/dev/null
 docker cp "$DISPATCHARR_CONTAINER":/tmp/account_credentials.json "$BRIDGE_DATA_DIR/account_credentials.json" 2>/dev/null
-ACCT_COUNT=$(python3 -c "import json; print(len(json.load(open('$BRIDGE_DATA_DIR/account_credentials.json'))))" 2>/dev/null || echo "?")
-echo "$ACCT_COUNT accounts"
 
-# --- 3. Category Mappings ---
-# Lists all VOD categories and which movie IDs belong to each.
-# The bridge uses this to show category-filtered counts in the UI.
-echo -n "  Dumping category mappings... "
+# 3. Dump category mappings (categories + which movies belong to each)
 docker exec "$DISPATCHARR_CONTAINER" python3 -c "
 import os, sys, json, logging
 logging.disable(logging.CRITICAL)
@@ -133,7 +98,5 @@ with open('/tmp/category_mapping.json', 'w') as f:
     json.dump(categories, f)
 " 2>/dev/null
 docker cp "$DISPATCHARR_CONTAINER":/tmp/category_mapping.json "$BRIDGE_DATA_DIR/category_mapping.json" 2>/dev/null
-CAT_COUNT=$(python3 -c "import json; print(len(json.load(open('$BRIDGE_DATA_DIR/category_mapping.json'))))" 2>/dev/null || echo "?")
-echo "$CAT_COUNT categories"
 
-echo "$(date): Dump complete."
+echo "$(date): Dump complete"
