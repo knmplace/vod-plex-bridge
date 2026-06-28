@@ -39,7 +39,7 @@ Your Network:
 
 1. **Dispatcharr** — Your existing M3U manager. It already handles your IPTV accounts and has a VOD proxy built in. The bridge reads movie data from it and streams video through it.
 
-2. **VOD Plex Bridge** — The new piece. A Docker container that catalogs movies, caches stream headers, and proxies video to Plex. This is what you're installing. It exposes a `/vod/` HTTP endpoint that lists activated movies as virtual `.mp4` files.
+2. **VOD Plex Bridge** — The new piece. A Docker container that catalogs movies, caches stream headers for fast metadata probing, and redirects playback to Dispatcharr's VOD proxy. This is what you're installing. It exposes a `/vod/` HTTP endpoint that lists activated movies as virtual `.mp4` files.
 
 3. **Plex Media Server** — Your existing Plex instance. **rclone** on the Plex host mounts the bridge's `/vod/` endpoint as a local FUSE directory. Plex sees this as a normal folder of movie files.
 
@@ -103,6 +103,8 @@ BRIDGE_PORT=8585                             # Port for the bridge UI
 # These are optional but recommended:
 TZ=America/New_York                          # Your timezone
 TMDB_API_KEY=your-tmdb-key                   # For movie posters and metadata
+REDIRECT_MODE=true                           # true = 302 redirect to Dispatcharr (recommended)
+                                             # false = bridge proxies bytes (legacy pipe mode)
 
 # Paths — adjust if needed:
 DATA_DIR=./data                              # Bridge database + mapping files
@@ -416,13 +418,13 @@ If this fails, check:
 - Verify Plex's library folder points to the rclone mount path (e.g., `/mnt/vod-bridge`)
 
 ### Stream stops or movie gets "burned"
-- Update to the latest version (streaming fixes were in v0.25.0+)
-- Check that Dispatcharr's nginx config has these settings on the `/proxy/` location:
-  ```nginx
-  uwsgi_buffering off;
-  uwsgi_read_timeout 300s;
-  ```
+- Use redirect mode (default in v0.32.0+): `REDIRECT_MODE=true`. This lets Dispatcharr manage the streaming connection directly.
+- If using pipe mode: update to the latest version (streaming fixes were in v0.25.0+) and check that Dispatcharr's nginx config has `uwsgi_buffering off` on the `/proxy/` location.
+
+### Plex plays briefly then stops (redirect mode)
+- `DISPATCHARR_URL` must use the LAN IP reachable by the Plex host (not `localhost` or `127.0.0.1`). The 302 redirect sends Plex directly to Dispatcharr, so Plex needs to reach it.
+- Verify Dispatcharr is accessible from the Plex host: `curl http://DISPATCHARR_IP:9191/api/vod/movies/?page=1&page_size=1`
 
 ### "Database is locked" errors
 - This was fixed in v0.27.1 (singleton SQLite connection)
-- If it still occurs, restart: `docker compose restart`
+- If it still occurs, restart the container via Portainer
