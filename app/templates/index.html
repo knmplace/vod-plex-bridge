@@ -2835,11 +2835,7 @@
                 }
 
                 if (!data.streams.length) {
-                    const modeEl = document.getElementById('streamMode');
-                    const isRedirect = modeEl && modeEl.textContent === 'REDIRECT';
-                    container.innerHTML = isRedirect
-                        ? '<div class="empty-state">Redirect mode — playback streams are handled directly by Dispatcharr. Monitor active sessions in Plex Now Playing below.</div>'
-                        : '<div class="empty-state">No active streams. Start playing a movie in Plex to see live connection details here.</div>';
+                    container.innerHTML = '<div class="empty-state">No active streams. Start playing a movie in Plex to see live connection details here.</div>';
                     return;
                 }
 
@@ -3110,15 +3106,9 @@
         fetchJSON('/version').then(d => document.getElementById('appVersion').textContent = 'v' + d.version);
         fetchJSON('/api/status').then(s => {
             const el = document.getElementById('streamMode');
-            if (s.redirect_mode) {
-                el.textContent = 'REDIRECT';
-                el.style.background = '#238636';
-                el.style.color = '#fff';
-            } else {
-                el.textContent = 'PIPE';
-                el.style.background = '#1f6feb';
-                el.style.color = '#fff';
-            }
+            el.textContent = 'PIPE';
+            el.style.background = '#1f6feb';
+            el.style.color = '#fff';
             el.style.display = 'inline';
         });
         refreshStatus();

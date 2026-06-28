@@ -35,7 +35,7 @@ graph LR
 
 - **VOD Catalog Browser** — Browse and search your provider's movie catalog with multi-select filters for language, category, and provider
 - **One-Click Activation** — Activate movies to instantly add them to your Plex library with poster art, genres, and metadata
-- **Two Streaming Modes** — Choose between **Redirect mode** (302 to Dispatcharr — simpler, recommended) or **Pipe mode** (bridge proxies bytes with throttling — legacy)
+- **Pipe Streaming** — Single persistent connection to Dispatcharr with adaptive bitrate throttling and local disk buffering
 - **Head/Tail Caching** — Caches the first 8 MB and last 256 KB of each activated movie so Plex can probe metadata without opening a provider connection
 - **TMDB Enrichment** — Automatically fills in genres, descriptions, posters, runtime, director, country, and cast from [The Movie Database](https://www.themoviedb.org/)
 - **Multi-Provider Support** — Works with multiple M3U accounts, shows which providers carry each movie
@@ -47,9 +47,7 @@ graph LR
 - **Persistent Buffers** — In pipe mode, downloaded data stays on disk between play sessions for resume
 - **Activation Gating** — Only activated movies are visible to Plex. No mass scanning of your provider's catalog.
 
-## Streaming Modes
-
-### Redirect Mode (Default — Recommended)
+## How Streaming Works
 
 ```mermaid
 sequenceDiagram
@@ -65,19 +63,15 @@ sequenceDiagram
     P->>B: GET (Range: bytes=tail)
     B-->>P: 206 Partial (from tail cache — instant)
     P->>B: GET (Range: playback start)
-    B-->>P: 302 Redirect → Dispatcharr proxy URL
-    P->>D: GET /proxy/vod/movie/{uuid}?stream_id={id}
-    D->>S: Stream request (through VPN)
+    B->>D: Single persistent GET (through VPN)
+    D->>S: Stream request
     S-->>D: Video bytes
-    D-->>P: Direct stream to Plex
-    Note over D,P: Dispatcharr manages the full session<br/>Play, pause, seek, stop — all handled
+    D-->>B: Streamed response
+    B-->>P: Adaptive throttled delivery
+    Note over B: Pipe mode: one persistent connection<br/>Adaptive throttle + disk buffer
 ```
 
-In redirect mode, the bridge handles metadata probing from cache and then hands off actual playback to Dispatcharr with a 302 redirect. Dispatcharr manages the streaming connection directly with Plex — no bytes flow through the bridge during playback. This is simpler, more reliable, and eliminates pipe/throttle/buffer complexity.
-
-### Pipe Mode (Legacy)
-
-Set `REDIRECT_MODE=false` to use the original pipe-based approach where the bridge proxies every byte with adaptive bitrate throttling and disk buffering. This mode is retained as a fallback.
+The bridge maintains a single persistent connection to Dispatcharr per movie, with adaptive bitrate throttling and local disk buffering. Head/tail caches (8MB + 256KB) serve Plex's initial probing requests instantly with zero provider connections. Playback data is buffered to disk so Plex can read at its own pace.
 
 ## Architecture Overview
 
@@ -205,7 +199,7 @@ vod-plex-bridge/
 ├── app/                      # Application source
 │   ├── main.py               # FastAPI app, version, lifespan
 │   ├── api.py                # REST API (catalog, activation, filters, settings)
-│   ├── proxy.py              # Stream proxy (redirect mode, pipes, range requests)
+│   ├── proxy.py              # Stream proxy (pipes, range requests, provider fallback)
 │   ├── scraper.py            # Catalog sync from Dispatcharr API
 │   ├── generator.py          # .strm / .nfo file generation
 │   ├── database.py           # SQLite (WAL mode, singleton connection)
@@ -238,7 +232,6 @@ All configuration is done through environment variables in `.env`:
 | `PLEX_LIBRARY_ID` | Yes | `7` | Plex library section ID for VOD movies |
 | `BRIDGE_HOST` | Yes | `0.0.0.0` | LAN IP of the bridge host (used in .strm URLs so Plex can reach the bridge) |
 | `BRIDGE_PORT` | No | `8585` | Port the bridge listens on |
-| `REDIRECT_MODE` | No | `true` | `true` = 302 redirect to Dispatcharr for playback (recommended). `false` = bridge proxies bytes via pipe mode (legacy) |
 | `TZ` | No | `UTC` | Container timezone (e.g., `America/New_York`) |
 | `TMDB_API_KEY` | No | — | TMDB API key for metadata enrichment |
 | `TMDB_READ_TOKEN` | No | — | TMDB v4 read access token (alternative to API key) |
@@ -262,12 +255,11 @@ Your database and settings persist in the `DATA_DIR` volume. Re-run `setup/dump_
 |---------|-------|
 | Bridge can't reach Dispatcharr | Verify `DISPATCHARR_URL` — use the LAN IP, not `localhost` (unless using `network_mode: host`) |
 | Plex can't play movies | `BRIDGE_HOST` must be the LAN IP (not `0.0.0.0`). Verify rclone mount is active: `ls /mnt/vod-bridge/` on the Plex host |
-| Plex plays briefly then stops (redirect mode) | Ensure `DISPATCHARR_URL` uses the LAN IP reachable by Plex (not `localhost`). The 302 redirect sends Plex directly to Dispatcharr. |
 | Movies in bridge but not Plex | Check rclone mount shows `.mp4` files (`ls /mnt/vod-bridge/`). Scan the library in Plex. Verify Plex library points to the rclone mount path |
 | rclone mount is empty | No activated movies in the bridge, or bridge is unreachable. Test: `curl http://BRIDGE_IP:8585/vod/` |
 | rclone mount hangs | Bridge is down. Check `docker ps` and `curl http://BRIDGE_IP:8585/version` from the Plex host |
 | 0 categories showing | Run `setup/dump_mappings.sh` on the Dispatcharr host first. Select at least one provider. |
-| Stream stops after ~10 min (pipe mode) | Switch to redirect mode (`REDIRECT_MODE=true`). If using pipe mode, check Dispatcharr nginx has `uwsgi_buffering off` on `/proxy/` |
+| Stream stops after ~10 min | Check Dispatcharr nginx has `uwsgi_buffering off` and `uwsgi_read_timeout 300s` on the `/proxy/` location |
 | "Database is locked" | Should not occur in v0.27.1+. Restart the container if it does. |
 
 ## License

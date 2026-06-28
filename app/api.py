@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN, REDIRECT_MODE
+from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN
 from database import get_db
 from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing
 from generator import generate_strm_files, sanitize_filename, write_strm_for_movie, parse_title
@@ -52,7 +52,6 @@ async def get_status():
         row = await db.execute("SELECT * FROM sync_state WHERE id = 1")
         state = await row.fetchone()
         d = dict(state)
-        d["redirect_mode"] = REDIRECT_MODE
         return d
     finally:
         pass

@@ -103,9 +103,6 @@ BRIDGE_PORT=8585                             # Port for the bridge UI
 # These are optional but recommended:
 TZ=America/New_York                          # Your timezone
 TMDB_API_KEY=your-tmdb-key                   # For movie posters and metadata
-REDIRECT_MODE=false                          # false = pipe mode (recommended for rclone mounts)
-                                             # true = 302 redirect (does NOT work with rclone)
-
 # Paths — adjust if needed:
 DATA_DIR=./data                              # Bridge database + mapping files
 PLEX_VOD_DIR=./plex-vod                      # Where .strm files go
@@ -418,12 +415,10 @@ If this fails, check:
 - Verify Plex's library folder points to the rclone mount path (e.g., `/mnt/vod-bridge`)
 
 ### Stream stops or movie gets "burned"
-- Ensure you're using pipe mode (default): `REDIRECT_MODE=false`. The bridge maintains a single persistent connection to Dispatcharr with adaptive throttling.
-- Do NOT use redirect mode (`REDIRECT_MODE=true`) with rclone FUSE mounts — rclone doesn't follow 302 redirects and creates rapid session cycling that burns movies.
-- Update to the latest version (streaming fixes in v0.25.0+) and check that Dispatcharr's nginx config has `uwsgi_buffering off` on the `/proxy/` location.
+- The bridge maintains a single persistent connection to Dispatcharr with adaptive throttling. Update to the latest version (streaming fixes in v0.25.0+).
+- Check that Dispatcharr's nginx config has `uwsgi_buffering off` and `uwsgi_read_timeout 300s` on the `/proxy/` location.
 
 ### Plex plays briefly then stops
-- Make sure `REDIRECT_MODE=false` (pipe mode). Redirect mode does not work with rclone mounts.
 - Check the bridge logs for "Plex idle" messages — the bridge disconnects from the provider after 30 seconds of no Plex reads. This is normal; Plex buffers locally.
 - If the movie stops after ~10 minutes, check that Dispatcharr's nginx `/proxy/` location has `uwsgi_buffering off` and `uwsgi_read_timeout 300s`.
 
