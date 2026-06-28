@@ -728,7 +728,7 @@ async def activate_movies(request: Request):
 
 
 async def _refresh_activated_stream_ids():
-    """Refresh stream_ids for activated movies. If stream_id changed, re-fetch head/tail sequentially."""
+    """Refresh stream_ids for activated movies. DB-only update, no provider calls."""
     mapping = load_stream_mapping()
     if not mapping:
         logger.warning("Cannot refresh stream_ids: no mapping file")
@@ -742,7 +742,6 @@ async def _refresh_activated_stream_ids():
         activated = [dict(r) for r in await rows.fetchall()]
 
         updated = 0
-        needs_refetch = []
         for movie in activated:
             movie_id = movie["id"]
             old_stream_id = movie["stream_id"]
@@ -764,16 +763,7 @@ async def _refresh_activated_stream_ids():
                         (stream_id, content_type, account_id, account_name, movie_id),
                     )
                     updated += 1
-                    needs_refetch.append({
-                        "id": movie_id,
-                        "uuid": movie["uuid"],
-                        "stream_id": stream_id,
-                        "content_type": content_type,
-                        "name": movie["name"],
-                        "year": movie["year"],
-                        "account_id": account_id,
-                    })
-                    logger.info("Stream_id changed for activated movie %d (%s): %s -> %s",
+                    logger.info("Stream_id changed for activated movie %d (%s): %s -> %s (DB updated, head/tail cache retained)",
                                 movie_id, movie["name"], old_stream_id, stream_id)
                 else:
                     result = await db.execute(
@@ -786,20 +776,14 @@ async def _refresh_activated_stream_ids():
 
         if updated > 0:
             await db.commit()
-            logger.info("Refreshed stream_ids for %d activated movies", updated)
-
-        if needs_refetch:
-            logger.info("Re-fetching head/tail for %d activated movies with changed stream_ids (sequential)...",
-                        len(needs_refetch))
-            activated_ids, failed_ids = await _fetch_headers_validated(needs_refetch)
-            logger.info("Stream_id refresh re-fetch: %d ok, %d failed", len(activated_ids), len(failed_ids))
+            logger.info("Refreshed stream_ids for %d activated movies (DB only, no provider calls)", updated)
 
         missing_rows = await db.execute(
             "SELECT id FROM movies WHERE activated = 1 AND stream_bitrate_kbps IS NULL LIMIT 50"
         )
         missing = [r["id"] for r in await missing_rows.fetchall()]
         if missing:
-            logger.info("Backfilling provider info for %d activated movies", len(missing))
+            logger.info("Backfilling provider info for %d activated movies (Dispatcharr API only)", len(missing))
             for mid in missing:
                 await _fetch_provider_info(mid)
                 await asyncio.sleep(0.1)
@@ -2132,8 +2116,12 @@ async def set_schedule(request: Request):
 
 @router.post("/sync/refresh")
 async def trigger_manual_refresh():
-    # DISABLED: refresh disabled pending redesign of dead scan logic
-    return JSONResponse(status_code=503, content={"error": "Catalog refresh is temporarily disabled pending redesign"})
+    global _refresh_running
+    if _refresh_running:
+        return JSONResponse(status_code=409, content={"error": "Refresh already running"})
+    _refresh_running = True
+    asyncio.create_task(_run_scheduled_refresh_guarded())
+    return {"status": "started", "message": "Manual catalog refresh started in background"}
 
 
 async def _run_scheduled_refresh_guarded():
@@ -2337,6 +2325,38 @@ async def restore_dead_movies(request: Request):
         )
         await db.commit()
         return {"status": "ok", "restored": len(movies), "strm_restored": restored_strm}
+    finally:
+        pass
+
+
+@router.post("/movies/dead/restore-all")
+async def restore_all_dead_movies():
+    db = await get_db()
+    try:
+        count_row = await db.execute("SELECT COUNT(*) as cnt FROM movies WHERE dead = 1")
+        total = (await count_row.fetchone())["cnt"]
+        if total == 0:
+            return {"status": "ok", "restored": 0, "strm_restored": 0}
+
+        cleaned_strm = 0
+        if os.path.isdir(DEAD_DIR):
+            for folder in os.listdir(DEAD_DIR):
+                dead_folder = os.path.join(DEAD_DIR, folder)
+                if os.path.isdir(dead_folder):
+                    shutil.rmtree(dead_folder)
+                    cleaned_strm += 1
+
+        await db.execute(
+            "UPDATE movies SET dead = 0, dead_at = NULL, stream_dead = 0, stream_dead_count = 0 WHERE dead = 1"
+        )
+        await db.commit()
+
+        strm_count = _count_strm_folders()
+        await db.execute("UPDATE sync_state SET active_strm_count = ? WHERE id = 1", (strm_count,))
+        await db.commit()
+
+        logger.info("Restored all %d dead movies (%d dead STRM folders cleaned up)", total, cleaned_strm)
+        return {"status": "ok", "restored": total, "strm_cleaned": cleaned_strm}
     finally:
         pass
 
@@ -2595,12 +2615,17 @@ async def _get_refresh_interval_hours() -> int:
 
 
 async def start_dead_scan_scheduler():
-    # DISABLED: scheduled refresh disabled pending redesign of dead scan logic
-    # The dead scan was marking 7200+ movies dead by sweeping stream_dead flags
-    # that were set by provider rate-limiting during probe/validation cycles.
-    logger.info("Scheduled catalog refresh is DISABLED pending redesign")
     while True:
-        await asyncio.sleep(300)
+        interval = await _get_refresh_interval_hours()
+        if interval <= 0:
+            await asyncio.sleep(300)
+            continue
+        await asyncio.sleep(interval * 3600)
+        if _refresh_running:
+            logger.info("Scheduled refresh skipped — manual refresh already running")
+            continue
+        logger.info("Scheduled catalog refresh starting (interval: %dh)...", interval)
+        await _run_scheduled_refresh_guarded()
 
 
 LOG_ARCHIVE_INTERVAL = int(os.environ.get("LOG_ARCHIVE_INTERVAL", 4 * 3600))
@@ -2629,7 +2654,8 @@ async def _set_status(status: str, message: str):
 
 
 async def _run_scheduled_refresh():
-    """Full refresh cycle: dump regen → categories → catalog refresh → apply mapping → refresh activated → dead scan."""
+    """Safe refresh cycle: dump regen → categories → catalog refresh → apply mapping → TMDB search → activated stream_id update → language detection.
+    NO provider calls. NO dead scan. All data comes from Dispatcharr API and TMDB only."""
     import time
     start = time.time()
     report = []
@@ -2651,7 +2677,7 @@ async def _run_scheduled_refresh():
         except Exception as e:
             report.append(f"Categories: FAILED ({e})")
 
-        # 3. Catalog refresh
+        # 3. Catalog refresh (Dispatcharr API only)
         await _set_status("refreshing", "Refresh: syncing catalog from Dispatcharr...")
         try:
             synced, total, uuid_changes = await _run_catalog_refresh_counted()
@@ -2678,7 +2704,7 @@ async def _run_scheduled_refresh():
         except Exception as e:
             report.append(f"TMDB search: FAILED ({e})")
 
-        # 6. Activated refresh
+        # 6. Activated stream_id refresh (DB only, no provider calls)
         await _set_status("refreshing", "Refresh: checking activated movies for stream_id changes...")
         try:
             updated = await _refresh_activated_stream_ids()
@@ -2686,15 +2712,7 @@ async def _run_scheduled_refresh():
         except Exception as e:
             report.append(f"Activated refresh: FAILED ({e})")
 
-        # 7. Dead scan
-        await _set_status("refreshing", "Refresh: scanning for dead movies...")
-        try:
-            dead_result = await _run_dead_scan_counted()
-            report.append(f"Dead scan: {dead_result['newly_dead']} newly dead, {dead_result['plex_removed']} removed from Plex")
-        except Exception as e:
-            report.append(f"Dead scan: FAILED ({e})")
-
-        # 8. Language detection (background)
+        # 7. Language detection (background, TMDB API only)
         if TMDB_API_KEY or TMDB_READ_TOKEN:
             asyncio.create_task(_bulk_detect_languages())
             report.append("Language detection: started in background")

@@ -906,7 +906,7 @@
         </div>
         <button class="btn btn-warning" onclick="detectAllLanguages()">Detect All Languages</button>
         <button class="btn btn-warning" onclick="tmdbSearch()">TMDB Search</button>
-        <button class="btn btn-outline" onclick="scanDead()">Scan Dead</button>
+        <button class="btn btn-outline" disabled style="opacity:0.5;cursor:not-allowed;" title="Disabled pending redesign">Scan Dead</button>
         <button class="btn btn-danger" onclick="clearCatalog()">Clear Catalog</button>
         <button class="btn btn-danger" onclick="clearStrm()">Clear STRMs</button>
         <button class="btn btn-danger" id="stopBtn" onclick="stopSync()" style="display:none;">Stop</button>
@@ -1309,7 +1309,7 @@
                 <div class="panel-header">Catalog Refresh Schedule</div>
                 <div class="panel-body">
                     <p style="font-size:0.8rem;color:#c9d1d9;margin-bottom:1rem;">
-                        Controls how often the bridge refreshes its catalog from Dispatcharr. Each refresh: regenerates stream mappings, updates movie metadata, detects UUID/stream_id changes, re-fetches head/tail for activated movies with changed streams, and removes movies no longer in Dispatcharr.
+                        Controls how often the bridge refreshes its catalog from Dispatcharr. Each refresh: regenerates stream mappings, updates movie metadata, detects UUID/stream_id changes, and searches TMDB for new movies. No provider connections are made during refresh.
                     </p>
                     <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;">
                         <label style="font-weight:600;font-size:0.85rem;">Refresh Interval:</label>
@@ -1351,10 +1351,12 @@
                 <div class="panel-body" style="font-size:0.8rem;color:#c9d1d9;line-height:1.6;">
                     <div style="display:grid;grid-template-columns:auto 1fr;gap:0.3rem 1rem;">
                         <strong style="color:#e6edf3;">1. Dump Regen</strong><span>Regenerates stream_mapping.json from Dispatcharr's DB (picks up stream_id changes from M3U refresh)</span>
-                        <strong style="color:#e6edf3;">2. Catalog Refresh</strong><span>Pages through all Dispatcharr VOD movies — adds new movies, updates metadata, detects UUID changes and clears stale caches</span>
-                        <strong style="color:#e6edf3;">3. Stream Mapping</strong><span>Applies fresh stream_ids to all movies in the bridge DB</span>
-                        <strong style="color:#e6edf3;">4. Activated Refresh</strong><span>For activated movies: if stream_id changed, clears old head/tail cache and re-fetches from provider (sequential, one at a time)</span>
-                        <strong style="color:#e6edf3;">5. Dead Scan</strong><span>Removes movies no longer in Dispatcharr's catalog — deactivates, removes STRM files, removes from Plex</span>
+                        <strong style="color:#e6edf3;">2. Categories</strong><span>Reloads category mappings and provider list from dump files</span>
+                        <strong style="color:#e6edf3;">3. Catalog Refresh</strong><span>Pages through all Dispatcharr VOD movies — adds new movies, updates metadata, detects UUID changes</span>
+                        <strong style="color:#e6edf3;">4. Stream Mapping</strong><span>Applies fresh stream_ids to all movies in the bridge DB</span>
+                        <strong style="color:#e6edf3;">5. TMDB Search</strong><span>Finds TMDB metadata for movies missing tmdb_id</span>
+                        <strong style="color:#e6edf3;">6. Activated Refresh</strong><span>Updates stream_ids for activated movies (DB only — no provider connections)</span>
+                        <strong style="color:#e6edf3;">7. Language Detection</strong><span>Detects languages via TMDB for movies missing language tags (background)</span>
                     </div>
                 </div>
             </div>
@@ -2356,16 +2358,11 @@
         }
 
         async function restoreAllDead() {
-            if (!confirm('Restore all dead movies back to catalog?')) return;
-            const data = await fetchJSON('/api/movies/dead?page=1&page_size=1');
-            if (!data.count) return;
-            const allData = await fetchJSON(`/api/movies/dead?page=1&page_size=${data.count}`);
-            const ids = allData.results.map(m => m.id);
-            await fetchJSON('/api/movies/dead/restore', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({movie_ids: ids})
-            });
+            if (!confirm('Restore ALL dead movies back to catalog? This also clears stream_dead flags.')) return;
+            showOverlay('Restoring all dead movies...');
+            const result = await fetchJSON('/api/movies/dead/restore-all', {method: 'POST'});
+            hideOverlay();
+            if (result && result.restored) alert(`Restored ${result.restored} movies (${result.strm_restored} STRM folders moved back)`);
             loadDeadMovies(1);
             refreshDeadBadge();
             refreshStatus();
