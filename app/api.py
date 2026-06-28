@@ -1451,13 +1451,20 @@ async def _plex_remove_movies(movie_ids: list[int]):
                     m = re.search(r'\[(\d+)\]\.mp4$', filename)
                     if m and int(m.group(1)) in id_set:
                         rating_key = item["ratingKey"]
-                        del_resp = await client.delete(
-                            f"{PLEX_URL}/library/metadata/{rating_key}",
-                            params={"X-Plex-Token": PLEX_TOKEN},
-                        )
-                        if del_resp.status_code == 200:
-                            removed += 1
-                            logger.info("Plex: deleted %s (key %s)", item.get("title"), rating_key)
+                        title = item.get("title", "?")
+                        for attempt in range(3):
+                            del_resp = await client.delete(
+                                f"{PLEX_URL}/library/metadata/{rating_key}",
+                                params={"X-Plex-Token": PLEX_TOKEN},
+                            )
+                            if del_resp.status_code in (200, 204):
+                                removed += 1
+                                logger.info("Plex: deleted %s (key %s)", title, rating_key)
+                                break
+                            logger.warning("Plex delete %s (key %s) returned %d (attempt %d/3)",
+                                           title, rating_key, del_resp.status_code, attempt + 1)
+                            if attempt < 2:
+                                await asyncio.sleep(2)
                         break
 
             logger.info("Plex cleanup: removed %d items", removed)
@@ -1490,7 +1497,8 @@ def _remove_strm_folders(movies) -> int:
 def _count_strm_folders() -> int:
     if not os.path.exists(STRM_OUTPUT_DIR):
         return 0
-    return sum(1 for d in os.listdir(STRM_OUTPUT_DIR) if os.path.isdir(os.path.join(STRM_OUTPUT_DIR, d)))
+    return sum(1 for d in os.listdir(STRM_OUTPUT_DIR)
+               if not d.startswith('.') and os.path.isdir(os.path.join(STRM_OUTPUT_DIR, d)))
 
 
 @router.get("/movies/activated-count")
@@ -2404,23 +2412,27 @@ async def mark_movies_dead(request: Request):
         )
         movies = [dict(r) for r in await rows.fetchall()]
 
+        all_ids = [m["id"] for m in movies]
+        plex_removed = await _plex_remove_movies(all_ids)
+
         for m in movies:
-            if m["activated"]:
-                await _plex_remove_movies([m["id"]])
-                folder_name = _movie_folder_name(m)
-                live_folder = os.path.join(STRM_OUTPUT_DIR, folder_name)
-                dead_folder = os.path.join(DEAD_DIR, folder_name)
-                if os.path.isdir(live_folder):
-                    os.makedirs(DEAD_DIR, exist_ok=True)
-                    shutil.move(live_folder, dead_folder)
+            folder_name = _movie_folder_name(m)
+            live_folder = os.path.join(STRM_OUTPUT_DIR, folder_name)
+            dead_folder = os.path.join(DEAD_DIR, folder_name)
+            if os.path.isdir(live_folder):
+                os.makedirs(DEAD_DIR, exist_ok=True)
+                shutil.move(live_folder, dead_folder)
 
         now = datetime.now(timezone.utc).isoformat()
         await db.execute(
             f"UPDATE movies SET dead = 1, dead_at = ?, activated = 0 WHERE id IN ({placeholders})",
             [now] + movie_ids,
         )
+        strm_count = _count_strm_folders()
+        await db.execute("UPDATE sync_state SET active_strm_count = ? WHERE id = 1", (strm_count,))
         await db.commit()
-        return {"status": "ok", "marked": len(movies)}
+        logger.info("Marked %d movies dead, %d removed from Plex, %d STRM remaining", len(movies), plex_removed, strm_count)
+        return {"status": "ok", "marked": len(movies), "plex_removed": plex_removed}
     finally:
         pass
 

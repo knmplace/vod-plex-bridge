@@ -8,7 +8,7 @@ from urllib.parse import quote, urlparse, parse_qs, urlencode, urlunparse
 
 import httpx
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 
 from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, REDIRECT_MODE
 from database import get_db
@@ -348,6 +348,11 @@ PROBE_WINDOW = 60          # seconds — rapid probes within this window trigger
 PROBE_COOLDOWN = 180       # seconds — wait this long before allowing another provider connection
 _probe_tracker: dict[int, dict] = {}  # {movie_id: {last_probe: float, strikes: int, cooldown_until: float}}
 
+# --- Passthrough guard (redirect mode) ---
+# Tracks which movies have an active passthrough proxy connection.
+# Prevents multiple upstream connections for the same movie.
+_active_passthroughs: dict[int, float] = {}  # {movie_id: start_time}
+
 # --- Pipe Manager ---
 _movie_pipes: dict[int, StreamPipe] = {}
 _pipe_creating: dict[int, asyncio.Lock] = {}
@@ -600,7 +605,7 @@ _buffer_cleanup_task: asyncio.Task | None = None
 def start_pipe_manager():
     global _pipe_manager_task, _buffer_cleanup_task
     if REDIRECT_MODE:
-        logger.info("REDIRECT MODE active — playback handed off to Dispatcharr via 302, pipe manager not needed")
+        logger.info("REDIRECT MODE active — playback proxied through to Dispatcharr, pipe manager not needed")
         return
     if _pipe_manager_task is None or _pipe_manager_task.done():
         _pipe_manager_task = asyncio.create_task(_pipe_manager_loop())
@@ -977,12 +982,67 @@ async def vod_file(filename: str, request: Request):
                 except Exception as be:
                     logger.warning("Disk buffer read error for movie %d: %s", movie_id, be)
 
-        # --- Redirect mode: hand off to Dispatcharr ---
+        # --- Redirect mode: transparent passthrough proxy to Dispatcharr ---
         if REDIRECT_MODE:
+            if movie_id in _active_passthroughs:
+                elapsed = time.time() - _active_passthroughs[movie_id]
+                _log_event("warn", movie_id, f"Blocked duplicate passthrough (active for {elapsed:.0f}s)",
+                           movie_name=movie_name, range_start=range_start)
+                return Response(status_code=503, content="Stream already active",
+                                headers={"Retry-After": "5"})
+
             proxy_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
-            _log_event("info", movie_id, "302 redirect to Dispatcharr",
+            _log_event("info", movie_id, "Passthrough proxy to Dispatcharr",
                        movie_name=movie_name, range_start=range_start)
-            return RedirectResponse(url=proxy_url, status_code=302)
+            _active_passthroughs[movie_id] = time.time()
+            try:
+                passthrough_client = httpx.AsyncClient(timeout=httpx.Timeout(connect=30, read=300, write=30, pool=30), follow_redirects=True)
+                upstream_headers = {}
+                if "range" in request.headers:
+                    upstream_headers["Range"] = request.headers["range"]
+                upstream_resp = await passthrough_client.send(
+                    passthrough_client.build_request("GET", proxy_url, headers=upstream_headers),
+                    stream=True,
+                )
+                if upstream_resp.status_code >= 400:
+                    body = await upstream_resp.aread()
+                    await upstream_resp.aclose()
+                    await passthrough_client.aclose()
+                    _active_passthroughs.pop(movie_id, None)
+                    _log_event("error", movie_id, f"Upstream returned {upstream_resp.status_code}",
+                               movie_name=movie_name, range_start=range_start)
+                    return Response(status_code=upstream_resp.status_code, content=body)
+
+                resp_headers = {
+                    "accept-ranges": "bytes",
+                    "content-type": upstream_resp.headers.get("content-type", content_type),
+                }
+                if "content-length" in upstream_resp.headers:
+                    resp_headers["content-length"] = upstream_resp.headers["content-length"]
+                if "content-range" in upstream_resp.headers:
+                    resp_headers["content-range"] = upstream_resp.headers["content-range"]
+                status = upstream_resp.status_code if upstream_resp.status_code in (200, 206) else 206
+
+                async def _stream_and_close():
+                    try:
+                        async for chunk in upstream_resp.aiter_bytes(chunk_size=STREAM_CHUNK):
+                            yield chunk
+                    finally:
+                        _active_passthroughs.pop(movie_id, None)
+                        await upstream_resp.aclose()
+                        await passthrough_client.aclose()
+
+                return StreamingResponse(
+                    _stream_and_close(),
+                    status_code=status,
+                    headers=resp_headers,
+                )
+            except Exception as e:
+                _active_passthroughs.pop(movie_id, None)
+                logger.error("Passthrough proxy failed for movie %d: %s", movie_id, e)
+                _log_event("error", movie_id, f"Passthrough failed: {e}",
+                           movie_name=movie_name, range_start=range_start)
+                return Response(status_code=502, content=f"Upstream proxy error: {e}")
 
         # --- Probe throttle (prevents Plex scans from burning movies) ---
         # If we reach here, cache didn't cover this range. Before opening a provider

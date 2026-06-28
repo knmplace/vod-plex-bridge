@@ -1320,7 +1320,7 @@
                             <option value="6">Every 6 hours</option>
                             <option value="4">Every 4 hours</option>
                         </select>
-                        <button class="btn btn-primary" onclick="triggerManualRefresh()" style="font-size:0.8rem;">Run Now</button>
+                        <button id="btnRunNow" class="btn btn-primary" onclick="triggerManualRefresh()" style="font-size:0.8rem;display:none;">Run Now</button>
                         <span id="scheduleMsg" style="font-size:0.75rem;color:#c9d1d9;"></span>
                         <span style="margin-left:auto;font-size:0.8rem;color:#c9d1d9;">
                             <strong>Last Refresh:</strong> <span id="lastScheduledRefresh">Never</span>
@@ -2734,9 +2734,11 @@
 
         async function loadSchedule() {
             const data = await fetchJSON('/api/schedule');
-            document.getElementById('refreshInterval').value = data.refresh_interval_hours || 0;
-            const label = data.refresh_interval_hours ? `Every ${data.refresh_interval_hours} hours` : 'Off';
+            const hours = data.refresh_interval_hours || 0;
+            document.getElementById('refreshInterval').value = hours;
+            const label = hours ? `Every ${hours} hours` : 'Off';
             document.getElementById('currentInterval').textContent = label;
+            document.getElementById('btnRunNow').style.display = hours ? '' : 'none';
             if (data.last_scheduled_refresh) {
                 const raw = data.last_scheduled_refresh;
                 const d = new Date(raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z');
@@ -2776,6 +2778,7 @@
             });
             const label = hours ? `Every ${hours} hours` : 'Off';
             document.getElementById('currentInterval').textContent = label;
+            document.getElementById('btnRunNow').style.display = hours ? '' : 'none';
             msg.textContent = `Schedule saved: ${label}`;
             setTimeout(() => { msg.textContent = ''; }, 3000);
         }
