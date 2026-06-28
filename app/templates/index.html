@@ -873,7 +873,7 @@
 
     <div class="header">
         <div class="header-left">
-            <h1><span>VOD</span> Plex Bridge <span style="color:#fff" id="appVersion"></span></h1>
+            <h1><span>VOD</span> Plex Bridge <span style="color:#fff" id="appVersion"></span> <span id="streamMode" style="font-size:0.55em;padding:2px 8px;border-radius:4px;vertical-align:middle;display:none;"></span></h1>
             <div class="tab-nav">
                 <button class="tab-btn active" onclick="switchTab('browse')">Browse</button>
                 <button class="tab-btn" onclick="switchTab('catalog')">Catalog</button>
@@ -2826,7 +2826,11 @@
                 }
 
                 if (!data.streams.length) {
-                    container.innerHTML = '<div class="empty-state">No active streams. Start playing a movie in Plex to see live connection details here.</div>';
+                    const modeEl = document.getElementById('streamMode');
+                    const isRedirect = modeEl && modeEl.textContent === 'REDIRECT';
+                    container.innerHTML = isRedirect
+                        ? '<div class="empty-state">Redirect mode — playback streams are handled directly by Dispatcharr. Monitor active sessions in Plex Now Playing below.</div>'
+                        : '<div class="empty-state">No active streams. Start playing a movie in Plex to see live connection details here.</div>';
                     return;
                 }
 
@@ -3095,6 +3099,19 @@
 
         // --- Init ---
         fetchJSON('/version').then(d => document.getElementById('appVersion').textContent = 'v' + d.version);
+        fetchJSON('/api/status').then(s => {
+            const el = document.getElementById('streamMode');
+            if (s.redirect_mode) {
+                el.textContent = 'REDIRECT';
+                el.style.background = '#238636';
+                el.style.color = '#fff';
+            } else {
+                el.textContent = 'PIPE';
+                el.style.background = '#1f6feb';
+                el.style.color = '#fff';
+            }
+            el.style.display = 'inline';
+        });
         refreshStatus();
         refreshVpnIp();
         setInterval(refreshVpnIp, 60000);

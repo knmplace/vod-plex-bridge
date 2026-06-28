@@ -8,9 +8,9 @@ from urllib.parse import quote, urlparse, parse_qs, urlencode, urlunparse
 
 import httpx
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
-from config import DISPATCHARR_URL, DISPATCHARR_API_KEY
+from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, REDIRECT_MODE
 from database import get_db
 
 logger = logging.getLogger(__name__)
@@ -599,6 +599,9 @@ _buffer_cleanup_task: asyncio.Task | None = None
 
 def start_pipe_manager():
     global _pipe_manager_task, _buffer_cleanup_task
+    if REDIRECT_MODE:
+        logger.info("REDIRECT MODE active — playback handed off to Dispatcharr via 302, pipe manager not needed")
+        return
     if _pipe_manager_task is None or _pipe_manager_task.done():
         _pipe_manager_task = asyncio.create_task(_pipe_manager_loop())
         logger.info("Pipe manager started (plex_idle=%ds, full_idle=%ds)", PLEX_IDLE_TIMEOUT, PIPE_IDLE_TIMEOUT)
@@ -973,6 +976,13 @@ async def vod_file(filename: str, request: Request):
                         )
                 except Exception as be:
                     logger.warning("Disk buffer read error for movie %d: %s", movie_id, be)
+
+        # --- Redirect mode: hand off to Dispatcharr ---
+        if REDIRECT_MODE:
+            proxy_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
+            _log_event("info", movie_id, "302 redirect to Dispatcharr",
+                       movie_name=movie_name, range_start=range_start)
+            return RedirectResponse(url=proxy_url, status_code=302)
 
         # --- Probe throttle (prevents Plex scans from burning movies) ---
         # If we reach here, cache didn't cover this range. Before opening a provider

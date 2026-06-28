@@ -12,4 +12,6 @@ PLEX_URL = os.environ.get("PLEX_URL", "")
 PLEX_TOKEN = os.environ.get("PLEX_TOKEN", "")
 PLEX_LIBRARY_ID = os.environ.get("PLEX_LIBRARY_ID", "7")
 
+REDIRECT_MODE = os.environ.get("REDIRECT_MODE", "true").lower() in ("true", "1", "yes")
+
 

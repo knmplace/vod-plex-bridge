@@ -13,6 +13,7 @@ services:
       - CATEGORY_MAPPING_FILE=/data/category_mapping.json
       - STREAM_MAPPING_FILE=/data/stream_mapping.json
       - STRM_OUTPUT_DIR=/plex-vod/Movies
+      - REDIRECT_MODE=${REDIRECT_MODE:-true}
     volumes:
       - ${DATA_DIR:-./data}:/data
       - ${PLEX_VOD_DIR:-./plex-vod}:/plex-vod
