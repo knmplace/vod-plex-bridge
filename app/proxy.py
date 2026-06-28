@@ -1229,12 +1229,16 @@ async def vod_file(filename: str, request: Request):
 async def _handle_upstream_error(movie_id: int, stream_id: int, status_code: int):
     _record_failure(stream_id)
     _record_failure_by_movie(movie_id)
-    logger.error("Upstream %d for movie %d stream_id %d — circuit breaker engaged",
+    logger.error("Upstream %d for movie %d stream_id %d — checking fallback",
                  status_code, movie_id, stream_id)
-    _log_event("error", movie_id, f"Upstream {status_code} — blocked for {CIRCUIT_COOLDOWN}s",
-               stream_id=stream_id)
 
     if status_code >= 500:
+        from stream_mapper import get_next_fallback
+        fallback = await get_next_fallback(movie_id, stream_id)
+        if fallback:
+            await _switch_to_fallback(movie_id, stream_id, fallback, status_code)
+            return
+
         try:
             from api import _plex_remove_movies, _movie_folder_name, STRM_OUTPUT_DIR, DEAD_DIR
             db = await get_db()
@@ -1258,13 +1262,62 @@ async def _handle_upstream_error(movie_id: int, stream_id: int, status_code: int
                     await db.execute(
                         "UPDATE movies SET dead = 1, dead_at = ?, activated = 0, stream_dead = 1 WHERE id = ?",
                         (dead_now, movie_id))
-                    _log_event("warn", movie_id, f"Auto-deactivated: HTTP {status_code} (1-strike)",
+                    _log_event("warn", movie_id, f"Auto-deactivated: HTTP {status_code} — no fallback streams left",
                                movie_name=mname, stream_id=stream_id)
                 await db.commit()
             finally:
                 pass
         except Exception as e:
             logger.error("Failed to handle stream error for movie %d: %s", movie_id, e)
+    else:
+        _log_event("error", movie_id, f"Upstream {status_code} — circuit breaker engaged",
+                   stream_id=stream_id)
+
+
+async def _switch_to_fallback(movie_id: int, failed_stream_id: int, fallback: dict, status_code: int):
+    """Switch a movie to its next fallback stream after provider failure."""
+    import json
+    new_sid = fallback.get("stream_id")
+    new_acct = fallback.get("account_id")
+    new_acct_name = fallback.get("account_name", "")
+    new_ext = fallback.get("ext", "mkv")
+    new_ct = "video/mp4" if new_ext == "mp4" else "video/x-matroska"
+
+    db = await get_db()
+    try:
+        row = await db.execute("SELECT name, alt_streams FROM movies WHERE id = ?", (movie_id,))
+        movie = await row.fetchone()
+        mname = movie["name"] if movie else None
+
+        remaining = []
+        try:
+            alts = json.loads(movie["alt_streams"]) if movie and movie["alt_streams"] else []
+        except (json.JSONDecodeError, TypeError):
+            alts = []
+        for alt in alts:
+            if str(alt.get("stream_id", "")) != str(new_sid) and str(alt.get("stream_id", "")) != str(failed_stream_id):
+                remaining.append(alt)
+
+        await db.execute(
+            "UPDATE movies SET stream_id = ?, account_id = ?, account_name = ?, "
+            "content_type = ?, container_extension = ?, alt_streams = ?, "
+            "header_data = NULL, header_size = 0, tail_data = NULL, tail_size = 0, "
+            "tail_offset = 0, file_size = NULL, stream_dead = 0, stream_dead_count = 0 "
+            "WHERE id = ?",
+            (new_sid, new_acct, new_acct_name, new_ct, new_ext, json.dumps(remaining), movie_id),
+        )
+        await db.commit()
+
+        _clear_failure(int(failed_stream_id) if str(failed_stream_id).isdigit() else 0)
+        _clear_failure_by_movie(movie_id)
+
+        logger.info("Fallback: movie %d (%s) switched from stream %s to %s (account %s, %d alts remaining)",
+                     movie_id, mname, failed_stream_id, new_sid, new_acct_name, len(remaining))
+        _log_event("warn", movie_id,
+                   f"Provider fallback: HTTP {status_code} on stream {failed_stream_id} → switched to stream {new_sid} ({new_acct_name}, {len(remaining)} alts left)",
+                   movie_name=mname, stream_id=new_sid)
+    finally:
+        pass
 
 
 @router.api_route("/stream/{movie_id}.mkv", methods=["GET", "HEAD"])

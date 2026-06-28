@@ -103,8 +103,8 @@ BRIDGE_PORT=8585                             # Port for the bridge UI
 # These are optional but recommended:
 TZ=America/New_York                          # Your timezone
 TMDB_API_KEY=your-tmdb-key                   # For movie posters and metadata
-REDIRECT_MODE=true                           # true = 302 redirect to Dispatcharr (recommended)
-                                             # false = bridge proxies bytes (legacy pipe mode)
+REDIRECT_MODE=false                          # false = pipe mode (recommended for rclone mounts)
+                                             # true = 302 redirect (does NOT work with rclone)
 
 # Paths — adjust if needed:
 DATA_DIR=./data                              # Bridge database + mapping files
@@ -418,12 +418,14 @@ If this fails, check:
 - Verify Plex's library folder points to the rclone mount path (e.g., `/mnt/vod-bridge`)
 
 ### Stream stops or movie gets "burned"
-- Use redirect mode (default in v0.32.0+): `REDIRECT_MODE=true`. This lets Dispatcharr manage the streaming connection directly.
-- If using pipe mode: update to the latest version (streaming fixes were in v0.25.0+) and check that Dispatcharr's nginx config has `uwsgi_buffering off` on the `/proxy/` location.
+- Ensure you're using pipe mode (default): `REDIRECT_MODE=false`. The bridge maintains a single persistent connection to Dispatcharr with adaptive throttling.
+- Do NOT use redirect mode (`REDIRECT_MODE=true`) with rclone FUSE mounts — rclone doesn't follow 302 redirects and creates rapid session cycling that burns movies.
+- Update to the latest version (streaming fixes in v0.25.0+) and check that Dispatcharr's nginx config has `uwsgi_buffering off` on the `/proxy/` location.
 
-### Plex plays briefly then stops (redirect mode)
-- `DISPATCHARR_URL` must use the LAN IP reachable by the Plex host (not `localhost` or `127.0.0.1`). The 302 redirect sends Plex directly to Dispatcharr, so Plex needs to reach it.
-- Verify Dispatcharr is accessible from the Plex host: `curl http://DISPATCHARR_IP:9191/api/vod/movies/?page=1&page_size=1`
+### Plex plays briefly then stops
+- Make sure `REDIRECT_MODE=false` (pipe mode). Redirect mode does not work with rclone mounts.
+- Check the bridge logs for "Plex idle" messages — the bridge disconnects from the provider after 30 seconds of no Plex reads. This is normal; Plex buffers locally.
+- If the movie stops after ~10 minutes, check that Dispatcharr's nginx `/proxy/` location has `uwsgi_buffering off` and `uwsgi_read_timeout 300s`.
 
 ### "Database is locked" errors
 - This was fixed in v0.27.1 (singleton SQLite connection)

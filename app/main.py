@@ -14,7 +14,7 @@ from health import health_check_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-APP_VERSION = "0.33.0"
+APP_VERSION = "0.34.0"
 
 
 async def _restore_strm_files():
@@ -22,7 +22,7 @@ async def _restore_strm_files():
     import os
     import re
     from database import get_db
-    from generator import write_strm_for_movie, sanitize_filename
+    from generator import write_strm_for_movie, sanitize_filename, parse_title
     from config import STRM_OUTPUT_DIR
 
     db = await get_db()
@@ -37,9 +37,8 @@ async def _restore_strm_files():
         year = movie.get("year")
         if not name:
             continue
-        clean_name = re.sub(r'\s*[-–]\s*\d{4}\s*$', '', name).strip()
-        clean_name = re.sub(r'\s*\(\d{4}\)\s*$', '', clean_name).strip()
-        folder_name = sanitize_filename(f"{clean_name} ({year})" if year else clean_name)
+        parsed = parse_title(name, year)
+        folder_name = sanitize_filename(f"{parsed['title']} ({parsed['year']})" if parsed['year'] else parsed['title'])
         if not os.path.isdir(os.path.join(STRM_OUTPUT_DIR, folder_name)):
             await write_strm_for_movie(movie)
             restored += 1

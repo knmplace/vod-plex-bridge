@@ -10,6 +10,118 @@ from database import get_db
 
 logger = logging.getLogger(__name__)
 
+_LANG_PREFIXES = {
+    'EN', 'FR', 'DE', 'IT', 'ES', 'PT', 'NL', 'PL', 'RU', 'AR', 'TR', 'SV', 'SE',
+    'NO', 'DA', 'DK', 'FI', 'EL', 'GR', 'RO', 'CS', 'CZ', 'HU', 'HE', 'HI', 'JA',
+    'KO', 'ZH', 'UK', 'BG', 'HR', 'SR', 'MULTI', 'MULTISUB', 'VOSTFR', 'VOST',
+    'VOSE', 'LAT', 'VO', 'DUAL',
+}
+
+_QUAL_PREFIXES = {
+    '4K', 'UHD', 'HD', 'FHD', 'SD', 'HDR', 'HDR10', 'DV', '3D', 'HEVC', 'H265',
+    'X265', 'H264', 'X264', '1080P', '720P', '2160P', '480P', 'HDTS', 'HDCAM',
+    'CAM', 'TS', 'WEB', 'WEBDL', 'WEBRIP', 'BLURAY', 'BRRIP', 'DVDRIP', 'REMUX',
+    'D+', 'A+', 'N', 'P+', 'HBO', 'MAX',
+}
+
+_QUAL_INLINE = {
+    '4K', 'UHD', 'FHD', 'QHD', 'HDR', 'HDR10', 'HEVC', 'H265', 'X265', 'H264',
+    'X264', 'XVID', '1080P', '720P', '2160P', '480P', '4320P', 'HDTS', 'HDCAM',
+    'WEBDL', 'WEBRIP', 'BRRIP', 'BLURAY', 'DVDRIP', 'REMUX',
+}
+
+_TAG_RE = re.compile(
+    r'[\[(]\s*(?:MULTI[- ]?SUB|MULTISUB|SUB|DUAL|VOST(?:FR|E)?|HDTS|HDCAM|CAM|HDR|'
+    r'HEVC|MAIN CARD|PRELIMS|EARLY PRELIMS|UNCUT|EXTENDED|REMASTERED|IMAX|3D|REPACK|'
+    r'\d{3,4}P)\s*[\])]', re.IGNORECASE)
+
+_YEAR_RE = re.compile(r'(?:^|[^\d])((?:19|20)\d{2})(?:[^\d]|$)')
+_PAREN_YEAR_RE = re.compile(r'[(\[]\s*((?:19|20)\d{2})\s*[)\]]')
+
+
+def _looks_like_prefix(token: str) -> bool:
+    t = (token or '').strip()
+    if not t or len(t) > 12:
+        return False
+    parts = [p for p in re.split(r'[-\s|]+', t.upper()) if p]
+    if not parts:
+        return False
+    for p in parts:
+        if p in _QUAL_PREFIXES or p in _LANG_PREFIXES:
+            continue
+        if re.fullmatch(r'[A-Z0-9]{1,4}\+?', p):
+            continue
+        return False
+    return True
+
+
+def _strip_inline_quality(name: str) -> str:
+    return re.sub(
+        r'\b[A-Za-z0-9]{2,7}\b',
+        lambda m: ' ' if m.group(0).upper() in _QUAL_INLINE else m.group(0),
+        name,
+    )
+
+
+def _finalize(name: str) -> str:
+    name = _TAG_RE.sub(' ', name)
+    name = re.sub(r'\[[^\]]*\]', ' ', name)
+    name = _strip_inline_quality(name)
+    name = re.sub(r'\s*\((?:[A-Za-z]{2})\)\s*$', ' ', name)
+    name = re.sub(r'[\[(]\s*[\])]', ' ', name)
+    return re.sub(r'\s+', ' ', name).strip(' -._')
+
+
+def parse_title(raw: str, year_field: int | None = None) -> dict:
+    """Clean a provider VOD title into {title, year}."""
+    name = re.sub(r'\s+', ' ', (raw or '').strip())
+
+    if '|' in name:
+        left, right = name.split('|', 1)
+        if _looks_like_prefix(left):
+            name = right.strip()
+
+    changed = True
+    while changed and ' - ' in name:
+        changed = False
+        left, right = name.split(' - ', 1)
+        if _looks_like_prefix(left):
+            name = right.strip()
+            changed = True
+
+    name = re.sub(r'^\d{1,4}\.\s+', '', name)
+
+    has_year_field = isinstance(year_field, int) and 1900 <= year_field <= 2100
+    year = year_field if has_year_field else None
+
+    if ' ' not in name and name.count('.') >= 2:
+        name = name.replace('.', ' ')
+
+    name_before_year = name
+    paren = _PAREN_YEAR_RE.search(name)
+    if paren:
+        if year is None:
+            year = int(paren.group(1))
+        work = name[:paren.start()]
+    else:
+        matches = _YEAR_RE.findall(name)
+        if year is None and matches:
+            year = int(matches[-1])
+        work = name
+        if matches:
+            # Only strip the year from the title if it matches the year we're using.
+            # "Blade Runner 2049" (year_field=2017) should keep "2049" in the title.
+            yr_to_strip = str(year) if year else matches[-1]
+            work = re.sub(r'[\(\[]?\b' + yr_to_strip + r'\b[\)\]]?', ' ', name)
+
+    work = _finalize(work)
+    if not work:
+        work = _finalize(name_before_year)
+        if not has_year_field:
+            year = None
+
+    return {'title': work, 'year': year}
+
 
 def sanitize_filename(name: str) -> str:
     name = re.sub(r'[<>:"/\\|?*]', '', name)
@@ -112,17 +224,16 @@ async def generate_strm_files():
                 if not name:
                     continue
 
-                clean_name = re.sub(r'\s*[-–]\s*\d{4}\s*$', '', name).strip()
-                clean_name = re.sub(r'\s*\(\d{4}\)\s*$', '', clean_name).strip()
+                parsed = parse_title(name, year)
+                clean_name = parsed['title']
+                clean_year = parsed['year']
 
-                if year:
-                    folder_name = sanitize_filename(f"{clean_name} ({year})")
-                    file_name = f"{clean_name} ({year})"
+                if clean_year:
+                    folder_name = sanitize_filename(f"{clean_name} ({clean_year})")
                 else:
                     folder_name = sanitize_filename(clean_name)
-                    file_name = clean_name
 
-                file_name = sanitize_filename(file_name)
+                file_name = sanitize_filename(folder_name)
                 folder_path = os.path.join(STRM_OUTPUT_DIR, folder_name)
                 os.makedirs(folder_path, exist_ok=True)
                 generated_dirs.add(folder_name)
@@ -187,15 +298,15 @@ async def write_strm_for_movie(movie):
     if not name:
         return False
 
-    clean_name = re.sub(r'\s*[-–]\s*\d{4}\s*$', '', name).strip()
-    clean_name = re.sub(r'\s*\(\d{4}\)\s*$', '', clean_name).strip()
+    parsed = parse_title(name, year)
+    clean_name = parsed['title']
+    clean_year = parsed['year']
 
-    if year:
-        folder_name = sanitize_filename(f"{clean_name} ({year})")
-        file_name = sanitize_filename(f"{clean_name} ({year})")
+    if clean_year:
+        folder_name = sanitize_filename(f"{clean_name} ({clean_year})")
     else:
         folder_name = sanitize_filename(clean_name)
-        file_name = sanitize_filename(clean_name)
+    file_name = sanitize_filename(folder_name)
 
     folder_path = os.path.join(STRM_OUTPUT_DIR, folder_name)
     os.makedirs(folder_path, exist_ok=True)

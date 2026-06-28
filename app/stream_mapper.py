@@ -14,8 +14,6 @@ import os
 logger = logging.getLogger(__name__)
 
 MAPPING_FILE = os.environ.get("STREAM_MAPPING_FILE", "/data/stream_mapping.json")
-# Provider groups: accounts that share the same stream_ids.
-# First account in each group is used as the canonical "provider name".
 PROVIDER_GROUPS = {
     "amber": [10, 13, 14, 17],
     "warptv": [2, 11],
@@ -60,6 +58,42 @@ def pick_stream_for_account(entries: list[dict], account_id: int | None) -> dict
     return entries[0]
 
 
+def get_alt_streams(entries: list[dict], primary_stream_id: str | int | None) -> list[dict]:
+    """Return all streams except the primary, for fallback on failure."""
+    primary = str(primary_stream_id) if primary_stream_id else None
+    seen_providers = set()
+    alts = []
+    for entry in entries:
+        sid = str(entry.get("stream_id", ""))
+        if sid == primary:
+            continue
+        provider = _account_to_provider(entry.get("account_id", 0))
+        if provider in seen_providers:
+            continue
+        seen_providers.add(provider)
+        alts.append(entry)
+    return alts
+
+
+async def get_next_fallback(movie_id: int, failed_stream_id: int | str) -> dict | None:
+    """Get the next untried fallback stream for a movie after a failure."""
+    from database import get_db
+    db = await get_db()
+    row = await db.execute("SELECT alt_streams FROM movies WHERE id = ?", (movie_id,))
+    movie = await row.fetchone()
+    if not movie or not movie["alt_streams"]:
+        return None
+    try:
+        alts = json.loads(movie["alt_streams"])
+    except (json.JSONDecodeError, TypeError):
+        return None
+    failed_sid = str(failed_stream_id)
+    for alt in alts:
+        if str(alt.get("stream_id", "")) != failed_sid:
+            return alt
+    return None
+
+
 async def apply_stream_mapping_to_db():
     from database import get_db
 
@@ -75,7 +109,7 @@ async def apply_stream_mapping_to_db():
             if not entries:
                 continue
 
-            row = await db.execute("SELECT account_id FROM movies WHERE id = ?", (movie_id,))
+            row = await db.execute("SELECT account_id, stream_id FROM movies WHERE id = ?", (movie_id,))
             movie = await row.fetchone()
             current_account_id = movie["account_id"] if movie else None
 
@@ -89,10 +123,14 @@ async def apply_stream_mapping_to_db():
             acct_id = info.get("account_id")
             account_name = info.get("account_name", "")
 
+            alts = get_alt_streams(entries, stream_id)
+            alt_json = json.dumps(alts) if alts else "[]"
+
             result = await db.execute(
-                "UPDATE movies SET stream_id = ?, content_type = ?, account_id = ?, account_name = ? "
-                "WHERE id = ? AND (stream_id IS NULL OR stream_id != ? OR account_id IS NULL)",
-                (stream_id, content_type, acct_id, account_name, movie_id, stream_id),
+                "UPDATE movies SET stream_id = ?, content_type = ?, account_id = ?, account_name = ?, "
+                "alt_streams = ? "
+                "WHERE id = ? AND (stream_id IS NULL OR stream_id != ? OR account_id IS NULL OR alt_streams = '[]')",
+                (stream_id, content_type, acct_id, account_name, alt_json, movie_id, stream_id),
             )
             if result.rowcount > 0:
                 updated += 1

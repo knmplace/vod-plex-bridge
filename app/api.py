@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN, REDIRECT_MODE
 from database import get_db
 from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing
-from generator import generate_strm_files, sanitize_filename, write_strm_for_movie
+from generator import generate_strm_files, sanitize_filename, write_strm_for_movie, parse_title
 from stream_mapper import apply_stream_mapping_to_db, load_stream_mapping, pick_stream_for_account
 from proxy import probe_file_size, get_proxy_log, get_all_pipes, _log_event, archive_proxy_log, cleanup_old_archives, list_log_archives, get_log_archive
 from health import run_health_checks, get_health_status, get_health_log, health_check_scheduler
@@ -665,6 +665,8 @@ async def activate_movies(request: Request):
 
     db = await get_db()
     try:
+        import json as _json
+        from stream_mapper import get_alt_streams
         mapping = load_stream_mapping()
         updated_ids = 0
         for movie_id in movie_ids:
@@ -683,12 +685,15 @@ async def activate_movies(request: Request):
                 content_type = "video/x-matroska" if ext == "mkv" else "video/mp4"
                 account_id = info.get("account_id")
                 account_name = info.get("account_name", "")
+                alts = get_alt_streams(entries, stream_id)
+                alt_json = _json.dumps(alts) if alts else "[]"
 
                 result = await db.execute(
                     "UPDATE movies SET stream_id = ?, content_type = ?, account_id = ?, account_name = ?, "
+                    "alt_streams = ?, container_extension = ?, "
                     "header_data = NULL, header_size = 0, tail_data = NULL, tail_size = 0, tail_offset = 0 "
                     "WHERE id = ? AND (stream_id IS NULL OR stream_id != ?)",
-                    (stream_id, content_type, account_id, account_name, movie_id, stream_id),
+                    (stream_id, content_type, account_id, account_name, alt_json, ext, movie_id, stream_id),
                 )
                 if result.rowcount > 0:
                     updated_ids += 1
@@ -699,7 +704,7 @@ async def activate_movies(request: Request):
 
         placeholders = ",".join("?" for _ in movie_ids)
         needs_header = await db.execute(
-            f"SELECT id, uuid, stream_id, account_id, content_type, name, year FROM movies WHERE id IN ({placeholders}) AND stream_id IS NOT NULL",
+            f"SELECT id, uuid, stream_id, account_id, account_name, content_type, container_extension, alt_streams, name, year FROM movies WHERE id IN ({placeholders}) AND stream_id IS NOT NULL",
             movie_ids,
         )
         to_validate = [dict(r) for r in await needs_header.fetchall()]
@@ -1147,11 +1152,79 @@ async def _fetch_provider_info(movie_id: int):
         return None
 
 
-async def _fetch_headers_validated(movies: list[dict]) -> tuple[list[int], list[int]]:
-    """Fetch head+tail for each movie. Returns (activated_ids, failed_ids).
-    Only marks movie activated=1 if head bytes are successfully retrieved.
-    Marks stream_dead=1 on failure."""
+async def _try_activate_stream(movie_id: int, movie_name: str, uuid: str,
+                                stream_id, content_type: str) -> dict | None:
+    """Try to fetch head+tail for one stream. Returns result dict on success, None on failure."""
     from proxy import _resolve_session as resolve_session
+
+    base_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
+
+    result = await resolve_session(base_url, movie_id)
+    if not result:
+        logger.warning("Activate: session resolve failed for movie %d (%s) stream %s", movie_id, movie_name, stream_id)
+        return None
+
+    session_url, session_id = result
+
+    disp_host = urlparse(DISPATCHARR_URL).netloc.split(":")[0]
+    session_host = urlparse(session_url).netloc.split(":")[0]
+    if session_host != disp_host:
+        logger.error("Activate: movie %d resolved to external host %s — BLOCKED", movie_id, session_host)
+        return None
+
+    req_headers = {"Range": f"bytes=0-{HEADER_FETCH_SIZE - 1}"}
+
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(connect=30, read=60, write=30, pool=30),
+        follow_redirects=False,
+    ) as client:
+        resp = await client.get(session_url, headers=req_headers)
+        if resp.status_code >= 400:
+            logger.warning("Activate: header fetch HTTP %d for movie %d (%s) stream %s",
+                           resp.status_code, movie_id, movie_name, stream_id)
+            return None
+
+        header_bytes = resp.content
+        if not header_bytes or len(header_bytes) == 0:
+            logger.warning("Activate: empty header for movie %d (%s) stream %s", movie_id, movie_name, stream_id)
+            return None
+
+        file_size = None
+        cr = resp.headers.get("content-range", "")
+        if "/" in cr:
+            total = cr.split("/")[-1]
+            if total.isdigit():
+                file_size = int(total)
+
+        tail_bytes = None
+        tail_offset = 0
+        if file_size and file_size > TAIL_FETCH_SIZE:
+            tail_offset = file_size - TAIL_FETCH_SIZE
+            tail_headers = {"Range": f"bytes={tail_offset}-{file_size - 1}"}
+            try:
+                tail_resp = await client.get(session_url, headers=tail_headers)
+                if tail_resp.status_code < 400:
+                    tail_bytes = tail_resp.content
+                else:
+                    logger.warning("Activate: tail fetch HTTP %d for movie %d stream %s",
+                                   tail_resp.status_code, movie_id, stream_id)
+            except Exception as te:
+                logger.warning("Activate: tail fetch error for movie %d: %s", movie_id, te)
+
+        return {
+            "header_bytes": header_bytes,
+            "tail_bytes": tail_bytes,
+            "tail_offset": tail_offset,
+            "file_size": file_size,
+            "stream_id": stream_id,
+        }
+
+
+async def _fetch_headers_validated(movies: list[dict]) -> tuple[list[int], list[int]]:
+    """Fetch head+tail for each movie with provider fallback.
+    Tries the primary stream first, then alt_streams on failure.
+    Only marks dead if ALL streams fail."""
+    import json as _json
     activated_ids = []
     failed_ids = []
 
@@ -1167,97 +1240,76 @@ async def _fetch_headers_validated(movies: list[dict]) -> tuple[list[int], list[
 
             await _fetch_provider_info(movie_id)
 
-            base_url = f"{DISPATCHARR_URL}/proxy/vod/movie/{uuid}?stream_id={stream_id}"
+            streams_to_try = [{"stream_id": stream_id, "ext": movie.get("container_extension", "mkv"),
+                               "account_id": movie.get("account_id"), "account_name": movie.get("account_name", "")}]
+            try:
+                alts = _json.loads(movie.get("alt_streams", "[]")) if movie.get("alt_streams") else []
+            except (_json.JSONDecodeError, TypeError):
+                alts = []
+            streams_to_try.extend(alts)
 
-            result = await resolve_session(base_url, movie_id)
-            if not result:
-                logger.warning("Activate: session resolve failed for movie %d (%s)", movie_id, movie_name)
-                _log_event("error", movie_id, "Activate failed: session resolve failed", movie_name=movie_name)
-                await _mark_activation_dead(movie_id, movie_name, movie.get("year"), "session resolve failed")
-                failed_ids.append(movie_id)
-                continue
+            activated = False
+            for attempt_idx, stream_info in enumerate(streams_to_try):
+                sid = stream_info.get("stream_id", stream_id)
+                if attempt_idx > 0:
+                    _log_event("warn", movie_id,
+                               f"Trying fallback stream {sid} ({stream_info.get('account_name', '?')}, attempt {attempt_idx + 1}/{len(streams_to_try)})",
+                               movie_name=movie_name)
+                    await asyncio.sleep(3)
 
-            session_url, session_id = result
+                result = await _try_activate_stream(movie_id, movie_name, uuid, sid, content_type)
+                if result:
+                    ext = stream_info.get("ext", "mkv")
+                    new_ct = "video/mp4" if ext == "mp4" else "video/x-matroska"
+                    remaining_alts = [s for s in streams_to_try[attempt_idx + 1:]]
 
-            disp_host = urlparse(DISPATCHARR_URL).netloc.split(":")[0]
-            session_host = urlparse(session_url).netloc.split(":")[0]
-            if session_host != disp_host:
-                logger.error("Activate: movie %d resolved to external host %s — BLOCKED", movie_id, session_host)
-                _log_event("error", movie_id, f"Activate blocked: external host {session_host}", movie_name=movie_name)
-                failed_ids.append(movie_id)
-                continue
-
-            req_headers = {"Range": f"bytes=0-{HEADER_FETCH_SIZE - 1}"}
-
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(connect=30, read=60, write=30, pool=30),
-                follow_redirects=False,
-            ) as client:
-                resp = await client.get(session_url, headers=req_headers)
-                if resp.status_code >= 400:
-                    logger.warning("Activate: header fetch failed for movie %d (%s): HTTP %d", movie_id, movie_name, resp.status_code)
-                    _log_event("error", movie_id, f"Activate failed: HTTP {resp.status_code}", movie_name=movie_name)
-                    await _mark_activation_dead(movie_id, movie_name, movie.get("year"), f"header fetch HTTP {resp.status_code}")
-                    failed_ids.append(movie_id)
-                    continue
-
-                header_bytes = resp.content
-                if not header_bytes or len(header_bytes) == 0:
-                    logger.warning("Activate: empty header response for movie %d (%s)", movie_id, movie_name)
-                    _log_event("error", movie_id, "Activate failed: empty response", movie_name=movie_name)
-                    await _mark_activation_dead(movie_id, movie_name, movie.get("year"), "empty header response")
-                    failed_ids.append(movie_id)
-                    continue
-
-                file_size = None
-                cr = resp.headers.get("content-range", "")
-                if "/" in cr:
-                    total = cr.split("/")[-1]
-                    if total.isdigit():
-                        file_size = int(total)
-
-                tail_bytes = None
-                tail_offset = 0
-                if file_size and file_size > TAIL_FETCH_SIZE:
-                    tail_offset = file_size - TAIL_FETCH_SIZE
-                    tail_headers = {"Range": f"bytes={tail_offset}-{file_size - 1}"}
+                    db = await get_db()
                     try:
-                        tail_resp = await client.get(session_url, headers=tail_headers)
-                        if tail_resp.status_code < 400:
-                            tail_bytes = tail_resp.content
-                        else:
-                            logger.warning("Activate: tail fetch failed for movie %d: HTTP %d", movie_id, tail_resp.status_code)
-                    except Exception as te:
-                        logger.warning("Activate: tail fetch error for movie %d: %s", movie_id, te)
-
-                db = await get_db()
-                try:
-                    await db.execute(
-                        "UPDATE movies SET activated = 1, stream_dead = 0, stream_dead_count = 0, "
-                        "header_data = ?, header_size = ?, "
-                        "tail_data = ?, tail_size = ?, tail_offset = ?, "
-                        "file_size = CASE WHEN file_size IS NULL OR file_size = 0 THEN ? ELSE file_size END "
-                        "WHERE id = ?",
-                        (header_bytes, len(header_bytes), tail_bytes, len(tail_bytes) if tail_bytes else 0,
-                         tail_offset, file_size, movie_id),
-                    )
-                    await db.commit()
-                    activated_ids.append(movie_id)
-                    logger.info("Activated movie %d (%s): head=%d bytes, tail=%d bytes, file_size=%s",
-                                movie_id, movie_name, len(header_bytes), len(tail_bytes) if tail_bytes else 0, file_size)
-                    _log_event("info", movie_id, "Activated — head+tail cached",
-                               movie_name=movie_name,
-                               head_bytes=len(header_bytes), tail_bytes=len(tail_bytes) if tail_bytes else 0, file_size=file_size)
-
-                    full_row = await db.execute("SELECT * FROM movies WHERE id = ?", (movie_id,))
-                    full_movie = await full_row.fetchone()
-                    if full_movie:
-                        await write_strm_for_movie(dict(full_movie))
-                        strm_count = _count_strm_folders()
-                        await db.execute("UPDATE sync_state SET active_strm_count = ? WHERE id = 1", (strm_count,))
+                        await db.execute(
+                            "UPDATE movies SET activated = 1, stream_dead = 0, stream_dead_count = 0, "
+                            "stream_id = ?, account_id = ?, account_name = ?, content_type = ?, "
+                            "container_extension = ?, alt_streams = ?, "
+                            "header_data = ?, header_size = ?, "
+                            "tail_data = ?, tail_size = ?, tail_offset = ?, "
+                            "file_size = CASE WHEN ? IS NOT NULL THEN ? ELSE file_size END "
+                            "WHERE id = ?",
+                            (sid, stream_info.get("account_id"), stream_info.get("account_name", ""),
+                             new_ct, ext, _json.dumps(remaining_alts),
+                             result["header_bytes"], len(result["header_bytes"]),
+                             result["tail_bytes"], len(result["tail_bytes"]) if result["tail_bytes"] else 0,
+                             result["tail_offset"], result["file_size"], result["file_size"], movie_id),
+                        )
                         await db.commit()
-                finally:
-                    pass
+                        activated_ids.append(movie_id)
+                        source = f" (fallback #{attempt_idx})" if attempt_idx > 0 else ""
+                        logger.info("Activated movie %d (%s)%s: head=%d bytes, tail=%d bytes, file_size=%s",
+                                    movie_id, movie_name, source, len(result["header_bytes"]),
+                                    len(result["tail_bytes"]) if result["tail_bytes"] else 0, result["file_size"])
+                        _log_event("info", movie_id, f"Activated — head+tail cached{source}",
+                                   movie_name=movie_name,
+                                   head_bytes=len(result["header_bytes"]),
+                                   tail_bytes=len(result["tail_bytes"]) if result["tail_bytes"] else 0,
+                                   file_size=result["file_size"])
+
+                        full_row = await db.execute("SELECT * FROM movies WHERE id = ?", (movie_id,))
+                        full_movie = await full_row.fetchone()
+                        if full_movie:
+                            await write_strm_for_movie(dict(full_movie))
+                            strm_count = _count_strm_folders()
+                            await db.execute("UPDATE sync_state SET active_strm_count = ? WHERE id = 1", (strm_count,))
+                            await db.commit()
+                    finally:
+                        pass
+                    activated = True
+                    break
+
+            if not activated:
+                _log_event("error", movie_id,
+                           f"All {len(streams_to_try)} streams failed — marking dead",
+                           movie_name=movie_name)
+                await _mark_activation_dead(movie_id, movie_name, movie.get("year"),
+                                           f"all {len(streams_to_try)} streams failed")
+                failed_ids.append(movie_id)
 
         except Exception as e:
             logger.error("Activate error for movie %d (%s): %s", movie_id, movie_name, e)
@@ -1502,10 +1554,9 @@ async def _plex_remove_movies(movie_ids: list[int]):
 
 
 def _movie_folder_name(movie) -> str:
-    name = movie["name"]
-    year = movie["year"]
-    clean = re.sub(r'\s*[-–]\s*\d{4}\s*$', '', name).strip()
-    clean = re.sub(r'\s*\(\d{4}\)\s*$', '', clean).strip()
+    parsed = parse_title(movie["name"], movie["year"])
+    clean = parsed['title']
+    year = parsed['year']
     if year:
         return sanitize_filename(f"{clean} ({year})")
     return sanitize_filename(clean)
