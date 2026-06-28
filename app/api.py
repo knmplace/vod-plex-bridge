@@ -578,6 +578,81 @@ async def active_streams():
     return {"streams": streams}
 
 
+@router.get("/plex/sessions")
+async def plex_sessions():
+    if not PLEX_URL or not PLEX_TOKEN:
+        return {"sessions": [], "error": "PLEX_URL or PLEX_TOKEN not configured"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                f"{PLEX_URL}/status/sessions",
+                headers={"X-Plex-Token": PLEX_TOKEN, "Accept": "application/json"},
+            )
+            if resp.status_code != 200:
+                return {"sessions": [], "error": f"Plex returned {resp.status_code}"}
+            data = resp.json()
+    except Exception as e:
+        logger.warning("Plex sessions query failed: %s", e)
+        return {"sessions": [], "error": str(e)}
+
+    mc = data.get("MediaContainer", {})
+    raw_sessions = mc.get("Metadata", [])
+
+    sessions = []
+    for s in raw_sessions:
+        media = s.get("Media", [{}])[0]
+        parts = media.get("Part", [{}])
+        file_path = parts[0].get("file", "") if parts else ""
+        is_bridge = "vod-bridge" in file_path or "vod_bridge" in file_path
+
+        player = s.get("Player", {})
+        user = s.get("User", {})
+        transcode = s.get("TranscodeSession", {})
+        session_obj = s.get("Session", {})
+
+        video_stream = None
+        audio_stream = None
+        for part in parts:
+            for stream in part.get("Stream", []):
+                if stream.get("streamType") == 1 and not video_stream:
+                    video_stream = stream
+                elif stream.get("streamType") == 2 and not audio_stream:
+                    audio_stream = stream
+
+        duration_ms = int(s.get("duration", 0))
+        view_offset_ms = int(s.get("viewOffset", 0))
+
+        sessions.append({
+            "title": s.get("title", "Unknown"),
+            "year": s.get("year"),
+            "type": s.get("type", "movie"),
+            "thumb": s.get("thumb", ""),
+            "state": player.get("state", "unknown"),
+            "player_title": player.get("title", "Unknown Player"),
+            "player_device": player.get("device", ""),
+            "player_platform": player.get("platform", ""),
+            "player_local": player.get("local", True),
+            "player_address": player.get("remotePublicAddress") or player.get("address", ""),
+            "user_title": user.get("title", "Unknown"),
+            "duration_ms": duration_ms,
+            "view_offset_ms": view_offset_ms,
+            "progress_pct": round(view_offset_ms / duration_ms * 100, 1) if duration_ms > 0 else 0,
+            "video_codec": media.get("videoCodec", ""),
+            "video_resolution": media.get("videoResolution", ""),
+            "audio_codec": media.get("audioCodec", ""),
+            "audio_channels": media.get("audioChannels", 0),
+            "video_decision": video_stream.get("decision", "") if video_stream else transcode.get("videoDecision", ""),
+            "audio_decision": audio_stream.get("decision", "") if audio_stream else transcode.get("audioDecision", ""),
+            "bandwidth_kbps": int(session_obj.get("bandwidth", 0)),
+            "is_bridge": is_bridge,
+            "file_path": file_path,
+            "container": media.get("container", ""),
+            "bitrate_kbps": int(media.get("bitrate", 0)),
+        })
+
+    return {"sessions": sessions}
+
+
 @router.post("/movies/activate")
 async def activate_movies(request: Request):
     data = await request.json()

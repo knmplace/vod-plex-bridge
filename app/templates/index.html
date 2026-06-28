@@ -787,11 +787,74 @@
             line-height: 1.5;
         }
 
+        .plex-section-label {
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin: 0.75rem 0 0.4rem;
+            padding-bottom: 0.25rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .plex-section-label.bridge { color: var(--success); border-color: var(--success); }
+        .plex-section-label.local { color: var(--accent); border-color: var(--accent); }
+
+        .plex-session {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 0.75rem;
+            align-items: center;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.6rem 0.8rem;
+            margin-bottom: 0.5rem;
+        }
+        .plex-session.bridge-session { border-left: 3px solid var(--success); }
+        .plex-session.local-session { border-left: 3px solid var(--accent); }
+
+        .plex-session-state {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .plex-session-state .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+        .plex-session-state .dot.playing { background: var(--success); animation: pulse 1s infinite; }
+        .plex-session-state .dot.paused { background: var(--warning); }
+        .plex-session-state .dot.buffering { background: var(--warning); animation: pulse 0.5s infinite; }
+
+        .plex-session-title { font-weight: 600; font-size: 0.88rem; }
+        .plex-session-meta { font-size: 0.72rem; color: var(--text-muted); }
+        .plex-session-progress {
+            height: 4px;
+            background: var(--bg-secondary);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 0.3rem;
+        }
+        .plex-session-progress-bar {
+            height: 100%;
+            background: var(--success);
+            border-radius: 2px;
+            transition: width 1s linear;
+        }
+        .plex-session-right {
+            text-align: right;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+        .plex-session-right .bandwidth { font-weight: 600; }
+
         @media (max-width: 768px) {
             .top-panels { grid-template-columns: 1fr; }
             .summary-grid { grid-template-columns: 1fr; }
             .summary-grid-3 { grid-template-columns: 1fr; }
             .stream-segments { grid-template-columns: 1fr; }
+            .plex-session { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -1149,6 +1212,22 @@
                     <div class="empty-state">No active streams</div>
                 </div>
             </div>
+
+            <div class="panel" style="margin-top:1rem;">
+                <div class="panel-header">
+                    Plex Now Playing
+                    <span class="tab-badge" id="plexSessionsBadge" style="display:none;margin-left:0.4rem;">0</span>
+                    <div style="display:flex;gap:0.4rem;align-items:center;margin-left:auto;">
+                        <label style="font-size:0.7rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                            <input type="checkbox" id="plexAutoRefresh" checked style="accent-color:var(--accent);"> Auto-refresh
+                        </label>
+                        <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="loadPlexSessions()">Refresh</button>
+                    </div>
+                </div>
+                <div class="panel-body" id="plexSessionsContainer">
+                    <div class="empty-state">No active Plex sessions</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1342,9 +1421,11 @@
                 tabs[4].classList.add('active');
                 document.getElementById('tabStreams').classList.add('active');
                 loadActiveStreams();
+                loadPlexSessions();
                 logRefreshTimer = setInterval(() => {
                     if (document.getElementById('streamAutoRefresh').checked) loadActiveStreams();
-                }, 2000);
+                    if (document.getElementById('plexAutoRefresh').checked) loadPlexSessions();
+                }, 3000);
             } else if (tab === 'health') {
                 tabs[5].classList.add('active');
                 document.getElementById('tabHealth').classList.add('active');
@@ -2857,6 +2938,106 @@
             </div>`;
         }
 
+        // --- Plex Now Playing ---
+        async function loadPlexSessions() {
+            try {
+                const data = await fetchJSON('/api/plex/sessions');
+                const container = document.getElementById('plexSessionsContainer');
+                const badge = document.getElementById('plexSessionsBadge');
+
+                if (data.error && !data.sessions.length) {
+                    container.innerHTML = `<div class="empty-state">${escapeHtml(data.error)}</div>`;
+                    badge.style.display = 'none';
+                    return;
+                }
+
+                if (!data.sessions.length) {
+                    container.innerHTML = '<div class="empty-state">Nothing playing in Plex right now</div>';
+                    badge.style.display = 'none';
+                    return;
+                }
+
+                badge.textContent = data.sessions.length;
+                badge.style.display = 'inline';
+
+                const bridge = data.sessions.filter(s => s.is_bridge);
+                const local = data.sessions.filter(s => !s.is_bridge);
+
+                let html = '';
+                if (bridge.length) {
+                    html += '<div class="plex-section-label bridge">Bridge Content</div>';
+                    html += bridge.map(s => renderPlexSession(s, true)).join('');
+                }
+                if (local.length) {
+                    html += '<div class="plex-section-label local">Local / Live TV</div>';
+                    html += local.map(s => renderPlexSession(s, false)).join('');
+                }
+                container.innerHTML = html;
+            } catch (e) {
+                document.getElementById('plexSessionsContainer').innerHTML = '<div class="empty-state">Failed to load Plex sessions</div>';
+            }
+        }
+
+        function renderPlexSession(s, isBridge) {
+            const state = s.state || 'unknown';
+            const dotClass = state === 'playing' ? 'playing' : state === 'paused' ? 'paused' : 'buffering';
+            const stateLabel = state.charAt(0).toUpperCase() + state.slice(1);
+            const yearStr = s.year ? ` (${s.year})` : '';
+
+            const pos = formatDuration(Math.round((s.view_offset_ms || 0) / 1000));
+            const dur = formatDuration(Math.round((s.duration_ms || 0) / 1000));
+            const pct = s.progress_pct || 0;
+
+            const playerInfo = s.player_title || s.player_device || 'Unknown';
+            const location = s.player_local ? 'Local' : 'Remote';
+            const address = s.player_address ? ` (${s.player_address})` : '';
+
+            let qualityLine = '';
+            if (s.video_resolution) {
+                const res = s.video_resolution.toUpperCase();
+                const vCodec = (s.video_codec || '').toUpperCase();
+                const vDec = s.video_decision;
+                qualityLine = `${res} ${vCodec}`;
+                if (vDec && vDec !== 'copy') qualityLine += ` (${vDec})`;
+            }
+
+            let audioLine = '';
+            if (s.audio_codec) {
+                audioLine = s.audio_codec.toUpperCase();
+                if (s.audio_channels) audioLine += ` ${s.audio_channels}ch`;
+                const aDec = s.audio_decision;
+                if (aDec && aDec !== 'copy') audioLine += ` (${aDec})`;
+            }
+
+            const bw = s.bandwidth_kbps;
+            const bwStr = bw >= 1000 ? (bw / 1000).toFixed(1) + ' Mbps' : bw + ' Kbps';
+
+            const sessionClass = isBridge ? 'bridge-session' : 'local-session';
+            const typeLabel = s.type === 'episode' ? 'TV' : s.type === 'track' ? 'Music' : '';
+
+            return `<div class="plex-session ${sessionClass}">
+                <div class="plex-session-state">
+                    <span class="dot ${dotClass}"></span>
+                </div>
+                <div>
+                    <div class="plex-session-title">${escapeHtml(s.title)}${yearStr}${typeLabel ? ' <span style="font-size:0.68rem;color:var(--text-muted);font-weight:400;">' + typeLabel + '</span>' : ''}</div>
+                    <div class="plex-session-meta">
+                        ${escapeHtml(playerInfo)} &mdash; ${location}${address}
+                        ${qualityLine ? ' &bull; ' + qualityLine : ''}
+                        ${audioLine ? ' &bull; ' + audioLine : ''}
+                    </div>
+                    <div class="plex-session-progress">
+                        <div class="plex-session-progress-bar" style="width:${pct}%"></div>
+                    </div>
+                </div>
+                <div class="plex-session-right">
+                    <div>${pos} / ${dur}</div>
+                    <div>${stateLabel}</div>
+                    ${bw ? '<div class="bandwidth">' + bwStr + '</div>' : ''}
+                </div>
+            </div>`;
+        }
+
         function formatDuration(secs) {
             if (!secs || secs <= 0) return '0:00';
             const h = Math.floor(secs / 3600);
@@ -2872,14 +3053,22 @@
             return Math.round(bps / 1024) + ' KB/s';
         }
 
-        // Refresh stream badge on status poll
+        // Refresh stream badge on status poll — shows pipe count + plex session count
         async function refreshStreamBadge() {
             try {
-                const data = await fetchJSON('/api/streams/active');
+                let pipeCount = 0, plexCount = 0;
+                try {
+                    const data = await fetchJSON('/api/streams/active');
+                    pipeCount = data.streams.filter(s => s.status === 'streaming' || s.status === 'starting').length;
+                } catch(e) {}
+                try {
+                    const plex = await fetchJSON('/api/plex/sessions');
+                    plexCount = (plex.sessions || []).length;
+                } catch(e) {}
                 const badge = document.getElementById('streamsBadge');
-                const active = data.streams.filter(s => s.status === 'streaming' || s.status === 'starting');
-                if (active.length > 0) {
-                    badge.textContent = active.length;
+                const total = Math.max(pipeCount, plexCount);
+                if (total > 0) {
+                    badge.textContent = total;
                     badge.style.display = 'inline';
                 } else {
                     badge.style.display = 'none';
