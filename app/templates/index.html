@@ -1354,9 +1354,10 @@
                         <strong style="color:#e6edf3;">2. Categories</strong><span>Reloads category mappings and provider list from dump files</span>
                         <strong style="color:#e6edf3;">3. Catalog Refresh</strong><span>Pages through all Dispatcharr VOD movies — adds new movies, updates metadata, detects UUID changes</span>
                         <strong style="color:#e6edf3;">4. Stream Mapping</strong><span>Applies fresh stream_ids to all movies in the bridge DB</span>
-                        <strong style="color:#e6edf3;">5. TMDB Search</strong><span>Finds TMDB metadata for movies missing tmdb_id</span>
-                        <strong style="color:#e6edf3;">6. Activated Refresh</strong><span>Updates stream_ids for activated movies (DB only — no provider connections)</span>
-                        <strong style="color:#e6edf3;">7. Language Detection</strong><span>Detects languages via TMDB for movies missing language tags (background)</span>
+                        <strong style="color:#e6edf3;">5. Metadata Enrichment</strong><span>Fills genre, description, director, cast, country from Dispatcharr provider-info (no provider calls)</span>
+                        <strong style="color:#e6edf3;">6. TMDB Search</strong><span>Finds TMDB metadata for movies missing tmdb_id</span>
+                        <strong style="color:#e6edf3;">7. Activated Refresh</strong><span>Updates stream_ids for activated movies (DB only — no provider connections)</span>
+                        <strong style="color:#e6edf3;">8. Language Detection</strong><span>Detects languages via TMDB for movies missing language tags (background)</span>
                     </div>
                 </div>
             </div>
@@ -1822,7 +1823,8 @@
                          onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
                     <div class="info">
                         <div class="title" title="${(m.name||'').replace(/"/g,'&quot;')}">${m.name || 'Unknown'}</div>
-                        <div class="meta">${m.year || '?'} &middot; ${m.rating || '-'}</div>
+                        <div class="meta">${m.year || '?'} &middot; ${m.rating || '-'}${m.country ? ' &middot; ' + m.country : ''}</div>
+                        ${m.director ? '<div class="meta" style="font-size:0.65rem;opacity:0.7;margin-top:-2px">' + m.director.split(',').slice(0,2).join(', ') + '</div>' : ''}
                         ${m.account_name ? '<div class="provider-tag">' + m.account_name + '</div>' : ''}
                         ${m.language ? '<div class="provider-tag" style="color:var(--warning)">' + getLangName(m.language) + '</div>' : ''}
                     </div>

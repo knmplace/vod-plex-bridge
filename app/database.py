@@ -110,6 +110,10 @@ async def init_db():
         "ALTER TABLE movies ADD COLUMN duration_seconds INTEGER",
         "ALTER TABLE movies ADD COLUMN stream_bitrate_kbps INTEGER",
         "ALTER TABLE movies ADD COLUMN tmdb_searched INTEGER DEFAULT 0",
+        "ALTER TABLE movies ADD COLUMN director TEXT DEFAULT ''",
+        "ALTER TABLE movies ADD COLUMN country TEXT DEFAULT ''",
+        "ALTER TABLE movies ADD COLUMN release_date TEXT DEFAULT ''",
+        "ALTER TABLE movies ADD COLUMN added_at TEXT",
     ]:
         try:
             await db.execute(col)

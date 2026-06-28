@@ -491,7 +491,8 @@ async def list_movies(
 
         rows = await db.execute(
             f"SELECT m.id, m.name, m.year, m.rating, m.genre, m.tmdb_id, m.poster_url, "
-            f"m.activated, m.account_id, m.account_name, m.trailer_key, m.language "
+            f"m.activated, m.account_id, m.account_name, m.trailer_key, m.language, "
+            f"m.director, m.country "
             f"FROM movies m WHERE {where} ORDER BY m.{sort_col} {order} LIMIT ? OFFSET ?",
             params + [page_size, offset],
         )
@@ -1061,7 +1062,8 @@ async def resurrection_scheduler():
 
 
 async def _fetch_provider_info(movie_id: int):
-    """Fetch bitrate and duration from Dispatcharr's provider-info endpoint."""
+    """Fetch rich metadata from Dispatcharr's provider-info endpoint (no provider calls).
+    Pulls: bitrate, duration, genre, description, director, actors, country, release_date."""
     try:
         url = f"{DISPATCHARR_URL}/api/vod/movies/{movie_id}/provider-info/"
         headers = {}
@@ -1075,18 +1077,41 @@ async def _fetch_provider_info(movie_id: int):
             bitrate = data.get("bitrate")
             duration_str = data.get("duration_secs")
             duration = int(duration_str) if duration_str and str(duration_str).isdigit() else None
-            if bitrate or duration:
-                db = await get_db()
+
+            genre = (data.get("genre") or "").strip()
+            description = (data.get("description") or data.get("plot") or "").strip()
+            director = (data.get("director") or "").strip()
+            actors = (data.get("actors") or "").strip()
+            country = (data.get("country") or "").strip()
+            release_date = (data.get("release_date") or "").strip()
+            added_ts = data.get("added")
+            added_at = None
+            if added_ts and str(added_ts).isdigit():
+                from datetime import datetime as dt, timezone as tz
                 try:
-                    await db.execute(
-                        "UPDATE movies SET stream_bitrate_kbps = COALESCE(?, stream_bitrate_kbps), "
-                        "duration_seconds = COALESCE(?, duration_seconds) WHERE id = ?",
-                        (bitrate, duration, movie_id),
-                    )
-                    await db.commit()
-                    logger.info("Provider info for movie %d: bitrate=%s kbps, duration=%ss", movie_id, bitrate, duration)
-                finally:
+                    added_at = dt.fromtimestamp(int(added_ts), tz=tz.utc).isoformat()
+                except (ValueError, OSError):
                     pass
+
+            db = await get_db()
+            try:
+                await db.execute(
+                    "UPDATE movies SET "
+                    "stream_bitrate_kbps = COALESCE(?, stream_bitrate_kbps), "
+                    "duration_seconds = COALESCE(?, duration_seconds), "
+                    "genre = CASE WHEN genre IS NULL OR genre = '' THEN ? ELSE genre END, "
+                    "description = CASE WHEN description IS NULL OR description = '' THEN ? ELSE description END, "
+                    "director = CASE WHEN director IS NULL OR director = '' THEN ? ELSE director END, "
+                    "cast_info = CASE WHEN cast_info IS NULL OR cast_info = '' THEN ? ELSE cast_info END, "
+                    "country = CASE WHEN country IS NULL OR country = '' THEN ? ELSE country END, "
+                    "release_date = CASE WHEN release_date IS NULL OR release_date = '' THEN ? ELSE release_date END, "
+                    "added_at = COALESCE(?, added_at) "
+                    "WHERE id = ?",
+                    (bitrate, duration, genre, description, director, actors, country, release_date, added_at, movie_id),
+                )
+                await db.commit()
+            finally:
+                pass
             return {"bitrate": bitrate, "duration": duration}
     except Exception as e:
         logger.warning("Failed to fetch provider info for movie %d: %s", movie_id, e)
@@ -2653,8 +2678,32 @@ async def _set_status(status: str, message: str):
         pass
 
 
+async def _enrich_from_provider_info(batch_size: int = 200):
+    """Batch-enrich movies with metadata from Dispatcharr provider-info endpoint.
+    Fills genre, description, director, actors, country for movies missing them.
+    All Dispatcharr API — no provider connections."""
+    db = await get_db()
+    rows = await db.execute(
+        "SELECT id FROM movies WHERE (genre IS NULL OR genre = '' OR description IS NULL OR description = '') "
+        "AND name != '' LIMIT ?",
+        (batch_size,),
+    )
+    movie_ids = [r["id"] for r in await rows.fetchall()]
+    if not movie_ids:
+        return 0
+
+    enriched = 0
+    for mid in movie_ids:
+        result = await _fetch_provider_info(mid)
+        if result:
+            enriched += 1
+        await asyncio.sleep(0.05)
+    logger.info("Provider-info enrichment: %d/%d movies enriched", enriched, len(movie_ids))
+    return enriched
+
+
 async def _run_scheduled_refresh():
-    """Safe refresh cycle: dump regen → categories → catalog refresh → apply mapping → TMDB search → activated stream_id update → language detection.
+    """Safe refresh cycle: dump regen → categories → catalog refresh → apply mapping → provider-info enrichment → TMDB search → activated stream_id update → language detection.
     NO provider calls. NO dead scan. All data comes from Dispatcharr API and TMDB only."""
     import time
     start = time.time()
@@ -2696,7 +2745,15 @@ async def _run_scheduled_refresh():
         except Exception as e:
             report.append(f"Stream mapping: FAILED ({e})")
 
-        # 5. TMDB title search for missing metadata
+        # 5. Provider-info enrichment (Dispatcharr API only)
+        await _set_status("refreshing", "Refresh: enriching metadata from Dispatcharr...")
+        try:
+            pi_enriched = await _enrich_from_provider_info(batch_size=500)
+            report.append(f"Provider-info enrichment: {pi_enriched} movies enriched")
+        except Exception as e:
+            report.append(f"Provider-info enrichment: FAILED ({e})")
+
+        # 6. TMDB title search for missing metadata
         await _set_status("refreshing", "Refresh: searching TMDB for unmatched movies...")
         try:
             tmdb_result = await search_tmdb_for_missing()
@@ -2704,7 +2761,7 @@ async def _run_scheduled_refresh():
         except Exception as e:
             report.append(f"TMDB search: FAILED ({e})")
 
-        # 6. Activated stream_id refresh (DB only, no provider calls)
+        # 7. Activated stream_id refresh (DB only, no provider calls)
         await _set_status("refreshing", "Refresh: checking activated movies for stream_id changes...")
         try:
             updated = await _refresh_activated_stream_ids()
@@ -2712,7 +2769,7 @@ async def _run_scheduled_refresh():
         except Exception as e:
             report.append(f"Activated refresh: FAILED ({e})")
 
-        # 7. Language detection (background, TMDB API only)
+        # 8. Language detection (background, TMDB API only)
         if TMDB_API_KEY or TMDB_READ_TOKEN:
             asyncio.create_task(_bulk_detect_languages())
             report.append("Language detection: started in background")

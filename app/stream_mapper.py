@@ -17,8 +17,8 @@ MAPPING_FILE = os.environ.get("STREAM_MAPPING_FILE", "/data/stream_mapping.json"
 # Provider groups: accounts that share the same stream_ids.
 # First account in each group is used as the canonical "provider name".
 PROVIDER_GROUPS = {
-    "amber": [10, 13, 14],
-    "warptv": [2, 11, 12],
+    "amber": [10, 13, 14, 17],
+    "warptv": [2, 11],
 }
 
 
