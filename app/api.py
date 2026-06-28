@@ -2132,12 +2132,8 @@ async def set_schedule(request: Request):
 
 @router.post("/sync/refresh")
 async def trigger_manual_refresh():
-    global _refresh_running
-    if _refresh_running:
-        return JSONResponse(status_code=409, content={"error": "Refresh already running"})
-    _refresh_running = True
-    asyncio.create_task(_run_scheduled_refresh_guarded())
-    return {"status": "started", "message": "Manual catalog refresh started in background"}
+    # DISABLED: refresh disabled pending redesign of dead scan logic
+    return JSONResponse(status_code=503, content={"error": "Catalog refresh is temporarily disabled pending redesign"})
 
 
 async def _run_scheduled_refresh_guarded():
@@ -2437,8 +2433,8 @@ async def _run_tmdb_search():
 
 @router.post("/movies/dead/scan")
 async def trigger_dead_scan():
-    asyncio.create_task(_run_dead_scan())
-    return {"status": "started", "message": "Dead movie scan started"}
+    # DISABLED: dead scan disabled pending redesign
+    return JSONResponse(status_code=503, content={"error": "Dead scan is temporarily disabled pending redesign"})
 
 
 async def _run_dead_scan():
@@ -2599,17 +2595,12 @@ async def _get_refresh_interval_hours() -> int:
 
 
 async def start_dead_scan_scheduler():
+    # DISABLED: scheduled refresh disabled pending redesign of dead scan logic
+    # The dead scan was marking 7200+ movies dead by sweeping stream_dead flags
+    # that were set by provider rate-limiting during probe/validation cycles.
+    logger.info("Scheduled catalog refresh is DISABLED pending redesign")
     while True:
-        interval = await _get_refresh_interval_hours()
-        if interval <= 0:
-            await asyncio.sleep(300)
-            continue
-        await asyncio.sleep(interval * 3600)
-        if _refresh_running:
-            logger.info("Scheduled refresh skipped — manual refresh already running")
-            continue
-        logger.info("Scheduled catalog refresh starting (interval: %dh)...", interval)
-        await _run_scheduled_refresh_guarded()
+        await asyncio.sleep(300)
 
 
 LOG_ARCHIVE_INTERVAL = int(os.environ.get("LOG_ARCHIVE_INTERVAL", 4 * 3600))
