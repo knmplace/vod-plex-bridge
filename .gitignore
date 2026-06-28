@@ -17,4 +17,5 @@ app/cache.py
 /data/
 /buffers/
 PICKUP.md
+SAFE_DEAD_DETECTION.md
 images/
