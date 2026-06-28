@@ -39,6 +39,10 @@ async def _upsert_movie(db, movie):
         poster_url = logo["url"]
 
     trailer_key = custom.get("youtube_trailer") or custom.get("trailer") or None
+    cast_info = custom.get("actors") or custom.get("cast") or ""
+    director = custom.get("director") or ""
+    backdrop_paths = custom.get("backdrop_path") or []
+    backdrop_url = backdrop_paths[0] if isinstance(backdrop_paths, list) and backdrop_paths else ""
 
     new_uuid = movie["uuid"]
     movie_id = movie["id"]
@@ -56,14 +60,18 @@ async def _upsert_movie(db, movie):
 
     await db.execute("""
         INSERT INTO movies (id, uuid, name, year, rating, genre, description,
-                           tmdb_id, imdb_id, poster_url, cast_info, trailer_key, synced_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           tmdb_id, imdb_id, poster_url, cast_info, trailer_key,
+                           director, backdrop_url, synced_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             uuid=excluded.uuid, name=excluded.name, year=excluded.year,
             rating=excluded.rating, genre=excluded.genre,
             description=excluded.description, tmdb_id=excluded.tmdb_id,
-            poster_url=excluded.poster_url, cast_info=excluded.cast_info,
+            poster_url=excluded.poster_url,
+            cast_info = CASE WHEN movies.cast_info IS NULL OR movies.cast_info = '' THEN excluded.cast_info ELSE movies.cast_info END,
             trailer_key=excluded.trailer_key,
+            director = CASE WHEN movies.director IS NULL OR movies.director = '' THEN excluded.director ELSE movies.director END,
+            backdrop_url = CASE WHEN movies.backdrop_url IS NULL OR movies.backdrop_url = '' THEN excluded.backdrop_url ELSE movies.backdrop_url END,
             synced_at=excluded.synced_at
     """, (
         movie_id,
@@ -76,8 +84,10 @@ async def _upsert_movie(db, movie):
         movie.get("tmdb_id"),
         movie.get("imdb_id"),
         poster_url,
-        custom.get("cast", ""),
+        cast_info,
         trailer_key,
+        director,
+        backdrop_url,
         datetime.now(timezone.utc).isoformat(),
     ))
 

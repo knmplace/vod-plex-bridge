@@ -148,6 +148,17 @@ async def generate_strm_files():
                     except Exception as e:
                         logger.debug(f"Failed to download poster for {name}: {e}")
 
+                backdrop_url = movie["backdrop_url"] if "backdrop_url" in movie.keys() else None
+                fanart_path = os.path.join(folder_path, "fanart.jpg")
+                if backdrop_url and not os.path.exists(fanart_path):
+                    try:
+                        resp = await client.get(backdrop_url)
+                        if resp.status_code == 200:
+                            with open(fanart_path, "wb") as f:
+                                f.write(resp.content)
+                    except Exception as e:
+                        logger.debug(f"Failed to download fanart for {name}: {e}")
+
                 generated += 1
 
         stale_dirs = existing_dirs - generated_dirs
@@ -198,17 +209,28 @@ async def write_strm_for_movie(movie):
     with open(nfo_path, "w", encoding="utf-8") as f:
         f.write(build_nfo(movie))
 
-    poster_url = movie.get("poster_url") or ""
-    poster_path = os.path.join(folder_path, "poster.jpg")
-    if poster_url and not os.path.exists(poster_path):
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        poster_url = movie.get("poster_url") or ""
+        poster_path = os.path.join(folder_path, "poster.jpg")
+        if poster_url and not os.path.exists(poster_path):
+            try:
                 resp = await client.get(poster_url)
                 if resp.status_code == 200:
                     with open(poster_path, "wb") as f:
                         f.write(resp.content)
-        except Exception:
-            pass
+            except Exception:
+                pass
+
+        backdrop_url = movie.get("backdrop_url") or ""
+        fanart_path = os.path.join(folder_path, "fanart.jpg")
+        if backdrop_url and not os.path.exists(fanart_path):
+            try:
+                resp = await client.get(backdrop_url)
+                if resp.status_code == 200:
+                    with open(fanart_path, "wb") as f:
+                        f.write(resp.content)
+            except Exception:
+                pass
 
     return True
 
@@ -221,6 +243,39 @@ def build_nfo(movie) -> str:
             if g:
                 genres += f"    <genre>{escape_xml(g)}</genre>\n"
 
+    director_tag = ""
+    director = movie.get("director") or ""
+    if director:
+        director_tag = f"    <director>{escape_xml(director)}</director>\n"
+
+    actors = ""
+    cast_info = movie.get("cast_info") or ""
+    if cast_info:
+        for a in cast_info.split(","):
+            a = a.strip()
+            if a:
+                actors += f"    <actor>\n        <name>{escape_xml(a)}</name>\n    </actor>\n"
+
+    country_tag = ""
+    country = movie.get("country") or ""
+    if country:
+        country_tag = f"    <country>{escape_xml(country)}</country>\n"
+
+    fanart_tag = ""
+    backdrop = movie.get("backdrop_url") or ""
+    if backdrop:
+        fanart_tag = f"    <fanart>\n        <thumb>{escape_xml(backdrop)}</thumb>\n    </fanart>\n"
+
+    trailer_tag = ""
+    trailer_key = movie.get("trailer_key") or ""
+    if trailer_key:
+        trailer_tag = f"    <trailer>plugin://plugin.video.youtube/?action=play_video&amp;videoid={escape_xml(trailer_key)}</trailer>\n"
+
+    release_tag = ""
+    release_date = movie.get("release_date") or ""
+    if release_date:
+        release_tag = f"    <premiered>{escape_xml(release_date)}</premiered>\n"
+
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <movie>
     <title>{escape_xml(movie["name"])}</title>
@@ -229,8 +284,8 @@ def build_nfo(movie) -> str:
     <plot>{escape_xml(movie["description"] or "")}</plot>
     <tmdbid>{escape_xml(movie["tmdb_id"] or "")}</tmdbid>
     <imdbid>{escape_xml(movie["imdb_id"] or "")}</imdbid>
-{genres}    <thumb aspect="poster">{escape_xml(movie["poster_url"] or "")}</thumb>
-</movie>
+{genres}{director_tag}{country_tag}{release_tag}{trailer_tag}    <thumb aspect="poster">{escape_xml(movie["poster_url"] or "")}</thumb>
+{fanart_tag}{actors}</movie>
 """
 
 

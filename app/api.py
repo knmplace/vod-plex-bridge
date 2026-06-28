@@ -1063,9 +1063,18 @@ async def resurrection_scheduler():
             logger.error("Resurrection scheduler error: %s", e)
 
 
+_CONTAINER_CONTENT_TYPE = {
+    "mp4": "video/mp4",
+    "mkv": "video/x-matroska",
+    "avi": "video/x-msvideo",
+    "ts": "video/mp2t",
+}
+
+
 async def _fetch_provider_info(movie_id: int):
     """Fetch rich metadata from Dispatcharr's provider-info endpoint (no provider calls).
-    Pulls: bitrate, duration, genre, description, director, actors, country, release_date."""
+    Pulls: bitrate, duration, genre, description, director, actors, country, release_date,
+    container_extension, backdrop, cover URLs, original name."""
     try:
         url = f"{DISPATCHARR_URL}/api/vod/movies/{movie_id}/provider-info/"
         headers = {}
@@ -1086,6 +1095,17 @@ async def _fetch_provider_info(movie_id: int):
             actors = (data.get("actors") or "").strip()
             country = (data.get("country") or "").strip()
             release_date = (data.get("release_date") or "").strip()
+            original_name = (data.get("o_name") or "").strip()
+
+            container_ext = (data.get("container_extension") or "").strip().lower()
+            content_type = _CONTAINER_CONTENT_TYPE.get(container_ext, "")
+
+            backdrop_paths = data.get("backdrop_path") or []
+            backdrop_url = backdrop_paths[0] if isinstance(backdrop_paths, list) and backdrop_paths else ""
+
+            cover_big = (data.get("cover_big") or "").strip()
+            movie_image = (data.get("movie_image") or "").strip()
+
             added_ts = data.get("added")
             added_at = None
             if added_ts and str(added_ts).isdigit():
@@ -1107,14 +1127,21 @@ async def _fetch_provider_info(movie_id: int):
                     "cast_info = CASE WHEN cast_info IS NULL OR cast_info = '' THEN ? ELSE cast_info END, "
                     "country = CASE WHEN country IS NULL OR country = '' THEN ? ELSE country END, "
                     "release_date = CASE WHEN release_date IS NULL OR release_date = '' THEN ? ELSE release_date END, "
-                    "added_at = COALESCE(?, added_at) "
+                    "added_at = COALESCE(?, added_at), "
+                    "container_extension = CASE WHEN container_extension IS NULL OR container_extension = '' THEN ? ELSE container_extension END, "
+                    "content_type = CASE WHEN ? != '' THEN ? ELSE content_type END, "
+                    "backdrop_url = CASE WHEN backdrop_url IS NULL OR backdrop_url = '' THEN ? ELSE backdrop_url END, "
+                    "original_name = CASE WHEN original_name IS NULL OR original_name = '' THEN ? ELSE original_name END, "
+                    "poster_url = CASE WHEN poster_url IS NULL OR poster_url = '' THEN COALESCE(NULLIF(?, ''), NULLIF(?, '')) ELSE poster_url END "
                     "WHERE id = ?",
-                    (bitrate, duration, genre, description, director, actors, country, release_date, added_at, movie_id),
+                    (bitrate, duration, genre, description, director, actors, country, release_date,
+                     added_at, container_ext, content_type, content_type, backdrop_url, original_name,
+                     cover_big, movie_image, movie_id),
                 )
                 await db.commit()
             finally:
                 pass
-            return {"bitrate": bitrate, "duration": duration}
+            return {"bitrate": bitrate, "duration": duration, "stream_id": data.get("stream_id")}
     except Exception as e:
         logger.warning("Failed to fetch provider info for movie %d: %s", movie_id, e)
         return None
@@ -2033,6 +2060,10 @@ async def _run_catalog_sync(max_movies: int = 0, category_ids: list = None, acco
         if not is_cancelled():
             await apply_stream_mapping_to_db()
         if not is_cancelled():
+            await _set_status("enriching", "Enriching metadata from Dispatcharr...")
+            enriched = await _enrich_from_provider_info(batch_size=1000)
+            logger.info("Post-sync provider-info enrichment: %d movies", enriched)
+        if not is_cancelled():
             await search_tmdb_for_missing()
 
         if not is_cancelled() and (TMDB_API_KEY or TMDB_READ_TOKEN):
@@ -2492,8 +2523,8 @@ async def _run_tmdb_search():
 
 @router.post("/movies/dead/scan")
 async def trigger_dead_scan():
-    # DISABLED: dead scan disabled pending redesign
-    return JSONResponse(status_code=503, content={"error": "Dead scan is temporarily disabled pending redesign"})
+    asyncio.create_task(_run_dead_scan())
+    return {"status": "started", "message": "Dead scan started (catalog + provider-info check)"}
 
 
 async def _run_dead_scan():
@@ -2559,20 +2590,49 @@ async def _run_dead_scan():
         )
         catalog_movies = await rows.fetchall()
 
+        # Provider-info validation for activated movies (Dispatcharr API only)
+        activated_movies = [m for m in catalog_movies if m["activated"] and m["id"] in live_ids]
+        provider_dead_ids = set()
+        if activated_movies:
+            await db.execute(
+                "UPDATE sync_state SET message = ? WHERE id = 1",
+                (f"Validating {len(activated_movies)} activated movies via provider-info...",),
+            )
+            await db.commit()
+            for m in activated_movies:
+                if is_cancelled():
+                    break
+                try:
+                    url = f"{DISPATCHARR_URL}/api/vod/movies/{m['id']}/provider-info/"
+                    pi_headers = dict(req_headers)
+                    async with httpx.AsyncClient(timeout=10.0) as pi_client:
+                        pi_resp = await pi_client.get(url, headers=pi_headers)
+                        if pi_resp.status_code != 200:
+                            provider_dead_ids.add(m["id"])
+                            logger.warning("Dead scan: provider-info returned %d for movie %d (%s)", pi_resp.status_code, m["id"], m["name"])
+                        else:
+                            pi_data = pi_resp.json()
+                            if not pi_data.get("stream_id"):
+                                provider_dead_ids.add(m["id"])
+                                logger.warning("Dead scan: no stream_id in provider-info for movie %d (%s)", m["id"], m["name"])
+                except Exception as e:
+                    logger.warning("Dead scan: provider-info check failed for movie %d: %s", m["id"], e)
+                await asyncio.sleep(0.05)
+
         now = datetime.now(timezone.utc).isoformat()
         newly_dead = []
         dead_activated = []
         for m in catalog_movies:
-            # Mark as dead if: (1) not in live catalog OR (2) stream_dead flag set
             is_dead = m["id"] not in live_ids
             if not is_dead:
-                # Check if stream was marked as dead (provider errors)
                 stream_check = await db.execute(
                     "SELECT stream_dead FROM movies WHERE id = ?",
                     (m["id"],),
                 )
                 result = await stream_check.fetchone()
                 is_dead = result and result["stream_dead"] == 1
+            if not is_dead and m["id"] in provider_dead_ids:
+                is_dead = True
 
             if is_dead:
                 newly_dead.append(m)
@@ -2694,12 +2754,18 @@ async def _set_status(status: str, message: str):
 
 async def _enrich_from_provider_info(batch_size: int = 200):
     """Batch-enrich movies with metadata from Dispatcharr provider-info endpoint.
-    Fills genre, description, director, actors, country for movies missing them.
+    Fills bitrate, duration, genre, description, director, actors, country,
+    container_extension, content_type, backdrop, poster fallback.
     All Dispatcharr API — no provider connections."""
     db = await get_db()
     rows = await db.execute(
-        "SELECT id FROM movies WHERE (genre IS NULL OR genre = '' OR description IS NULL OR description = '') "
-        "AND name != '' LIMIT ?",
+        "SELECT id FROM movies WHERE ("
+        "genre IS NULL OR genre = '' OR description IS NULL OR description = '' "
+        "OR stream_bitrate_kbps IS NULL OR duration_seconds IS NULL "
+        "OR container_extension IS NULL OR container_extension = '' "
+        "OR backdrop_url IS NULL OR backdrop_url = '' "
+        "OR director IS NULL OR director = '' "
+        ") AND name != '' LIMIT ?",
         (batch_size,),
     )
     movie_ids = [r["id"] for r in await rows.fetchall()]

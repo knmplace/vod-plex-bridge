@@ -114,6 +114,9 @@ async def init_db():
         "ALTER TABLE movies ADD COLUMN country TEXT DEFAULT ''",
         "ALTER TABLE movies ADD COLUMN release_date TEXT DEFAULT ''",
         "ALTER TABLE movies ADD COLUMN added_at TEXT",
+        "ALTER TABLE movies ADD COLUMN container_extension TEXT DEFAULT ''",
+        "ALTER TABLE movies ADD COLUMN backdrop_url TEXT",
+        "ALTER TABLE movies ADD COLUMN original_name TEXT DEFAULT ''",
     ]:
         try:
             await db.execute(col)
