@@ -11,10 +11,11 @@ from database import init_db
 from proxy import router as proxy_router, start_pipe_manager
 from api import router as api_router, start_dead_scan_scheduler, start_log_archive_scheduler
 from health import health_check_scheduler
+from error_screens import generate_error_screens
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-APP_VERSION = "0.34.0"
+APP_VERSION = "0.35.1"
 
 
 async def _restore_strm_files():
@@ -54,6 +55,7 @@ async def _restore_strm_files():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    generate_error_screens()
     await _restore_strm_files()
     start_pipe_manager()
     dead_scan_task = asyncio.create_task(start_dead_scan_scheduler())

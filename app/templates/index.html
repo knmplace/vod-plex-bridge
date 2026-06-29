@@ -666,6 +666,14 @@
         }
         .cat-hide-btn:hover { border-color: var(--warning); color: var(--warning); }
         .cat-chip.hidden-cat { opacity: 0.4; text-decoration: line-through; }
+        .cat-chip.remove-mode { cursor: pointer; }
+        .cat-chip.remove-selected { background: rgba(231,76,60,0.25); border-color: #e74c3c; }
+        .cat-chip .remove-cb { width: 14px; height: 14px; margin-right: 0.3rem; accent-color: #e74c3c; cursor: pointer; }
+        .cat-remove-bar { display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0.6rem; background:rgba(231,76,60,0.1); border:1px solid #e74c3c; border-radius:6px; margin-bottom:0.4rem; }
+        .cat-remove-bar .btn-danger { font-size:0.7rem; padding:0.2rem 0.6rem; background:#e74c3c; color:#fff; border:none; border-radius:4px; cursor:pointer; }
+        .cat-remove-bar .btn-danger:hover { background:#c0392b; }
+        .cat-remove-bar .btn-cancel { font-size:0.7rem; padding:0.2rem 0.6rem; background:transparent; color:#aaa; border:1px solid #555; border-radius:4px; cursor:pointer; }
+        .cat-remove-bar .btn-cancel:hover { border-color:#888; color:#ccc; }
 
         .cat-browse-tag {
             display: inline-block;
@@ -1032,6 +1040,7 @@
                                     <span class="badge" id="selectedCatCount">0</span>
                                     <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="selectAllCategories()">All</button>
                                     <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="clearCategories()">None</button>
+                                    <button class="btn btn-outline" id="catRemoveBtn" style="font-size:0.65rem;padding:0.2rem 0.5rem;border-color:#e74c3c;color:#e74c3c;" onclick="toggleCatRemoveMode()">Remove</button>
                                 </div>
                             </div>
                             <div class="panel-body">
@@ -1079,6 +1088,7 @@
                 <div class="panel">
                     <div class="panel-header">By Provider</div>
                     <div class="panel-body" style="max-height:350px;overflow-y:auto;">
+                        <div style="font-size:0.75rem;color:#888;text-align:center;padding:4px 8px 6px;line-height:1.3;">Includes providers available as fallback streams, even if not initially selected</div>
                         <table class="summary-table compact">
                             <thead><tr><th>Provider</th><th style="text-align:right">Total</th><th style="text-align:right">Active</th></tr></thead>
                             <tbody id="summaryProviders"><tr><td colspan="3" class="empty-state">Loading...</td></tr></tbody>
@@ -1713,14 +1723,31 @@
                 return;
             }
 
-            container.innerHTML = filtered.map(c => `
-                <div class="cat-chip ${c.selected ? 'selected' : ''} ${c.hidden ? 'hidden-cat' : ''}"
+            let removeBar = '';
+            if (catRemoveMode) {
+                removeBar = `<div class="cat-remove-bar">
+                    <span style="font-size:0.75rem;color:#e74c3c;">${catRemoveSet.size} selected</span>
+                    <button class="btn-danger" onclick="removeSelectedCategories()" ${catRemoveSet.size ? '' : 'disabled'}>Remove Selected</button>
+                    <button class="btn-cancel" onclick="toggleCatRemoveMode()">Cancel</button>
+                </div>`;
+            }
+
+            container.innerHTML = removeBar + filtered.map(c => {
+                if (catRemoveMode) {
+                    const checked = catRemoveSet.has(c.id) ? 'checked' : '';
+                    return `<div class="cat-chip remove-mode ${catRemoveSet.has(c.id) ? 'remove-selected' : ''} ${c.hidden ? 'hidden-cat' : ''}"
+                         onclick="toggleCatRemoveSelect(${c.id})">
+                        <span><input type="checkbox" class="remove-cb" ${checked} tabindex="-1">${c.name}</span>
+                        <span class="count">${c.movie_count.toLocaleString()}</span>
+                    </div>`;
+                }
+                return `<div class="cat-chip ${c.selected ? 'selected' : ''} ${c.hidden ? 'hidden-cat' : ''}"
                      onclick="toggleCategory(${c.id}, ${c.selected ? 'false' : 'true'})"
                      oncontextmenu="event.preventDefault();toggleCatHidden(${c.id},${c.hidden ? 0 : 1})">
                     <span>${c.name}</span>
                     <span class="count">${c.movie_count.toLocaleString()}</span>
-                </div>
-            `).join('');
+                </div>`;
+            }).join('');
             updateCatCount();
         }
 
@@ -2151,6 +2178,65 @@
             renderCatalogSummary();
             renderCategoryGrid();
             updateBrowseCatFilter();
+        }
+
+        let catRemoveMode = false;
+        const catRemoveSet = new Set();
+
+        function toggleCatRemoveMode() {
+            catRemoveMode = !catRemoveMode;
+            catRemoveSet.clear();
+            const btn = document.getElementById('catRemoveBtn');
+            if (catRemoveMode) {
+                btn.style.background = '#e74c3c';
+                btn.style.color = '#fff';
+                btn.textContent = 'Cancel';
+            } else {
+                btn.style.background = '';
+                btn.style.color = '#e74c3c';
+                btn.textContent = 'Remove';
+            }
+            renderCategoryGrid();
+        }
+
+        function toggleCatRemoveSelect(id) {
+            if (catRemoveSet.has(id)) catRemoveSet.delete(id);
+            else catRemoveSet.add(id);
+            renderCategoryGrid();
+        }
+
+        async function removeSelectedCategories() {
+            if (!catRemoveSet.size) return;
+            const cats = allCategories.filter(c => catRemoveSet.has(c.id));
+            const names = cats.map(c => c.name).join(', ');
+            const totalMovies = cats.reduce((s, c) => s + (c.movie_count || 0), 0);
+            if (!confirm(`Remove ${cats.length} category(s) from catalog?\n\n${names}\n\nMovies exclusive to these categories will be deleted (up to ${totalMovies.toLocaleString()} movies). Movies shared with other categories will be kept.\n\nThis cannot be undone.`)) return;
+
+            showOverlay('Removing categories...');
+            try {
+                const res = await fetchJSON('/api/categories/remove', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({category_ids: [...catRemoveSet]})
+                });
+                catRemoveMode = false;
+                catRemoveSet.clear();
+                const btn = document.getElementById('catRemoveBtn');
+                btn.style.background = '';
+                btn.style.color = '#e74c3c';
+                btn.textContent = 'Remove';
+
+                allCategories = allCategories.filter(c => !catRemoveSet.has(c.id) && !cats.find(x => x.id === c.id));
+                await loadCatalogSummary();
+                await loadCategories();
+                renderCategoryGrid();
+                updateBrowseCatFilter();
+                hideOverlay();
+                alert(`Removed ${res.categories_removed} categories.\n${res.movies_deleted} movies deleted, ${res.movies_unlinked} movies unlinked.\n${res.deactivated} deactivated, ${res.strm_removed} STRMs removed.`);
+            } catch (e) {
+                hideOverlay();
+                alert('Error removing categories: ' + e.message);
+            }
         }
 
         // --- Trailer ---

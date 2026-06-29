@@ -45,6 +45,7 @@ graph LR
 - **Scheduled Refresh** — Configurable auto-refresh cycle (4h / 6h / 8h / 12h) keeps your catalog current
 - **Dead Movie Tracking** — Automatically detects and removes movies no longer available from your provider
 - **Persistent Buffers** — In pipe mode, downloaded data stays on disk between play sessions for resume
+- **Error Screens** — When a movie can't play (dead, busy, removed), Plex shows a user-friendly video message instead of buffering
 - **Activation Gating** — Only activated movies are visible to Plex. No mass scanning of your provider's catalog.
 
 ## How Streaming Works
@@ -205,7 +206,10 @@ vod-plex-bridge/
 │   ├── database.py           # SQLite (WAL mode, singleton connection)
 │   ├── stream_mapper.py      # Movie → provider stream ID mapping
 │   ├── health.py             # Health check system
+│   ├── error_screens.py      # Error video generation (Pillow + FFmpeg)
 │   ├── config.py             # Environment variable config
+│   ├── assets/
+│   │   └── bg.jpg            # Background image for error screens
 │   └── templates/
 │       └── index.html        # Single-page UI
 ├── setup/

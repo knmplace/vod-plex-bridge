@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 
 from config import DISPATCHARR_URL, DISPATCHARR_API_KEY
 from database import get_db
+from error_screens import get_error_screen_data, get_error_screen_size
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -832,6 +833,49 @@ async def vod_root(request: Request):
         pass
 
 
+def _error_screen_response(screen_type: str, request: Request) -> Response | None:
+    data = get_error_screen_data(screen_type)
+    if not data:
+        return None
+    size = len(data)
+    range_header = request.headers.get("range")
+    if request.method == "HEAD":
+        return Response(
+            status_code=200,
+            headers={
+                "accept-ranges": "bytes",
+                "content-type": "video/mp4",
+                "content-length": str(size),
+            },
+        )
+    if range_header:
+        m = re.match(r"bytes=(\d+)-(\d*)", range_header)
+        if m:
+            start = int(m.group(1))
+            end = int(m.group(2)) if m.group(2) else size - 1
+            end = min(end, size - 1)
+            chunk = data[start:end + 1]
+            return Response(
+                status_code=206,
+                headers={
+                    "accept-ranges": "bytes",
+                    "content-type": "video/mp4",
+                    "content-length": str(len(chunk)),
+                    "content-range": f"bytes {start}-{end}/{size}",
+                },
+                content=chunk,
+            )
+    return Response(
+        status_code=200,
+        headers={
+            "accept-ranges": "bytes",
+            "content-type": "video/mp4",
+            "content-length": str(size),
+        },
+        content=data,
+    )
+
+
 @router.api_route("/vod/{filename:path}", methods=["GET", "HEAD"])
 async def vod_file(filename: str, request: Request):
     movie_id = extract_movie_id(filename)
@@ -854,7 +898,8 @@ async def vod_file(filename: str, request: Request):
         movie_name = movie["name"] or None
 
         if not stream_id:
-            return Response(status_code=503, content="No stream mapping")
+            err = _error_screen_response("busy", request)
+            return err if err else Response(status_code=503, content="No stream mapping")
 
         content_type = movie["content_type"] or "video/x-matroska"
 
@@ -1022,7 +1067,8 @@ async def vod_file(filename: str, request: Request):
                     except Exception as e:
                         logger.error("Failed to mark movie %d dead from probe throttle: %s", movie_id, e)
                     _probe_tracker.pop(movie_id, None)
-                    return Response(status_code=410, content="Movie marked dead after repeated scan probes")
+                    err = _error_screen_response("dead", request)
+                    return err if err else Response(status_code=410, content="Movie marked dead after repeated scan probes")
 
                 # Rapid re-probe within PROBE_WINDOW — enter cooldown (strike 1)
                 if now - tracker["last_probe"] < PROBE_WINDOW:
@@ -1081,12 +1127,18 @@ async def vod_file(filename: str, request: Request):
 
             is_dead = await _check_if_stream_dead(movie_id)
             if is_dead:
+                err = _error_screen_response("dead", request)
+                if err:
+                    return err
                 return Response(
                     status_code=410,
                     headers={"X-Stream-Status": "dead"},
                     content="This movie's stream is no longer available.",
                 )
 
+            err = _error_screen_response("busy", request)
+            if err:
+                return err
             return Response(
                 status_code=503,
                 headers={"Retry-After": str(cooldown_left)},
@@ -1106,7 +1158,8 @@ async def vod_file(filename: str, request: Request):
                 _record_failure_by_movie(movie_id)
                 _log_event("error", movie_id, "Failed to create pipe — breaker tripped", movie_name=movie_name)
                 await close_movie_pipe(movie_id)
-                return Response(status_code=502, content="Could not connect to upstream")
+                err = _error_screen_response("busy", request)
+                return err if err else Response(status_code=502, content="Could not connect to upstream")
 
             if pipe.error:
                 _log_event("error", movie_id, f"Pipe error: {pipe.error} — breaker tripped", movie_name=movie_name)
@@ -1115,7 +1168,8 @@ async def vod_file(filename: str, request: Request):
                 if "HTTP 5" in pipe.error:
                     await _handle_upstream_error(movie_id, stream_id, int(pipe.error.split()[-1]) if pipe.error.split()[-1].isdigit() else 500)
                 await close_movie_pipe(movie_id)
-                return Response(status_code=502, content=f"Upstream error: {pipe.error}")
+                err = _error_screen_response("dead" if "HTTP 5" in (pipe.error or "") else "busy", request)
+                return err if err else Response(status_code=502, content=f"Upstream error: {pipe.error}")
 
             result = await pipe.read_range(range_start, range_end)
 
@@ -1127,7 +1181,8 @@ async def vod_file(filename: str, request: Request):
                     status_code_val = int(pipe.error.split()[-1]) if pipe.error.split()[-1].isdigit() else 500
                     await _handle_upstream_error(movie_id, stream_id, status_code_val)
                 await close_movie_pipe(movie_id)
-                return Response(status_code=502, content="Stream data not available")
+                err = _error_screen_response("busy", request)
+                return err if err else Response(status_code=502, content="Stream data not available")
 
             data, serve_end = result
             buffer_ahead = (pipe.start_offset + pipe.bytes_written) - pipe.plex_position
@@ -1151,7 +1206,8 @@ async def vod_file(filename: str, request: Request):
             _record_failure(stream_id)
             _record_failure_by_movie(movie_id)
             await close_movie_pipe(movie_id)
-            return Response(status_code=502, content="Internal error")
+            err = _error_screen_response("busy", request)
+            return err if err else Response(status_code=502, content="Internal error")
     finally:
         pass
 

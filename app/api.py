@@ -245,6 +245,96 @@ async def hide_category(request: Request):
         pass
 
 
+@router.post("/categories/remove")
+async def remove_categories(request: Request):
+    data = await request.json()
+    category_ids = data.get("category_ids", [])
+    if not category_ids:
+        return JSONResponse(status_code=400, content={"error": "category_ids required"})
+
+    db = await get_db()
+    placeholders = ",".join("?" for _ in category_ids)
+
+    rows = await db.execute(
+        f"""SELECT DISTINCT mc.movie_id FROM movie_categories mc
+            WHERE mc.category_id IN ({placeholders})
+            AND NOT EXISTS (
+                SELECT 1 FROM movie_categories mc2
+                WHERE mc2.movie_id = mc.movie_id
+                AND mc2.category_id NOT IN ({placeholders})
+            )""",
+        category_ids + category_ids,
+    )
+    exclusive_ids = [r["movie_id"] for r in await rows.fetchall()]
+
+    shared_rows = await db.execute(
+        f"""SELECT DISTINCT mc.movie_id FROM movie_categories mc
+            WHERE mc.category_id IN ({placeholders})
+            AND EXISTS (
+                SELECT 1 FROM movie_categories mc2
+                WHERE mc2.movie_id = mc.movie_id
+                AND mc2.category_id NOT IN ({placeholders})
+            )""",
+        category_ids + category_ids,
+    )
+    shared_ids = [r["movie_id"] for r in await shared_rows.fetchall()]
+
+    strm_removed = 0
+    plex_removed = 0
+    deactivated = 0
+
+    if exclusive_ids:
+        ep = ",".join("?" for _ in exclusive_ids)
+        act_rows = await db.execute(
+            f"SELECT id, name, year FROM movies WHERE id IN ({ep}) AND activated = 1",
+            exclusive_ids,
+        )
+        activated_movies = await act_rows.fetchall()
+        if activated_movies:
+            act_ids = [m["id"] for m in activated_movies]
+            deactivated = len(act_ids)
+            plex_removed = await _plex_remove_movies(act_ids)
+            strm_removed = _remove_strm_folders(activated_movies)
+
+        await db.execute(f"DELETE FROM movie_categories WHERE movie_id IN ({ep})", exclusive_ids)
+        await db.execute(f"DELETE FROM movies WHERE id IN ({ep})", exclusive_ids)
+
+    if shared_ids:
+        for cid in category_ids:
+            sp = ",".join("?" for _ in shared_ids)
+            await db.execute(
+                f"DELETE FROM movie_categories WHERE category_id = ? AND movie_id IN ({sp})",
+                [cid] + shared_ids,
+            )
+
+    await db.execute(f"DELETE FROM movie_categories WHERE category_id IN ({placeholders})", category_ids)
+    await db.execute(f"DELETE FROM selected_categories WHERE category_id IN ({placeholders})", category_ids)
+    await db.execute(f"DELETE FROM vod_categories WHERE id IN ({placeholders})", category_ids)
+
+    total_row = await db.execute("SELECT COUNT(*) as cnt FROM movies")
+    total = (await total_row.fetchone())["cnt"]
+    act_row = await db.execute("SELECT COUNT(*) as cnt FROM movies WHERE activated = 1")
+    act_total = (await act_row.fetchone())["cnt"]
+    strm_count = _count_strm_folders()
+    await db.execute(
+        "UPDATE sync_state SET total_movies = ?, active_strm_count = ? WHERE id = 1",
+        (total, strm_count),
+    )
+    await db.commit()
+
+    return {
+        "status": "ok",
+        "categories_removed": len(category_ids),
+        "movies_deleted": len(exclusive_ids),
+        "movies_unlinked": len(shared_ids),
+        "deactivated": deactivated,
+        "strm_removed": strm_removed,
+        "plex_removed": plex_removed,
+        "total_movies": total,
+        "total_activated": act_total,
+    }
+
+
 DUMP_TRIGGER_FILE = "/data/.dump-trigger"
 
 
