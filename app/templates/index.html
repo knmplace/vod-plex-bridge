@@ -666,14 +666,7 @@
         }
         .cat-hide-btn:hover { border-color: var(--warning); color: var(--warning); }
         .cat-chip.hidden-cat { opacity: 0.4; text-decoration: line-through; }
-        .cat-chip.remove-mode { cursor: pointer; }
-        .cat-chip.remove-selected { background: rgba(231,76,60,0.25); border-color: #e74c3c; }
-        .cat-chip .remove-cb { width: 14px; height: 14px; margin-right: 0.3rem; accent-color: #e74c3c; cursor: pointer; }
-        .cat-remove-bar { display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0.6rem; background:rgba(231,76,60,0.1); border:1px solid #e74c3c; border-radius:6px; margin-bottom:0.4rem; }
-        .cat-remove-bar .btn-danger { font-size:0.7rem; padding:0.2rem 0.6rem; background:#e74c3c; color:#fff; border:none; border-radius:4px; cursor:pointer; }
-        .cat-remove-bar .btn-danger:hover { background:#c0392b; }
-        .cat-remove-bar .btn-cancel { font-size:0.7rem; padding:0.2rem 0.6rem; background:transparent; color:#aaa; border:1px solid #555; border-radius:4px; cursor:pointer; }
-        .cat-remove-bar .btn-cancel:hover { border-color:#888; color:#ccc; }
+        .remove-cb { width: 14px; height: 14px; accent-color: #e74c3c; cursor: pointer; }
 
         .cat-browse-tag {
             display: inline-block;
@@ -1040,7 +1033,6 @@
                                     <span class="badge" id="selectedCatCount">0</span>
                                     <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="selectAllCategories()">All</button>
                                     <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="clearCategories()">None</button>
-                                    <button class="btn btn-outline" id="catRemoveBtn" style="font-size:0.65rem;padding:0.2rem 0.5rem;border-color:#e74c3c;color:#e74c3c;" onclick="toggleCatRemoveMode()">Remove</button>
                                 </div>
                             </div>
                             <div class="panel-body">
@@ -1105,13 +1097,18 @@
                     </div>
                 </div>
                 <div class="panel">
-                    <div class="panel-header">By Category
-                        <input type="text" class="search-input" id="summaryCatSearch" style="width:150px;margin:0;font-size:0.7rem;padding:0.2rem 0.4rem;" placeholder="Search..." oninput="renderCatalogSummary()">
+                    <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+                        <span>By Category</span>
+                        <div style="display:flex;align-items:center;gap:0.4rem;">
+                            <button class="btn btn-outline" id="catRemoveBtn" style="font-size:0.65rem;padding:0.15rem 0.5rem;border-color:#e74c3c;color:#e74c3c;" onclick="toggleCatRemoveMode()">Remove</button>
+                            <input type="text" class="search-input" id="summaryCatSearch" style="width:150px;margin:0;font-size:0.7rem;padding:0.2rem 0.4rem;" placeholder="Search..." oninput="renderCatalogSummary()">
+                        </div>
                     </div>
+                    <div id="catRemoveBar" style="display:none;"></div>
                     <div style="text-align:center;padding:0.3rem 0;font-size:0.7rem;color:var(--text-muted);border-bottom:1px solid var(--border);">Categories currently in catalog</div>
                     <div class="panel-body" style="max-height:350px;overflow-y:auto;">
                         <table class="summary-table compact">
-                            <thead><tr><th>Category</th><th style="text-align:right">Total</th><th style="text-align:right">Active</th></tr></thead>
+                            <thead><tr><th id="catRemoveThCb" style="width:24px;display:none;"></th><th>Category</th><th style="text-align:right">Total</th><th style="text-align:right">Active</th></tr></thead>
                             <tbody id="summaryCategories"><tr><td colspan="3" class="empty-state">Loading...</td></tr></tbody>
                         </table>
                     </div>
@@ -1723,31 +1720,14 @@
                 return;
             }
 
-            let removeBar = '';
-            if (catRemoveMode) {
-                removeBar = `<div class="cat-remove-bar">
-                    <span style="font-size:0.75rem;color:#e74c3c;">${catRemoveSet.size} selected</span>
-                    <button class="btn-danger" onclick="removeSelectedCategories()" ${catRemoveSet.size ? '' : 'disabled'}>Remove Selected</button>
-                    <button class="btn-cancel" onclick="toggleCatRemoveMode()">Cancel</button>
-                </div>`;
-            }
-
-            container.innerHTML = removeBar + filtered.map(c => {
-                if (catRemoveMode) {
-                    const checked = catRemoveSet.has(c.id) ? 'checked' : '';
-                    return `<div class="cat-chip remove-mode ${catRemoveSet.has(c.id) ? 'remove-selected' : ''} ${c.hidden ? 'hidden-cat' : ''}"
-                         onclick="toggleCatRemoveSelect(${c.id})">
-                        <span><input type="checkbox" class="remove-cb" ${checked} tabindex="-1">${c.name}</span>
-                        <span class="count">${c.movie_count.toLocaleString()}</span>
-                    </div>`;
-                }
-                return `<div class="cat-chip ${c.selected ? 'selected' : ''} ${c.hidden ? 'hidden-cat' : ''}"
+            container.innerHTML = filtered.map(c => `
+                <div class="cat-chip ${c.selected ? 'selected' : ''} ${c.hidden ? 'hidden-cat' : ''}"
                      onclick="toggleCategory(${c.id}, ${c.selected ? 'false' : 'true'})"
                      oncontextmenu="event.preventDefault();toggleCatHidden(${c.id},${c.hidden ? 0 : 1})">
                     <span>${c.name}</span>
                     <span class="count">${c.movie_count.toLocaleString()}</span>
-                </div>`;
-            }).join('');
+                </div>
+            `).join('');
             updateCatCount();
         }
 
@@ -2149,19 +2129,40 @@
 
             // Categories
             const catTbody = document.getElementById('summaryCategories');
+            const thCb = document.getElementById('catRemoveThCb');
+            thCb.style.display = catRemoveMode ? '' : 'none';
+
             let cats = catalogData.categories;
             if (search) {
                 cats = cats.filter(c => c.name.toLowerCase().includes(search));
             }
             if (cats.length) {
                 catTbody.innerHTML = cats.map(c => {
-                    return `<tr>` +
+                    const cb = catRemoveMode
+                        ? `<td style="width:24px;text-align:center;"><input type="checkbox" class="remove-cb" ${catRemoveSet.has(c.id) ? 'checked' : ''} onclick="event.stopPropagation();toggleCatRemoveSelect(${c.id})" style="accent-color:#e74c3c;cursor:pointer;"></td>`
+                        : '';
+                    const rowStyle = catRemoveMode && catRemoveSet.has(c.id) ? ' style="background:rgba(231,76,60,0.15);"' : '';
+                    const rowClick = catRemoveMode ? ` onclick="toggleCatRemoveSelect(${c.id})" style="cursor:pointer;${catRemoveSet.has(c.id) ? 'background:rgba(231,76,60,0.15);' : ''}"` : '';
+                    return `<tr${rowClick}>` + cb +
                         `<td>${c.name}</td>` +
                         `<td class="num">${c.movie_count.toLocaleString()}</td>` +
                         `<td class="num" style="color:var(--success)">${(c.activated_count || 0).toLocaleString()}</td></tr>`;
                 }).join('');
             } else {
-                catTbody.innerHTML = '<tr><td colspan="3" class="empty-state">No categories found</td></tr>';
+                const colSpan = catRemoveMode ? 4 : 3;
+                catTbody.innerHTML = `<tr><td colspan="${colSpan}" class="empty-state">No categories found</td></tr>`;
+            }
+
+            // Remove bar
+            const removeBar = document.getElementById('catRemoveBar');
+            if (catRemoveMode) {
+                removeBar.style.display = 'flex';
+                removeBar.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.8rem;background:rgba(231,76,60,0.1);border-bottom:1px solid rgba(231,76,60,0.3);';
+                removeBar.innerHTML = `<span style="font-size:0.75rem;color:#e74c3c;flex:1;">${catRemoveSet.size} selected</span>`
+                    + `<button class="btn btn-outline" style="font-size:0.65rem;padding:0.15rem 0.5rem;background:#e74c3c;color:#fff;border-color:#e74c3c;" onclick="removeSelectedCategories()" ${catRemoveSet.size ? '' : 'disabled'}>Remove Selected</button>`
+                    + `<button class="btn btn-outline" style="font-size:0.65rem;padding:0.15rem 0.5rem;" onclick="toggleCatRemoveMode()">Cancel</button>`;
+            } else {
+                removeBar.style.display = 'none';
             }
         }
 
@@ -2196,18 +2197,18 @@
                 btn.style.color = '#e74c3c';
                 btn.textContent = 'Remove';
             }
-            renderCategoryGrid();
+            renderCatalogSummary();
         }
 
         function toggleCatRemoveSelect(id) {
             if (catRemoveSet.has(id)) catRemoveSet.delete(id);
             else catRemoveSet.add(id);
-            renderCategoryGrid();
+            renderCatalogSummary();
         }
 
         async function removeSelectedCategories() {
             if (!catRemoveSet.size) return;
-            const cats = allCategories.filter(c => catRemoveSet.has(c.id));
+            const cats = (catalogData?.categories || []).filter(c => catRemoveSet.has(c.id));
             const names = cats.map(c => c.name).join(', ');
             const totalMovies = cats.reduce((s, c) => s + (c.movie_count || 0), 0);
             if (!confirm(`Remove ${cats.length} category(s) from catalog?\n\n${names}\n\nMovies exclusive to these categories will be deleted (up to ${totalMovies.toLocaleString()} movies). Movies shared with other categories will be kept.\n\nThis cannot be undone.`)) return;
@@ -2226,7 +2227,6 @@
                 btn.style.color = '#e74c3c';
                 btn.textContent = 'Remove';
 
-                allCategories = allCategories.filter(c => !catRemoveSet.has(c.id) && !cats.find(x => x.id === c.id));
                 await loadCatalogSummary();
                 await loadCategories();
                 renderCategoryGrid();
