@@ -106,9 +106,9 @@ class StreamPipe:
         total_downloaded = self.start_offset + self.bytes_written
         buffer_ahead_secs = (total_downloaded - self.plex_position) / self.bytes_per_second
         if buffer_ahead_secs < 5:
-            return 1.8
+            return 2.3
         elif buffer_ahead_secs < 10:
-            return 1.5
+            return 1.8
         elif buffer_ahead_secs < 30:
             return 1.3
         elif buffer_ahead_secs < 60:
