@@ -15,7 +15,7 @@ from error_screens import generate_error_screens
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-APP_VERSION = "0.35.2"
+APP_VERSION = "0.35.3"
 
 
 async def _restore_strm_files():

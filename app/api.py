@@ -2511,7 +2511,7 @@ async def restore_dead_movies(request: Request):
     try:
         placeholders = ",".join("?" for _ in movie_ids)
         rows = await db.execute(
-            f"SELECT id, name, year FROM movies WHERE id IN ({placeholders}) AND dead = 1",
+            f"SELECT * FROM movies WHERE id IN ({placeholders}) AND dead = 1",
             movie_ids,
         )
         movies = await rows.fetchall()
@@ -2524,9 +2524,16 @@ async def restore_dead_movies(request: Request):
             if os.path.isdir(dead_folder):
                 shutil.move(dead_folder, live_folder)
                 restored_strm += 1
+            elif not os.path.isdir(live_folder):
+                # No dead folder to move — regenerate STRM files
+                try:
+                    await write_strm_for_movie(dict(m))
+                    restored_strm += 1
+                except Exception:
+                    pass
 
         await db.execute(
-            f"UPDATE movies SET dead = 0, dead_at = NULL WHERE id IN ({placeholders})",
+            f"UPDATE movies SET dead = 0, dead_at = NULL, stream_dead = 0, stream_dead_count = 0 WHERE id IN ({placeholders})",
             movie_ids,
         )
         await db.commit()
@@ -2539,18 +2546,26 @@ async def restore_dead_movies(request: Request):
 async def restore_all_dead_movies():
     db = await get_db()
     try:
-        count_row = await db.execute("SELECT COUNT(*) as cnt FROM movies WHERE dead = 1")
-        total = (await count_row.fetchone())["cnt"]
+        rows = await db.execute("SELECT * FROM movies WHERE dead = 1")
+        movies = await rows.fetchall()
+        total = len(movies)
         if total == 0:
             return {"status": "ok", "restored": 0, "strm_restored": 0}
 
-        cleaned_strm = 0
-        if os.path.isdir(DEAD_DIR):
-            for folder in os.listdir(DEAD_DIR):
-                dead_folder = os.path.join(DEAD_DIR, folder)
-                if os.path.isdir(dead_folder):
-                    shutil.rmtree(dead_folder)
-                    cleaned_strm += 1
+        restored_strm = 0
+        for m in movies:
+            folder_name = _movie_folder_name(m)
+            dead_folder = os.path.join(DEAD_DIR, folder_name)
+            live_folder = os.path.join(STRM_OUTPUT_DIR, folder_name)
+            if os.path.isdir(dead_folder):
+                shutil.move(dead_folder, live_folder)
+                restored_strm += 1
+            elif not os.path.isdir(live_folder):
+                try:
+                    await write_strm_for_movie(dict(m))
+                    restored_strm += 1
+                except Exception:
+                    pass
 
         await db.execute(
             "UPDATE movies SET dead = 0, dead_at = NULL, stream_dead = 0, stream_dead_count = 0 WHERE dead = 1"
@@ -2561,8 +2576,8 @@ async def restore_all_dead_movies():
         await db.execute("UPDATE sync_state SET active_strm_count = ? WHERE id = 1", (strm_count,))
         await db.commit()
 
-        logger.info("Restored all %d dead movies (%d dead STRM folders cleaned up)", total, cleaned_strm)
-        return {"status": "ok", "restored": total, "strm_cleaned": cleaned_strm}
+        logger.info("Restored all %d dead movies (%d STRM folders restored)", total, restored_strm)
+        return {"status": "ok", "restored": total, "strm_restored": restored_strm}
     finally:
         pass
 
