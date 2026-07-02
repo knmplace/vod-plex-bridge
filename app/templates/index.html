@@ -1318,62 +1318,48 @@
 
     <div class="tab-content" id="tabSettings">
         <div class="browse-section" style="padding-top:1rem;">
-            <div class="panel">
-                <div class="panel-header">Catalog Refresh Schedule</div>
+            <div class="panel" style="max-width:1100px;margin:0 auto;">
+                <div class="panel-header">Daily Run</div>
                 <div class="panel-body">
                     <p style="font-size:0.8rem;color:#c9d1d9;margin-bottom:1rem;">
-                        Controls how often the bridge refreshes its catalog from Dispatcharr. Each refresh: regenerates stream mappings, updates movie metadata, detects UUID/stream_id changes, and searches TMDB for new movies. No provider connections are made during refresh.
+                        Runs automatically every day at 6:00 AM: regenerates dump files, reloads categories, syncs the catalog from Dispatcharr, applies stream mapping, enriches metadata, refreshes stream_ids for activated movies, and detects languages for new movies. No provider connections are made.
                     </p>
-                    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;">
-                        <label style="font-weight:600;font-size:0.85rem;">Refresh Interval:</label>
+                    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem;flex-wrap:wrap;">
+                        <label style="font-weight:600;font-size:0.85rem;">Daily Run:</label>
                         <select id="refreshInterval" onchange="saveSchedule()" style="padding:0.4rem 0.8rem;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:0.85rem;">
                             <option value="0">Off</option>
-                            <option value="12">Every 12 hours</option>
-                            <option value="8">Every 8 hours</option>
-                            <option value="6">Every 6 hours</option>
-                            <option value="4">Every 4 hours</option>
+                            <option value="24">On — 6:00 AM daily</option>
                         </select>
                         <button id="btnRunNow" class="btn btn-primary" onclick="triggerManualRefresh()" style="font-size:0.8rem;display:none;">Run Now</button>
                         <span id="scheduleMsg" style="font-size:0.75rem;color:#c9d1d9;"></span>
-                        <span style="margin-left:auto;font-size:0.8rem;color:#c9d1d9;">
-                            <strong>Last Refresh:</strong> <span id="lastScheduledRefresh">Never</span>
-                            &nbsp;&bull;&nbsp;
-                            <strong>Interval:</strong> <span id="currentInterval">Off</span>
-                        </span>
                     </div>
                 </div>
             </div>
-            <div id="refreshReportContainer" style="display:none;margin-top:1rem;">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;max-width:1100px;">
-                    <div class="panel">
-                        <div class="panel-header">Latest Report</div>
-                        <div class="panel-body" id="latestReportBody" style="font-size:0.8rem;color:#e6edf3;line-height:1.7;">
-                            <div style="color:#8b949e;">No reports yet</div>
-                        </div>
+
+            <div id="refreshReportContainer" style="display:none;margin-top:1rem;max-width:1100px;margin-left:auto;margin-right:auto;">
+                <div class="panel">
+                    <div class="panel-header" style="text-align:center;">Last Run</div>
+                    <div class="panel-body" id="latestReportBody" style="font-size:0.85rem;color:#e6edf3;line-height:1.8;max-width:700px;margin:0 auto;">
+                        <div style="color:#8b949e;">No runs yet</div>
                     </div>
-                    <div class="panel">
-                        <div class="panel-header">Report Archive</div>
-                        <div class="panel-body" id="archiveReportBody" style="font-size:0.8rem;color:#e6edf3;line-height:1.7;max-height:400px;overflow-y:auto;">
-                            <div style="color:#8b949e;">No archived reports</div>
-                        </div>
+                </div>
+                <div class="panel" style="margin-top:1rem;">
+                    <div class="panel-header" style="text-align:center;">Run Archive</div>
+                    <div class="panel-body" id="archiveReportBody" style="font-size:0.85rem;color:#e6edf3;max-height:320px;overflow-y:auto;max-width:500px;margin:0 auto;">
+                        <div style="color:#8b949e;text-align:center;">No archived runs</div>
                     </div>
                 </div>
             </div>
-            <div class="panel" style="margin-top:1rem;max-width:1100px;">
-                <div class="panel-header">What Gets Refreshed</div>
-                <div class="panel-body" style="font-size:0.8rem;color:#c9d1d9;line-height:1.6;">
-                    <div style="display:grid;grid-template-columns:auto 1fr;gap:0.3rem 1rem;">
-                        <strong style="color:#e6edf3;">1. Dump Regen</strong><span>Regenerates stream_mapping.json from Dispatcharr's DB (picks up stream_id changes from M3U refresh)</span>
-                        <strong style="color:#e6edf3;">2. Categories</strong><span>Reloads category mappings and provider list from dump files</span>
-                        <strong style="color:#e6edf3;">3. Catalog Refresh</strong><span>Pages through all Dispatcharr VOD movies — adds new movies, updates metadata, detects UUID changes</span>
-                        <strong style="color:#e6edf3;">4. Stream Mapping</strong><span>Applies fresh stream_ids to all movies in the bridge DB</span>
-                        <strong style="color:#e6edf3;">5. Metadata Enrichment</strong><span>Fills genre, description, director, cast, country from Dispatcharr provider-info (no provider calls)</span>
-                        <strong style="color:#e6edf3;">6. TMDB Search</strong><span>Finds TMDB metadata for movies missing tmdb_id</span>
-                        <strong style="color:#e6edf3;">7. Activated Refresh</strong><span>Updates stream_ids for activated movies (DB only — no provider connections)</span>
-                        <strong style="color:#e6edf3;">8. Language Detection</strong><span>Detects languages via TMDB for movies missing language tags (background)</span>
-                    </div>
-                </div>
+        </div>
+    </div>
+
+    <div id="runDetailOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;" onclick="if(event.target===this) closeRunDetail()">
+        <div style="background:var(--bg-card,#161b22);border:1px solid var(--border,#30363d);border-radius:10px;padding:1.5rem;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                <div style="font-weight:600;font-size:1rem;" id="runDetailTitle">Run Details</div>
+                <button class="btn" onclick="closeRunDetail()" style="font-size:0.8rem;">Close</button>
             </div>
+            <div id="runDetailBody" style="font-size:0.85rem;color:#e6edf3;line-height:1.8;"></div>
         </div>
     </div>
 
@@ -2810,34 +2796,28 @@
         }
 
         // --- Schedule/Settings ---
-        function _renderReport(entry) {
-            const mins = Math.floor(entry.elapsed / 60);
-            const secs = entry.elapsed % 60;
-            const duration = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-            let html = `<div style="color:#58a6ff;font-weight:600;margin-bottom:0.3rem;">${entry.date}</div>`;
-            html += `<div style="color:#8b949e;margin-bottom:0.4rem;">Completed in ${duration}</div>`;
+        function _renderReport(entry, skipDate) {
+            let html = '';
+            if (!skipDate) {
+                html += `<div style="color:#58a6ff;font-weight:600;margin-bottom:0.3rem;text-align:center;">${entry.date}</div>`;
+            }
+            html += `<div style="color:#8b949e;margin-bottom:0.4rem;${skipDate ? '' : 'text-align:center;'}">Completed in ${_formatDuration(entry.elapsed)}</div>`;
             for (const step of entry.steps) {
-                const failed = step.includes('FAILED');
+                const failed = step.includes('FAILED') || step.includes('TIMED OUT');
                 const color = failed ? '#f85149' : '#e6edf3';
                 html += `<div style="color:${color};">${step}</div>`;
             }
             return html;
         }
 
+        let _runArchive = [];
+
         async function loadSchedule() {
             const data = await fetchJSON('/api/schedule');
             const hours = data.refresh_interval_hours || 0;
             document.getElementById('refreshInterval').value = hours;
-            const label = hours ? `Every ${hours} hours` : 'Off';
-            document.getElementById('currentInterval').textContent = label;
             document.getElementById('btnRunNow').style.display = hours ? '' : 'none';
-            if (data.last_scheduled_refresh) {
-                const raw = data.last_scheduled_refresh;
-                const d = new Date(raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z');
-                document.getElementById('lastScheduledRefresh').textContent = isNaN(d) ? raw : d.toLocaleString();
-            } else {
-                document.getElementById('lastScheduledRefresh').textContent = 'Never';
-            }
+
             const container = document.getElementById('refreshReportContainer');
             const latestEl = document.getElementById('latestReportBody');
             const archiveEl = document.getElementById('archiveReportBody');
@@ -2845,19 +2825,41 @@
             if (data.last_refresh_report) {
                 try { reports = JSON.parse(data.last_refresh_report); } catch(e) { reports = []; }
             }
+            _runArchive = reports;
             if (reports.length > 0) {
                 container.style.display = 'block';
                 latestEl.innerHTML = _renderReport(reports[0]);
                 if (reports.length > 1) {
-                    archiveEl.innerHTML = reports.slice(1).map(r =>
-                        `<div style="padding-bottom:0.8rem;margin-bottom:0.8rem;border-bottom:1px solid var(--border,#30363d);">${_renderReport(r)}</div>`
+                    archiveEl.innerHTML = reports.slice(1).map((r, i) =>
+                        `<div style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border,#30363d);cursor:pointer;display:flex;justify-content:space-between;align-items:center;" onclick="openRunDetail(${i + 1})" onmouseover="this.style.background='rgba(88,166,255,0.08)'" onmouseout="this.style.background='transparent'">
+                            <span style="color:#58a6ff;">${r.date}</span>
+                            <span style="color:#8b949e;font-size:0.8rem;">${_formatDuration(r.elapsed)}</span>
+                        </div>`
                     ).join('');
                 } else {
-                    archiveEl.innerHTML = '<div style="color:#8b949e;">No previous reports yet</div>';
+                    archiveEl.innerHTML = '<div style="color:#8b949e;text-align:center;">No previous runs yet</div>';
                 }
             } else {
                 container.style.display = 'none';
             }
+        }
+
+        function _formatDuration(elapsed) {
+            const mins = Math.floor(elapsed / 60);
+            const secs = elapsed % 60;
+            return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        }
+
+        function openRunDetail(index) {
+            const entry = _runArchive[index];
+            if (!entry) return;
+            document.getElementById('runDetailTitle').textContent = entry.date;
+            document.getElementById('runDetailBody').innerHTML = _renderReport(entry, true);
+            document.getElementById('runDetailOverlay').style.display = 'flex';
+        }
+
+        function closeRunDetail() {
+            document.getElementById('runDetailOverlay').style.display = 'none';
         }
 
         async function saveSchedule() {
@@ -2868,10 +2870,9 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({refresh_interval_hours: hours})
             });
-            const label = hours ? `Every ${hours} hours` : 'Off';
-            document.getElementById('currentInterval').textContent = label;
+            const label = hours ? 'On — 6:00 AM daily' : 'Off';
             document.getElementById('btnRunNow').style.display = hours ? '' : 'none';
-            msg.textContent = `Schedule saved: ${label}`;
+            msg.textContent = `Daily Run: ${label}`;
             setTimeout(() => { msg.textContent = ''; }, 3000);
         }
 

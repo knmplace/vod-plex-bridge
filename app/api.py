@@ -4,7 +4,7 @@ import os
 import re
 import shutil
 import httpx
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -2305,16 +2305,16 @@ async def get_schedule():
 async def set_schedule(request: Request):
     data = await request.json()
     hours = data.get("refresh_interval_hours", 0)
-    if hours not in (0, 4, 6, 8, 12):
-        return JSONResponse(status_code=400, content={"error": "interval must be 0, 4, 6, 8, or 12"})
+    if hours not in (0, 24):
+        return JSONResponse(status_code=400, content={"error": "interval must be 0 (off) or 24 (daily at 6:00 AM)"})
     db = await get_db()
     try:
         await db.execute(
             "UPDATE sync_state SET refresh_interval_hours = ? WHERE id = 1", (hours,)
         )
         await db.commit()
-        label = "Off" if hours == 0 else f"every {hours}h"
-        logger.info("Catalog refresh schedule set to %s", label)
+        label = "Off" if hours == 0 else "daily at 6:00 AM"
+        logger.info("Daily run schedule set to %s", label)
         return {"status": "ok", "refresh_interval_hours": hours}
     finally:
         pass
@@ -2869,16 +2869,31 @@ async def _get_refresh_interval_hours() -> int:
 
 
 async def start_dead_scan_scheduler():
+    """Drives the Daily Run — wakes at 6:00 AM local time when enabled. (Name kept for compat; no longer runs dead scan.)"""
     while True:
         interval = await _get_refresh_interval_hours()
         if interval <= 0:
             await asyncio.sleep(300)
             continue
-        await asyncio.sleep(interval * 3600)
-        if _refresh_running:
-            logger.info("Scheduled refresh skipped — manual refresh already running")
+
+        now = datetime.now()
+        next_run = now.replace(hour=6, minute=0, second=0, microsecond=0)
+        if next_run <= now:
+            next_run += timedelta(days=1)
+        sleep_seconds = (next_run - now).total_seconds()
+        await asyncio.sleep(min(sleep_seconds, 3600))
+        if sleep_seconds > 3600:
+            continue  # re-check hourly in case setting changed
+
+        # Re-check setting didn't change during sleep, and we're actually at 6am
+        interval = await _get_refresh_interval_hours()
+        if interval <= 0 or datetime.now().hour != 6:
             continue
-        logger.info("Scheduled catalog refresh starting (interval: %dh)...", interval)
+
+        if _refresh_running:
+            logger.info("Daily run skipped — refresh already running")
+            continue
+        logger.info("Daily run starting (6:00 AM)...")
         await _run_scheduled_refresh_guarded()
 
 
@@ -2938,23 +2953,23 @@ async def _enrich_from_provider_info(batch_size: int = 200):
 
 
 async def _run_scheduled_refresh():
-    """Safe refresh cycle: dump regen → categories → catalog refresh → apply mapping → provider-info enrichment → TMDB search → activated stream_id update → language detection.
-    NO provider calls. NO dead scan. All data comes from Dispatcharr API and TMDB only."""
+    """Daily run cycle: dump regen → categories → catalog refresh → apply mapping → provider-info enrichment → activated stream_id update → language detection (new movies only, background).
+    NO provider calls. NO dead scan. NO TMDB title search. All data comes from Dispatcharr API and TMDB (language only) only."""
     import time
     start = time.time()
     report = []
 
     try:
         # 1. Dump regen
-        await _set_status("refreshing", "Refresh: regenerating stream dumps...")
+        await _set_status("refreshing", "Daily run: regenerating stream dumps...")
         try:
             ok = await _trigger_dump_regen()
-            report.append(f"Dump regen: {'OK' if ok else 'timed out'}")
+            report.append(f"Dump regen: {'OK' if ok else 'TIMED OUT (dump files may be stale)'}")
         except Exception as e:
             report.append(f"Dump regen: FAILED ({e})")
 
         # 2. Categories
-        await _set_status("refreshing", "Refresh: reloading categories...")
+        await _set_status("refreshing", "Daily run: reloading categories...")
         try:
             cat_result = await _load_categories_counted()
             report.append(f"Categories: {cat_result['categories']} categories, {cat_result['mappings']} mappings, {cat_result['providers']} providers")
@@ -2962,7 +2977,7 @@ async def _run_scheduled_refresh():
             report.append(f"Categories: FAILED ({e})")
 
         # 3. Catalog refresh (Dispatcharr API only)
-        await _set_status("refreshing", "Refresh: syncing catalog from Dispatcharr...")
+        await _set_status("refreshing", "Daily run: syncing catalog from Dispatcharr...")
         try:
             synced, total, uuid_changes = await _run_catalog_refresh_counted()
             parts = [f"{synced} processed, {total} total"]
@@ -2973,7 +2988,7 @@ async def _run_scheduled_refresh():
             report.append(f"Catalog: FAILED ({e})")
 
         # 4. Stream mapping
-        await _set_status("refreshing", "Refresh: applying stream mapping...")
+        await _set_status("refreshing", "Daily run: applying stream mapping...")
         try:
             mapped = await apply_stream_mapping_to_db()
             report.append(f"Stream mapping: {mapped} updated")
@@ -2981,33 +2996,25 @@ async def _run_scheduled_refresh():
             report.append(f"Stream mapping: FAILED ({e})")
 
         # 5. Provider-info enrichment (Dispatcharr API only)
-        await _set_status("refreshing", "Refresh: enriching metadata from Dispatcharr...")
+        await _set_status("refreshing", "Daily run: enriching metadata from Dispatcharr...")
         try:
             pi_enriched = await _enrich_from_provider_info(batch_size=500)
             report.append(f"Provider-info enrichment: {pi_enriched} movies enriched")
         except Exception as e:
             report.append(f"Provider-info enrichment: FAILED ({e})")
 
-        # 6. TMDB title search for missing metadata
-        await _set_status("refreshing", "Refresh: searching TMDB for unmatched movies...")
-        try:
-            tmdb_result = await search_tmdb_for_missing()
-            report.append(f"TMDB search: {tmdb_result['found']} found, {tmdb_result['not_found']} not found, {tmdb_result['skipped']} skipped")
-        except Exception as e:
-            report.append(f"TMDB search: FAILED ({e})")
-
-        # 7. Activated stream_id refresh (DB only, no provider calls)
-        await _set_status("refreshing", "Refresh: checking activated movies for stream_id changes...")
+        # 6. Activated stream_id refresh (DB only, no provider calls)
+        await _set_status("refreshing", "Daily run: checking activated movies for stream_id changes...")
         try:
             updated = await _refresh_activated_stream_ids()
             report.append(f"Activated refresh: {updated} stream_ids changed")
         except Exception as e:
             report.append(f"Activated refresh: FAILED ({e})")
 
-        # 8. Language detection (background, TMDB API only)
+        # 7. Language detection — new movies only (missing language tag), background, TMDB API only
         if TMDB_API_KEY or TMDB_READ_TOKEN:
             asyncio.create_task(_bulk_detect_languages())
-            report.append("Language detection: started in background")
+            report.append("Language detection: started in background (new movies only)")
 
         import json as _json
         elapsed = int(time.time() - start)
