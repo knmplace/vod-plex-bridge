@@ -954,7 +954,7 @@
                         <option value="asc">Asc</option>
                     </select>
                     <select id="filterActivated" onchange="loadMovies()">
-                        <option value="">All</option>
+                        <option value="">All Activation States</option>
                         <option value="1">Activated</option>
                         <option value="0">Not Activated</option>
                     </select>
@@ -2042,6 +2042,7 @@
         };
 
         function getLangName(code) {
+            if (code === 'unknown') return 'Unknown';
             return LANG_NAMES[code] || code.toUpperCase();
         }
 
@@ -2112,7 +2113,7 @@
                     `<tr><td>${getLangName(l.language)}</td><td class="num">${l.cnt.toLocaleString()}</td></tr>`
                 ).join('');
                 if (catalogData.language_unknown > 0) {
-                    langTbody.innerHTML += `<tr style="color:var(--text-muted)"><td>Undetected</td><td class="num" style="color:var(--text-muted)">${catalogData.language_unknown.toLocaleString()}</td></tr>`;
+                    langTbody.innerHTML += `<tr style="color:var(--text-muted)"><td>Unknown</td><td class="num" style="color:var(--text-muted)">${catalogData.language_unknown.toLocaleString()}</td></tr>`;
                 }
             } else {
                 langTbody.innerHTML = '<tr><td colspan="2" class="empty-state">Run "Detect All Languages" first</td></tr>';

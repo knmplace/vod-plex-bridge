@@ -569,9 +569,16 @@ async def list_movies(
             params.append(f"%{search}%")
 
         if languages:
-            ph = ",".join("?" for _ in languages)
-            conditions.append(f"m.language IN ({ph})")
-            params.extend(languages)
+            has_unknown = "unknown" in languages
+            known = [l for l in languages if l != "unknown"]
+            sub = []
+            if known:
+                ph = ",".join("?" for _ in known)
+                sub.append(f"m.language IN ({ph})")
+                params.extend(known)
+            if has_unknown:
+                sub.append("(m.language = '' OR m.language IS NULL)")
+            conditions.append("(" + " OR ".join(sub) + ")")
 
         where = " AND ".join(conditions)
 
@@ -1719,6 +1726,8 @@ async def list_languages():
             "SELECT COUNT(*) as cnt FROM movies WHERE (language = '' OR language IS NULL) AND name != ''"
         )
         unknown = (await unknown_row.fetchone())["cnt"]
+        if unknown > 0:
+            langs.append({"language": "unknown", "cnt": unknown})
         return {"languages": langs, "unknown": unknown}
     finally:
         pass
