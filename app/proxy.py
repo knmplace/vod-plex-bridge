@@ -32,8 +32,14 @@ PIPE_POLL_INTERVAL = 0.1    # seconds between checks when waiting for data
 PIPE_POLL_MAX_WAIT = 30     # max seconds to wait for data before giving up
 BUFFER_TARGET_SECS = 60     # adaptive throttle target — speeds up/slows down around this
 DEFAULT_BITRATE = 500_000  # 4 Mbps = 500 KB/s fallback (bytes/sec)
+MAX_CONCURRENT_PIPES = 4    # max distinct movies streaming at once (any number of viewers per movie share one pipe)
+REOPEN_GRACE_SECS = 2       # pause after closing an existing pipe before reopening a new one for the same movie
 
 os.makedirs(BUFFER_DIR, exist_ok=True)
+
+
+class PipeCapReached(Exception):
+    """Raised when MAX_CONCURRENT_PIPES is already in use — not a movie/provider failure."""
 
 
 class StreamPipe:
@@ -46,13 +52,15 @@ class StreamPipe:
 
     def __init__(self, movie_id: int, upstream_url: str, file_size: int,
                  duration_seconds: int | None = None, session_id: str | None = None,
-                 start_offset: int = 0, stream_bitrate_kbps: int | None = None):
+                 start_offset: int = 0, stream_bitrate_kbps: int | None = None,
+                 client: str = "Unknown"):
         self.movie_id = movie_id
         self.upstream_url = upstream_url
         self.session_id = session_id
         self.file_size = file_size
         self.duration_seconds = duration_seconds
         self.start_offset = start_offset
+        self.client = client
         self.buffer_path = os.path.join(BUFFER_DIR, f"movie_{movie_id}.buf")
         self.bytes_written: int = 0
         self.started = False
@@ -331,6 +339,7 @@ class StreamPipe:
             "started": self.started,
             "finished": self.finished,
             "error": self.error,
+            "client": self.client,
             "age_seconds": int(elapsed),
             "idle_seconds": int(now - self.last_read_at),
             "plex_idle_seconds": int(now - self.last_plex_read),
@@ -399,10 +408,21 @@ async def _resolve_session(base_url: str, movie_id: int) -> tuple[str, str | Non
     return None
 
 
+def _client_label(request: Request) -> str:
+    """Derive a human-readable client name (Plex/Jellyfin/etc) from the request User-Agent."""
+    ua = (request.headers.get("user-agent") or "").lower()
+    if "plex" in ua:
+        return "Plex"
+    if "jellyfin" in ua:
+        return "Jellyfin"
+    return "Unknown"
+
+
 async def _get_or_create_pipe(movie_id: int, file_size: int, duration_seconds: int | None,
                                uuid: str | None = None, stream_id: int | None = None,
                                ext: str = "mkv", start_offset: int = 0,
-                               stream_bitrate_kbps: int | None = None) -> StreamPipe | None:
+                               stream_bitrate_kbps: int | None = None,
+                               client: str = "Unknown") -> StreamPipe | None:
     """Get existing active pipe or create a new one for this movie.
 
     Uses Dispatcharr's /proxy/vod/ endpoint which routes through nginx's
@@ -412,32 +432,46 @@ async def _get_or_create_pipe(movie_id: int, file_size: int, duration_seconds: i
         _pipe_creating[movie_id] = asyncio.Lock()
     async with _pipe_creating[movie_id]:
         return await _create_pipe_locked(movie_id, file_size, duration_seconds,
-                                          uuid, stream_id, ext, start_offset, stream_bitrate_kbps)
+                                          uuid, stream_id, ext, start_offset, stream_bitrate_kbps, client)
 
 
 async def _create_pipe_locked(movie_id: int, file_size: int, duration_seconds: int | None,
                                uuid: str | None = None, stream_id: int | None = None,
                                ext: str = "mkv", start_offset: int = 0,
-                               stream_bitrate_kbps: int | None = None) -> StreamPipe | None:
+                               stream_bitrate_kbps: int | None = None,
+                               client: str = "Unknown") -> StreamPipe | None:
     existing = _movie_pipes.get(movie_id)
 
     if existing and not existing.error:
         if existing.has_data_for(start_offset, start_offset):
             existing.last_read_at = time.time()
+            existing.client = client
             return existing
         if not existing.finished and start_offset >= existing.start_offset:
             expected_end = existing.start_offset + existing.bytes_written
             gap = start_offset - expected_end
             if gap < 5 * 1024 * 1024:
                 existing.last_read_at = time.time()
+                existing.client = client
                 return existing
             logger.info("Plex seeked beyond buffer for movie %d (gap=%dKB), restarting pipe from offset %d",
                          movie_id, gap // 1024, start_offset)
         await existing.close(keep_buffer=False)
         del _movie_pipes[movie_id]
+        # Grace period: give Dispatcharr/provider time to fully release the old
+        # upstream session before opening a replacement — a same-movie handoff
+        # (e.g. Jellyfin session torn down, Plex requesting fresh) that reopens
+        # too fast can look like 2 concurrent connections to the provider and
+        # get rejected, even though the old session is already closing.
+        await asyncio.sleep(REOPEN_GRACE_SECS)
     elif existing and existing.error:
         await existing.close(keep_buffer=False)
         del _movie_pipes[movie_id]
+
+    if len(_movie_pipes) >= MAX_CONCURRENT_PIPES:
+        logger.warning("Max concurrent pipes (%d) reached — refusing new pipe for movie %d",
+                        MAX_CONCURRENT_PIPES, movie_id)
+        raise PipeCapReached()
 
     buffer_path = os.path.join(BUFFER_DIR, f"movie_{movie_id}.buf")
     cached_size = 0
@@ -503,7 +537,7 @@ async def _create_pipe_locked(movie_id: int, file_size: int, duration_seconds: i
                       movie_id, session_host, disp_host)
         return None
 
-    pipe = StreamPipe(movie_id, session_url, file_size, duration_seconds, session_id, actual_start, stream_bitrate_kbps)
+    pipe = StreamPipe(movie_id, session_url, file_size, duration_seconds, session_id, actual_start, stream_bitrate_kbps, client)
     if cached_size > 0 and actual_start != effective_offset:
         pipe.bytes_written = cached_size
     _movie_pipes[movie_id] = pipe
@@ -535,6 +569,8 @@ async def _pipe_manager_loop():
                     to_cleanup.append((mid, "error"))
                 elif pipe.is_plex_idle and pipe.started and not pipe.finished:
                     to_cleanup.append((mid, "plex_idle"))
+                elif pipe.finished and pipe.is_plex_idle:
+                    to_cleanup.append((mid, "finished_idle"))
                 elif pipe.is_idle and pipe.started:
                     to_cleanup.append((mid, "full_idle"))
 
@@ -545,6 +581,11 @@ async def _pipe_manager_loop():
                         plex_idle = int(time.time() - pipe.last_plex_read)
                         logger.info("Plex idle %ds for movie %d — disconnecting upstream, buffer retained (%dMB)",
                                     plex_idle, mid, pipe.bytes_written // (1024*1024))
+                        await pipe.close(keep_buffer=True)
+                    elif reason == "finished_idle":
+                        idle_secs = int(time.time() - pipe.last_plex_read)
+                        logger.info("Finished pipe idle %ds for movie %d (client=%s) — removing from active streams, buffer retained",
+                                    idle_secs, mid, pipe.client)
                         await pipe.close(keep_buffer=True)
                     elif reason == "error" and pipe.error and "HTTP 5" in pipe.error:
                         logger.warning("Closing errored pipe for movie %d (%s) — marking dead", mid, pipe.error)
@@ -1097,9 +1138,13 @@ async def vod_file(filename: str, request: Request):
 
         ext = "mp4" if content_type == "video/mp4" else "mkv"
         if not _movie_pipes.get(movie_id):
-            await _get_or_create_pipe(movie_id, file_size, duration_seconds,
-                                      uuid=uuid, stream_id=stream_id, ext=ext,
-                                      start_offset=range_start, stream_bitrate_kbps=stream_bitrate_kbps)
+            try:
+                await _get_or_create_pipe(movie_id, file_size, duration_seconds,
+                                          uuid=uuid, stream_id=stream_id, ext=ext,
+                                          start_offset=range_start, stream_bitrate_kbps=stream_bitrate_kbps,
+                                          client=_client_label(request))
+            except PipeCapReached:
+                pass
 
         # Serve from live pipe (or completed pipe) if it has data for this range
         existing_pipe = _movie_pipes.get(movie_id)
@@ -1149,9 +1194,18 @@ async def vod_file(filename: str, request: Request):
         # Wrapped in try/except: ANY failure trips the circuit breaker
         # immediately. One strike, full stop, no retries to the provider.
         try:
-            pipe = await _get_or_create_pipe(movie_id, file_size, duration_seconds,
-                                               uuid=uuid, stream_id=stream_id, ext=ext,
-                                               start_offset=range_start, stream_bitrate_kbps=stream_bitrate_kbps)
+            try:
+                pipe = await _get_or_create_pipe(movie_id, file_size, duration_seconds,
+                                                   uuid=uuid, stream_id=stream_id, ext=ext,
+                                                   start_offset=range_start, stream_bitrate_kbps=stream_bitrate_kbps,
+                                                   client=_client_label(request))
+            except PipeCapReached:
+                _log_event("warn", movie_id, "Max concurrent streams reached — request rejected", movie_name=movie_name)
+                return Response(
+                    status_code=503,
+                    headers={"Retry-After": "15"},
+                    content="Maximum concurrent streams in use, please try again shortly",
+                )
 
             if not pipe:
                 _record_failure(stream_id)

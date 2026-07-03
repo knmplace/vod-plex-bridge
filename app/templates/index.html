@@ -717,6 +717,18 @@
         .stream-status-badge.complete { background: var(--accent); color: #fff; }
         .stream-status-badge.error { background: var(--danger); color: #fff; }
         .stream-status-badge.starting { background: var(--warning); color: #000; }
+        .stream-client-badge {
+            font-size: 0.68rem;
+            font-weight: 600;
+            padding: 0.1rem 0.45rem;
+            border-radius: 8px;
+            margin-left: 0.5rem;
+            text-transform: uppercase;
+            background: var(--bg-hover, #333);
+            color: var(--text-muted);
+        }
+        .stream-client-badge.stream-client-plex { background: #e5a00d; color: #1a1a1a; }
+        .stream-client-badge.stream-client-jellyfin { background: #00a4dc; color: #fff; }
 
         .stream-time-bar {
             display: flex;
@@ -1787,14 +1799,7 @@
             for (const lang of msState.msLang) url += `&language=${encodeURIComponent(lang)}`;
             for (const cat of msState.msCat) url += `&category_id=${cat}`;
 
-            if (msState.msProv.size > 0) {
-                for (const prov of msState.msProv) url += `&account_id=${prov}`;
-            } else {
-                const selProvs = allProviders.filter(p => p.selected);
-                if (selProvs.length > 0) {
-                    selProvs.forEach(p => url += `&account_id=${p.id}`);
-                }
-            }
+            for (const prov of msState.msProv) url += `&account_id=${prov}`;
 
             const data = await fetchJSON(url);
             const container = document.getElementById('movieGrid');
@@ -2995,6 +3000,7 @@
                     <div>
                         <span class="stream-movie-title">${escapeHtml(s.movie_name)}${yearStr}</span>
                         <span class="stream-movie-meta">ID: ${s.movie_id}</span>
+                        <span class="stream-client-badge stream-client-${(s.client || 'unknown').toLowerCase()}">${escapeHtml(s.client || 'Unknown')}</span>
                     </div>
                     <span class="stream-status-badge ${statusClass}">${s.status}</span>
                 </div>
