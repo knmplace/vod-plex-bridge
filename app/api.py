@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN
 from database import get_db
 from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing
-from generator import generate_strm_files, sanitize_filename, write_strm_for_movie, parse_title
+from generator import generate_strm_files, sanitize_filename, write_strm_for_movie, parse_title, get_folder_name
 from stream_mapper import apply_stream_mapping_to_db, load_stream_mapping, pick_stream_for_account
 from proxy import probe_file_size, get_proxy_log, get_all_pipes, _log_event, archive_proxy_log, cleanup_old_archives, list_log_archives, get_log_archive
 from health import run_health_checks, get_health_status, get_health_log, health_check_scheduler
@@ -286,7 +286,7 @@ async def remove_categories(request: Request):
     if exclusive_ids:
         ep = ",".join("?" for _ in exclusive_ids)
         act_rows = await db.execute(
-            f"SELECT id, name, year FROM movies WHERE id IN ({ep}) AND activated = 1",
+            f"SELECT id, name, year, strm_folder FROM movies WHERE id IN ({ep}) AND activated = 1",
             exclusive_ids,
         )
         activated_movies = await act_rows.fetchall()
@@ -908,6 +908,9 @@ async def _deactivate_dead_movie(movie_id: int, name: str, year: int | None, rea
     """Immediately deactivate a movie and remove from Plex when stream is dead."""
     db = await get_db()
     try:
+        row = await db.execute("SELECT strm_folder FROM movies WHERE id = ?", (movie_id,))
+        prev = await row.fetchone()
+        prev_strm_folder = prev["strm_folder"] if prev else None
         await db.execute("UPDATE movies SET activated = 0 WHERE id = ?", (movie_id,))
         await db.commit()
     finally:
@@ -915,7 +918,7 @@ async def _deactivate_dead_movie(movie_id: int, name: str, year: int | None, rea
 
     plex_removed = await _plex_remove_movies([movie_id])
 
-    movie_info = {"name": name, "year": year}
+    movie_info = {"name": name, "year": year, "strm_folder": prev_strm_folder}
     _remove_strm_folders([movie_info])
 
     strm_count = _count_strm_folders()
@@ -1420,9 +1423,10 @@ async def _mark_activation_dead(movie_id: int, name: str, year: int | None, reas
     """Mark a movie as dead during activation — deactivate and clean up STRM/Plex if it was previously activated."""
     db = await get_db()
     try:
-        row = await db.execute("SELECT activated FROM movies WHERE id = ?", (movie_id,))
+        row = await db.execute("SELECT activated, strm_folder FROM movies WHERE id = ?", (movie_id,))
         prev = await row.fetchone()
         was_activated = prev and prev["activated"] == 1
+        prev_strm_folder = prev["strm_folder"] if prev else None
 
         await db.execute(
             "UPDATE movies SET stream_dead = 1, stream_dead_count = 1, activated = 0, "
@@ -1436,7 +1440,7 @@ async def _mark_activation_dead(movie_id: int, name: str, year: int | None, reas
 
     if was_activated:
         await _plex_remove_movies([movie_id])
-        movie_info = {"name": name, "year": year}
+        movie_info = {"name": name, "year": year, "strm_folder": prev_strm_folder}
         folder_name = _movie_folder_name(movie_info)
         live_folder = os.path.join(STRM_OUTPUT_DIR, folder_name)
         dead_folder = os.path.join(DEAD_DIR, folder_name)
@@ -1547,7 +1551,7 @@ async def deactivate_movies(request: Request):
     try:
         placeholders = ",".join("?" for _ in movie_ids)
         rows = await db.execute(
-            f"SELECT id, name, year FROM movies WHERE id IN ({placeholders})",
+            f"SELECT id, name, year, strm_folder FROM movies WHERE id IN ({placeholders})",
             movie_ids,
         )
         movies = await rows.fetchall()
@@ -1650,12 +1654,7 @@ async def _plex_remove_movies(movie_ids: list[int]):
 
 
 def _movie_folder_name(movie) -> str:
-    parsed = parse_title(movie["name"], movie["year"])
-    clean = parsed['title']
-    year = parsed['year']
-    if year:
-        return sanitize_filename(f"{clean} ({year})")
-    return sanitize_filename(clean)
+    return get_folder_name(movie)
 
 
 def _remove_strm_folders(movies) -> int:
@@ -2438,7 +2437,7 @@ async def list_dead_movies(
 
         offset = (page - 1) * page_size
         rows = await db.execute(
-            f"SELECT m.id, m.name, m.year, m.rating, m.poster_url, m.account_name, m.language, m.dead_at "
+            f"SELECT m.id, m.name, m.year, m.rating, m.poster_url, m.account_name, m.language, m.dead_at, m.catalog_refresh_note "
             f"FROM movies m WHERE {where} ORDER BY m.dead_at DESC LIMIT ? OFFSET ?",
             params + [page_size, offset],
         )
@@ -2459,7 +2458,7 @@ async def delete_dead_movies(request: Request):
     try:
         placeholders = ",".join("?" for _ in movie_ids)
         rows = await db.execute(
-            f"SELECT id, name, year FROM movies WHERE id IN ({placeholders}) AND dead = 1",
+            f"SELECT id, name, year, strm_folder FROM movies WHERE id IN ({placeholders}) AND dead = 1",
             movie_ids,
         )
         movies = await rows.fetchall()
@@ -2490,7 +2489,7 @@ async def delete_dead_movies(request: Request):
 async def delete_all_dead():
     db = await get_db()
     try:
-        rows = await db.execute("SELECT id, name, year FROM movies WHERE dead = 1")
+        rows = await db.execute("SELECT id, name, year, strm_folder FROM movies WHERE dead = 1")
         movies = await rows.fetchall()
         movie_ids = [m["id"] for m in movies]
 
@@ -2542,7 +2541,8 @@ async def restore_dead_movies(request: Request):
                     pass
 
         await db.execute(
-            f"UPDATE movies SET dead = 0, dead_at = NULL, stream_dead = 0, stream_dead_count = 0 WHERE id IN ({placeholders})",
+            f"UPDATE movies SET dead = 0, dead_at = NULL, stream_dead = 0, stream_dead_count = 0, "
+            f"catalog_refresh_note = NULL WHERE id IN ({placeholders})",
             movie_ids,
         )
         await db.commit()
@@ -2577,7 +2577,8 @@ async def restore_all_dead_movies():
                     pass
 
         await db.execute(
-            "UPDATE movies SET dead = 0, dead_at = NULL, stream_dead = 0, stream_dead_count = 0 WHERE dead = 1"
+            "UPDATE movies SET dead = 0, dead_at = NULL, stream_dead = 0, stream_dead_count = 0, "
+            "catalog_refresh_note = NULL WHERE dead = 1"
         )
         await db.commit()
 
@@ -2602,7 +2603,7 @@ async def mark_movies_dead(request: Request):
     try:
         placeholders = ",".join("?" for _ in movie_ids)
         rows = await db.execute(
-            f"SELECT id, name, year, activated FROM movies WHERE id IN ({placeholders})",
+            f"SELECT id, name, year, activated, strm_folder FROM movies WHERE id IN ({placeholders})",
             movie_ids,
         )
         movies = [dict(r) for r in await rows.fetchall()]
@@ -2750,7 +2751,7 @@ async def _run_dead_scan():
         await db.commit()
 
         rows = await db.execute(
-            "SELECT id, name, year, activated FROM movies WHERE dead = 0 AND name != ''"
+            "SELECT id, name, year, activated, strm_folder FROM movies WHERE dead = 0 AND name != ''"
         )
         catalog_movies = await rows.fetchall()
 
@@ -2971,11 +2972,20 @@ async def _run_scheduled_refresh():
     try:
         # 1. Dump regen
         await _set_status("refreshing", "Daily run: regenerating stream dumps...")
+        dump_stale = False
         try:
             ok = await _trigger_dump_regen()
-            report.append(f"Dump regen: {'OK' if ok else 'TIMED OUT (dump files may be stale)'}")
+            if ok:
+                report.append("Dump regen: OK")
+            else:
+                dump_stale = True
+                report.append(
+                    "Dump regen: TIMED OUT — WARNING: categories/catalog/stream mapping below "
+                    "used a STALE dump (host cron may be broken, check /var/log/vod-bridge-dump.log on .94)"
+                )
         except Exception as e:
-            report.append(f"Dump regen: FAILED ({e})")
+            dump_stale = True
+            report.append(f"Dump regen: FAILED ({e}) — WARNING: steps below used a STALE dump")
 
         # 2. Categories
         await _set_status("refreshing", "Daily run: reloading categories...")
@@ -2988,10 +2998,12 @@ async def _run_scheduled_refresh():
         # 3. Catalog refresh (Dispatcharr API only)
         await _set_status("refreshing", "Daily run: syncing catalog from Dispatcharr...")
         try:
-            synced, total, uuid_changes = await _run_catalog_refresh_counted()
+            synced, total, uuid_changes, removed = await _run_catalog_refresh_counted()
             parts = [f"{synced} processed, {total} total"]
             if uuid_changes:
                 parts.append(f"{uuid_changes} UUID changes")
+            if removed:
+                parts.append(f"{removed} removed (no longer in Dispatcharr)")
             report.append(f"Catalog: {', '.join(parts)}")
         except Exception as e:
             report.append(f"Catalog: FAILED ({e})")
@@ -3062,11 +3074,11 @@ _uuid_change_counter = 0
 
 async def _run_catalog_refresh():
     """Re-scrape full VOD catalog from Dispatcharr to pick up new/changed movies."""
-    synced, total, uuid_changes = await _run_catalog_refresh_counted()
+    synced, total, uuid_changes, removed = await _run_catalog_refresh_counted()
     return synced
 
 
-async def _run_catalog_refresh_counted() -> tuple[int, int, int]:
+async def _run_catalog_refresh_counted() -> tuple[int, int, int, int]:
     """Two-phase catalog refresh: update existing movies, then discover new ones in selected categories."""
     import json as _json
     global _uuid_change_counter
@@ -3075,8 +3087,9 @@ async def _run_catalog_refresh_counted() -> tuple[int, int, int]:
     db = await get_db()
 
     # --- Phase 1: Refresh existing catalog movies ---
-    rows = await db.execute("SELECT id FROM movies WHERE name != ''")
-    existing_ids = [r["id"] for r in await rows.fetchall()]
+    rows = await db.execute("SELECT id, name, year, activated, dead, strm_folder FROM movies WHERE name != ''")
+    existing_movies = {r["id"]: dict(r) for r in await rows.fetchall()}
+    existing_ids = list(existing_movies.keys())
     existing_id_set = set(existing_ids)
     total_target = len(existing_ids)
 
@@ -3091,11 +3104,13 @@ async def _run_catalog_refresh_counted() -> tuple[int, int, int]:
         req_headers["X-API-Key"] = DISPATCHARR_API_KEY
 
     total_updated = 0
+    removed = 0
     failed = 0
     async with httpx.AsyncClient(timeout=30.0) as client:
         for i, movie_id in enumerate(existing_ids):
             if is_cancelled():
                 break
+            movie_row = existing_movies[movie_id]
             try:
                 resp = await client.get(
                     f"{DISPATCHARR_URL}/api/vod/movies/{movie_id}/",
@@ -3104,10 +3119,20 @@ async def _run_catalog_refresh_counted() -> tuple[int, int, int]:
                 if resp.status_code == 200:
                     movie = resp.json()
                     await _upsert_movie_from_api(db, movie)
+                    if movie_row["dead"]:
+                        await db.execute(
+                            "UPDATE movies SET catalog_refresh_note = ? WHERE id = ?",
+                            ("Provider data refreshed — this may have been a temporary issue. Try restoring.", movie_id),
+                        )
                     total_updated += 1
                 elif resp.status_code == 404:
-                    failed += 1
-                    logger.info(f"Catalog refresh: movie {movie_id} no longer in Dispatcharr")
+                    # Movie no longer exists in Dispatcharr's VOD catalog at all — remove entirely.
+                    if movie_row["activated"]:
+                        await _plex_remove_movies([movie_id])
+                        _remove_strm_folders([movie_row])
+                    await db.execute("DELETE FROM movies WHERE id = ?", (movie_id,))
+                    removed += 1
+                    logger.info(f"Catalog refresh: movie {movie_id} ({movie_row['name']}) no longer in Dispatcharr — removed from catalog")
                 else:
                     failed += 1
             except Exception as e:
@@ -3124,6 +3149,10 @@ async def _run_catalog_refresh_counted() -> tuple[int, int, int]:
             await asyncio.sleep(0.02)
 
     await db.commit()
+    if removed:
+        strm_count = _count_strm_folders()
+        await db.execute("UPDATE sync_state SET active_strm_count = ? WHERE id = 1", (strm_count,))
+        await db.commit()
 
     # --- Phase 2: Discover new movies in selected categories/providers ---
     new_added = 0
@@ -3210,6 +3239,8 @@ async def _run_catalog_refresh_counted() -> tuple[int, int, int]:
     count = (await count_row.fetchone())["cnt"]
     status = "cancelled" if is_cancelled() else "complete"
     parts = [f"{total_updated}/{total_target} updated"]
+    if removed:
+        parts.append(f"{removed} removed (no longer in Dispatcharr)")
     if failed:
         parts.append(f"{failed} failed")
     if new_added:
@@ -3229,7 +3260,7 @@ async def _run_catalog_refresh_counted() -> tuple[int, int, int]:
     await db.commit()
     logger.info(f"Catalog refresh {status}: {', '.join(parts)}")
 
-    return total_updated + new_added, count, _uuid_change_counter
+    return total_updated + new_added, count, _uuid_change_counter, removed
 
 
 async def _upsert_movie_from_api(db, movie):

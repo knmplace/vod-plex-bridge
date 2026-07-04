@@ -26,7 +26,6 @@ BUFFER_DIR = "/data/buffers"
 
 PIPE_IDLE_TIMEOUT = 900     # 15 min with no activity at all → close everything
 PLEX_IDLE_TIMEOUT = 30      # 30 sec with no Plex reads → disconnect upstream, keep buffer
-UPSTREAM_STALL_TIMEOUT = 15  # sec with no bytes from provider (while Plex still wants data) → treat as failure, try fallback
 BUFFER_MAX_AGE = 86400      # 24 hours — delete stale buffer files
 BUFFER_CLEANUP_INTERVAL = 3600  # check every hour
 PIPE_POLL_INTERVAL = 0.1    # seconds between checks when waiting for data
@@ -70,7 +69,6 @@ class StreamPipe:
         self.created_at = time.time()
         self.last_read_at = time.time()
         self.last_plex_read = time.time()
-        self.last_upstream_data_at = time.time()
         self.plex_position: int = start_offset
         self._download_task: asyncio.Task | None = None
         self._client: httpx.AsyncClient | None = None
@@ -178,7 +176,6 @@ class StreamPipe:
                     self.bytes_written += len(chunk)
                     session_bytes += len(chunk)
                     self.last_read_at = time.time()
-                    self.last_upstream_data_at = time.time()
 
                     if session_bytes > INITIAL_BURST and self.bytes_per_second > 0:
                         multiplier = self._adaptive_multiplier()
@@ -279,16 +276,6 @@ class StreamPipe:
     @property
     def is_plex_idle(self) -> bool:
         return (time.time() - self.last_plex_read) > PLEX_IDLE_TIMEOUT
-
-    @property
-    def is_upstream_stalled(self) -> bool:
-        """Provider stopped sending bytes mid-download without an explicit error,
-        while Plex is still actively reading (not idle) and the pipe isn't finished."""
-        if self.finished or self.error or not self.started:
-            return False
-        if self.is_plex_idle:
-            return False
-        return (time.time() - self.last_upstream_data_at) > UPSTREAM_STALL_TIMEOUT
 
     async def close(self, keep_buffer: bool = True):
         if self._download_task and not self._download_task.done():
@@ -580,8 +567,6 @@ async def _pipe_manager_loop():
             for mid, pipe in list(_movie_pipes.items()):
                 if pipe.error:
                     to_cleanup.append((mid, "error"))
-                elif pipe.is_upstream_stalled:
-                    to_cleanup.append((mid, "stalled"))
                 elif pipe.is_plex_idle and pipe.started and not pipe.finished:
                     to_cleanup.append((mid, "plex_idle"))
                 elif pipe.finished and pipe.is_plex_idle:
@@ -602,19 +587,6 @@ async def _pipe_manager_loop():
                         logger.info("Finished pipe idle %ds for movie %d (client=%s) — removing from active streams, buffer retained",
                                     idle_secs, mid, pipe.client)
                         await pipe.close(keep_buffer=True)
-                    elif reason == "stalled":
-                        stalled_secs = int(time.time() - pipe.last_upstream_data_at)
-                        logger.warning("Upstream stall %ds for movie %d (no bytes from provider) — treating as failure, trying fallback",
-                                       stalled_secs, mid)
-                        try:
-                            db = await get_db()
-                            row = await db.execute("SELECT stream_id FROM movies WHERE id = ?", (mid,))
-                            movie = await row.fetchone()
-                            if movie:
-                                await _handle_upstream_error(mid, movie["stream_id"], 599)
-                        except Exception as he:
-                            logger.error("Failed to handle stalled pipe for movie %d: %s", mid, he)
-                        await pipe.close(keep_buffer=False)
                     elif reason == "error" and pipe.error and "HTTP 5" in pipe.error:
                         logger.warning("Closing errored pipe for movie %d (%s) — marking dead", mid, pipe.error)
                         try:
@@ -1116,7 +1088,7 @@ async def vod_file(filename: str, request: Request):
                         from api import _plex_remove_movies, _movie_folder_name, STRM_OUTPUT_DIR, DEAD_DIR
                         db2 = await get_db()
                         row2 = await db2.execute(
-                            "SELECT id, name, year, activated FROM movies WHERE id = ?", (movie_id,))
+                            "SELECT id, name, year, activated, strm_folder FROM movies WHERE id = ?", (movie_id,))
                         m = await row2.fetchone()
                         if m and m["activated"]:
                             await _plex_remove_movies([movie_id])
@@ -1312,7 +1284,7 @@ async def _handle_upstream_error(movie_id: int, stream_id: int, status_code: int
             db = await get_db()
             try:
                 row = await db.execute(
-                    "SELECT id, name, year, activated FROM movies WHERE id = ?", (movie_id,))
+                    "SELECT id, name, year, activated, strm_folder FROM movies WHERE id = ?", (movie_id,))
                 result = await row.fetchone()
                 if result:
                     mname = result["name"] or None

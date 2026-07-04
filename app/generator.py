@@ -129,6 +129,26 @@ def sanitize_filename(name: str) -> str:
     return name[:200]
 
 
+def compute_folder_name(movie) -> str:
+    """Derive the STRM folder name for a movie from its title/year (used only when no
+    strm_folder is stored yet — once set, the stored value is authoritative)."""
+    parsed = parse_title(movie["name"], movie["year"])
+    clean_name = parsed['title']
+    clean_year = parsed['year']
+    if clean_year:
+        return sanitize_filename(f"{clean_name} ({clean_year})")
+    return sanitize_filename(clean_name)
+
+
+def get_folder_name(movie) -> str:
+    """Return the movie's stable STRM folder name, preferring the stored value."""
+    try:
+        stored = movie["strm_folder"]
+    except (IndexError, KeyError):
+        stored = None
+    return stored or compute_folder_name(movie)
+
+
 async def generate_strm_files():
     """Generate .strm + .nfo + poster files based on active filter configs."""
     db = await get_db()
@@ -220,18 +240,14 @@ async def generate_strm_files():
         async with httpx.AsyncClient(timeout=10.0) as client:
             for movie in movies:
                 name = movie["name"]
-                year = movie["year"]
                 if not name:
                     continue
 
-                parsed = parse_title(name, year)
-                clean_name = parsed['title']
-                clean_year = parsed['year']
-
-                if clean_year:
-                    folder_name = sanitize_filename(f"{clean_name} ({clean_year})")
-                else:
-                    folder_name = sanitize_filename(clean_name)
+                folder_name = get_folder_name(movie)
+                if not movie["strm_folder"] or movie["strm_folder"] != folder_name:
+                    await db.execute(
+                        "UPDATE movies SET strm_folder = ? WHERE id = ?", (folder_name, movie["id"])
+                    )
 
                 file_name = sanitize_filename(folder_name)
                 folder_path = os.path.join(STRM_OUTPUT_DIR, folder_name)
@@ -293,23 +309,20 @@ async def generate_strm_files():
 async def write_strm_for_movie(movie):
     """Write .strm + .nfo + poster for a single activated movie."""
     name = movie["name"]
-    year = movie["year"]
     movie_id = movie["id"]
     if not name:
         return False
 
-    parsed = parse_title(name, year)
-    clean_name = parsed['title']
-    clean_year = parsed['year']
-
-    if clean_year:
-        folder_name = sanitize_filename(f"{clean_name} ({clean_year})")
-    else:
-        folder_name = sanitize_filename(clean_name)
+    folder_name = get_folder_name(movie)
     file_name = sanitize_filename(folder_name)
 
     folder_path = os.path.join(STRM_OUTPUT_DIR, folder_name)
     os.makedirs(folder_path, exist_ok=True)
+
+    if movie.get("strm_folder") != folder_name:
+        db = await get_db()
+        await db.execute("UPDATE movies SET strm_folder = ? WHERE id = ?", (folder_name, movie_id))
+        await db.commit()
 
     strm_url = f"http://{BRIDGE_HOST}:{BRIDGE_PORT}/stream/{movie_id}.mp4"
     strm_path = os.path.join(folder_path, f"{file_name}.strm")

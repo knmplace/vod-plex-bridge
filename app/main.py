@@ -15,15 +15,14 @@ from error_screens import generate_error_screens
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-APP_VERSION = "0.35.6"
+APP_VERSION = "0.35.9"
 
 
 async def _restore_strm_files():
     """Regenerate STRM files for activated movies missing from disk."""
     import os
-    import re
     from database import get_db
-    from generator import write_strm_for_movie, sanitize_filename, parse_title
+    from generator import write_strm_for_movie, get_folder_name
     from config import STRM_OUTPUT_DIR
 
     db = await get_db()
@@ -35,11 +34,9 @@ async def _restore_strm_files():
     restored = 0
     for movie in activated:
         name = movie.get("name")
-        year = movie.get("year")
         if not name:
             continue
-        parsed = parse_title(name, year)
-        folder_name = sanitize_filename(f"{parsed['title']} ({parsed['year']})" if parsed['year'] else parsed['title'])
+        folder_name = get_folder_name(movie)
         if not os.path.isdir(os.path.join(STRM_OUTPUT_DIR, folder_name)):
             await write_strm_for_movie(movie)
             restored += 1

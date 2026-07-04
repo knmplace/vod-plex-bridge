@@ -109,7 +109,9 @@ async def apply_stream_mapping_to_db():
             if not entries:
                 continue
 
-            row = await db.execute("SELECT account_id, stream_id FROM movies WHERE id = ?", (movie_id,))
+            row = await db.execute(
+                "SELECT account_id, stream_id, alt_streams FROM movies WHERE id = ?", (movie_id,)
+            )
             movie = await row.fetchone()
             current_account_id = movie["account_id"] if movie else None
 
@@ -126,11 +128,22 @@ async def apply_stream_mapping_to_db():
             alts = get_alt_streams(entries, stream_id)
             alt_json = json.dumps(alts) if alts else "[]"
 
+            current_stream_id = str(movie["stream_id"]) if movie and movie["stream_id"] is not None else None
+            current_alt_json = movie["alt_streams"] if movie else None
+            changed = (
+                not movie
+                or current_account_id is None
+                or current_stream_id != str(stream_id)
+                or current_account_id != acct_id
+                or current_alt_json != alt_json
+            )
+            if not changed:
+                continue
+
             result = await db.execute(
                 "UPDATE movies SET stream_id = ?, content_type = ?, account_id = ?, account_name = ?, "
-                "alt_streams = ? "
-                "WHERE id = ? AND (stream_id IS NULL OR stream_id != ? OR account_id IS NULL OR alt_streams = '[]')",
-                (stream_id, content_type, acct_id, account_name, alt_json, movie_id, stream_id),
+                "alt_streams = ? WHERE id = ?",
+                (stream_id, content_type, acct_id, account_name, alt_json, movie_id),
             )
             if result.rowcount > 0:
                 updated += 1

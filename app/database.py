@@ -118,6 +118,8 @@ async def init_db():
         "ALTER TABLE movies ADD COLUMN backdrop_url TEXT",
         "ALTER TABLE movies ADD COLUMN original_name TEXT DEFAULT ''",
         "ALTER TABLE movies ADD COLUMN alt_streams TEXT DEFAULT '[]'",
+        "ALTER TABLE movies ADD COLUMN strm_folder TEXT",
+        "ALTER TABLE movies ADD COLUMN catalog_refresh_note TEXT",
     ]:
         try:
             await db.execute(col)
