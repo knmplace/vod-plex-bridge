@@ -12,4 +12,10 @@ PLEX_URL = os.environ.get("PLEX_URL", "")
 PLEX_TOKEN = os.environ.get("PLEX_TOKEN", "")
 PLEX_LIBRARY_ID = os.environ.get("PLEX_LIBRARY_ID", "7")
 
+MAX_CONCURRENT_PER_TITLE = int(os.environ.get("MAX_CONCURRENT_PER_TITLE", "2"))
+REDIRECT_STREAMING = os.environ.get("REDIRECT_MODE", "false").lower() in ("1", "true", "yes")
+
+STRM_SERIES_OUTPUT_DIR = os.environ.get("STRM_SERIES_OUTPUT_DIR", "/plex-vod/Series")
+PLEX_SERIES_LIBRARY_ID = os.environ.get("PLEX_SERIES_LIBRARY_ID", "")
+
 

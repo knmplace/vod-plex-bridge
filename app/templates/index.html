@@ -366,6 +366,10 @@
             border-color: var(--accent);
             color: #fff;
         }
+        #seriesDetailEpisodeBody tr.card-selected {
+            background: var(--accent);
+            color: #fff;
+        }
         .movie-card .activated-badge {
             position: absolute;
             top: 4px;
@@ -904,6 +908,7 @@
             <div class="tab-nav">
                 <button class="tab-btn active" onclick="switchTab('browse')">Browse</button>
                 <button class="tab-btn" onclick="switchTab('catalog')">Catalog</button>
+                <button class="tab-btn" onclick="switchTab('series')">Series</button>
                 <button class="tab-btn" onclick="switchTab('dead')">Dead Movies <span class="badge" id="deadBadge" style="display:none;background:var(--danger);margin-left:0.3rem;">0</span></button>
                 <button class="tab-btn" onclick="switchTab('logs')">Proxy Logs</button>
                 <button class="tab-btn" onclick="switchTab('streams')">Streams <span class="badge" id="streamsBadge" style="display:none;background:var(--success);margin-left:0.3rem;">0</span></button>
@@ -1134,6 +1139,83 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- SERIES TAB -->
+    <div class="tab-content" id="tabSeries">
+        <div class="browse-section">
+            <div class="panel" style="margin-bottom:1rem;" id="seriesCategoryPanel">
+                <div class="panel-header collapsible" onclick="togglePanel('seriesCategoryPanel')">
+                    <span><span class="collapse-arrow">&#9660;</span>Series Categories</span>
+                    <span class="badge" id="seriesCategoryCount">0</span>
+                </div>
+                <div class="panel-body">
+                    <div style="display:flex;gap:0.4rem;margin-bottom:0.6rem;flex-wrap:wrap;align-items:center;" onclick="event.stopPropagation()">
+                        <input type="text" class="search-input" id="newCatName" placeholder="Category name" style="width:160px;margin-bottom:0;">
+                        <input type="text" class="search-input" id="newCatFolder" placeholder="STRM folder (e.g. Kids)" style="width:180px;margin-bottom:0;">
+                        <input type="number" class="search-input" id="newCatPlexSection" placeholder="Plex library section id" style="width:180px;margin-bottom:0;">
+                        <button class="btn btn-primary" style="font-size:0.72rem;padding:0.25rem 0.6rem;" onclick="createSeriesCategory()">Add Category</button>
+                    </div>
+                    <table class="summary-table compact" id="seriesCategoryTable">
+                        <thead><tr><th>Name</th><th>STRM Folder</th><th>Plex Section</th><th style="text-align:right">Series</th><th></th></tr></thead>
+                        <tbody id="seriesCategoryBody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    Browse Series
+                    <span style="font-size:0.75rem;color:var(--text-muted)" id="seriesLabel"></span>
+                </div>
+                <div class="browse-toolbar">
+                    <input type="text" id="seriesSearch" placeholder="Search series..." style="width:200px;" oninput="debounceSeriesSearch()">
+                    <select id="seriesFilterCategory" onchange="loadSeriesList(1)">
+                        <option value="0">All Categories</option>
+                    </select>
+                    <select id="seriesFilterActivated" onchange="loadSeriesList(1)">
+                        <option value="">All Series</option>
+                        <option value="1">Has Activated Episodes</option>
+                    </select>
+                    <button class="btn btn-warning" style="font-size:0.72rem;" onclick="scrapeSeriesCatalog()">Sync Series Catalog</button>
+                    <span class="msg" id="seriesSyncMessage"></span>
+                </div>
+                <div class="panel-body">
+                    <div id="seriesGrid" class="movie-grid">
+                        <div class="empty-state">Click Sync Series Catalog to import series, then browse below.</div>
+                    </div>
+                    <div class="pagination" id="seriesPagination"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SERIES DETAIL MODAL -->
+    <div class="trailer-modal" id="seriesDetailModal" onclick="closeSeriesDetail(event)">
+        <div onclick="event.stopPropagation()" style="background:var(--bg-panel);border-radius:8px;max-width:900px;width:90%;max-height:85vh;overflow-y:auto;margin:5vh auto;padding:1.25rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+                <h2 id="seriesDetailTitle" style="margin:0;font-size:1.1rem;"></h2>
+                <span class="trailer-close" style="position:static;" onclick="closeSeriesDetail()">&times;</span>
+            </div>
+            <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;">
+                <select id="seriesDetailCategory" style="min-width:220px;"></select>
+                <select id="seriesDetailSeason" onchange="loadSeriesDetailEpisodes()">
+                    <option value="0">All Seasons</option>
+                </select>
+                <button class="btn btn-outline" style="font-size:0.72rem;" onclick="fetchSeriesEpisodesNow()">Fetch Episodes</button>
+                <div id="seriesEpSelectionBar" style="display:none;gap:0.4rem;align-items:center;">
+                    <span class="count" id="seriesEpSelCount">0</span> selected
+                    <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="activateSelectedEpisodes()">Activate</button>
+                    <button class="btn btn-primary" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="reactivateSelectedEpisodes()">Reactivate</button>
+                    <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="deactivateSelectedEpisodes()">Deactivate</button>
+                    <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="clearEpisodeSelection()">Clear</button>
+                </div>
+            </div>
+            <table class="summary-table compact" id="seriesDetailEpisodeTable">
+                <thead><tr><th style="width:24px;"></th><th>S</th><th>E</th><th>Title</th><th>Aired</th><th>Status</th></tr></thead>
+                <tbody id="seriesDetailEpisodeBody"><tr><td colspan="6" class="empty-state">Select a season, then Fetch Episodes.</td></tr></tbody>
+            </table>
         </div>
     </div>
 
@@ -1397,7 +1479,14 @@
         async function fetchJSON(url, opts) {
             const defaults = { cache: 'no-store' };
             const resp = await fetch(url, Object.assign(defaults, opts || {}));
-            return resp.json();
+            const text = await resp.text();
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                // Non-JSON body (e.g. a plain-text 500) — return an error object
+                // instead of throwing, so callers can hide overlays and report it.
+                return { error: `HTTP ${resp.status}: ${text.slice(0, 200)}` };
+            }
         }
 
         // --- Collapsible Panels ---
@@ -1427,12 +1516,17 @@
                 loadCatalogSummary();
                 if (!allProviders.length) refreshProviders();
                 if (!allCategories.length) refreshCategories();
-            } else if (tab === 'dead') {
+            } else if (tab === 'series') {
                 tabs[2].classList.add('active');
+                document.getElementById('tabSeries').classList.add('active');
+                loadSeriesCategories();
+                loadSeriesList(1);
+            } else if (tab === 'dead') {
+                tabs[3].classList.add('active');
                 document.getElementById('tabDead').classList.add('active');
                 loadDeadMovies(1);
             } else if (tab === 'logs') {
-                tabs[3].classList.add('active');
+                tabs[4].classList.add('active');
                 document.getElementById('tabLogs').classList.add('active');
                 loadProxyLog();
                 loadArchives();
@@ -1440,7 +1534,7 @@
                     if (document.getElementById('logAutoRefresh').checked) loadProxyLog();
                 }, 3000);
             } else if (tab === 'streams') {
-                tabs[4].classList.add('active');
+                tabs[5].classList.add('active');
                 document.getElementById('tabStreams').classList.add('active');
                 loadActiveStreams();
                 loadPlexSessions();
@@ -1449,7 +1543,7 @@
                     if (document.getElementById('plexAutoRefresh').checked) loadPlexSessions();
                 }, 3000);
             } else if (tab === 'health') {
-                tabs[5].classList.add('active');
+                tabs[6].classList.add('active');
                 document.getElementById('tabHealth').classList.add('active');
                 loadHealthStatus();
                 loadStreamHealth();
@@ -1457,7 +1551,7 @@
                     if (document.getElementById('healthAutoRefresh').checked) { loadHealthStatus(); loadStreamHealth(); }
                 }, 30000);
             } else if (tab === 'settings') {
-                tabs[6].classList.add('active');
+                tabs[7].classList.add('active');
                 document.getElementById('tabSettings').classList.add('active');
                 loadSchedule();
             } else {
@@ -1953,6 +2047,277 @@
             document.getElementById('syncOverlayProgress').textContent = parts.join(' | ') || '';
         }
 
+        // --- Series ---
+        let seriesCategories = [];
+        let seriesCurrentPage = 1;
+        let seriesSearchTimeout = null;
+        let currentSeriesDetail = null;
+        let selectedEpisodes = new Set();
+
+        async function loadSeriesCategories() {
+            const data = await fetchJSON('/api/series/categories');
+            seriesCategories = data.results || [];
+            document.getElementById('seriesCategoryCount').textContent = seriesCategories.length;
+
+            const body = document.getElementById('seriesCategoryBody');
+            if (!seriesCategories.length) {
+                body.innerHTML = '<tr><td colspan="5" class="empty-state">No categories yet. Add one above.</td></tr>';
+            } else {
+                body.innerHTML = seriesCategories.map(c => `
+                    <tr>
+                        <td>${(c.name||'').replace(/</g,'&lt;')}</td>
+                        <td>${(c.strm_folder||'').replace(/</g,'&lt;')}</td>
+                        <td>${c.plex_library_section}</td>
+                        <td style="text-align:right">${c.series_count || 0}</td>
+                        <td style="text-align:right">
+                            <button class="btn btn-danger" style="padding:0.15rem 0.5rem;font-size:0.68rem;" onclick="deleteSeriesCategory(${c.id})">Delete</button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+
+            const filterSel = document.getElementById('seriesFilterCategory');
+            const prevVal = filterSel.value;
+            filterSel.innerHTML = '<option value="0">All Categories</option>' +
+                seriesCategories.map(c => `<option value="${c.id}">${(c.name||'').replace(/</g,'&lt;')}</option>`).join('');
+            filterSel.value = prevVal || '0';
+
+            const detailSel = document.getElementById('seriesDetailCategory');
+            detailSel.innerHTML = seriesCategories.map(c => `<option value="${c.id}">${(c.name||'').replace(/</g,'&lt;')}</option>`).join('')
+                || '<option value="">No categories - add one first</option>';
+        }
+
+        async function createSeriesCategory() {
+            const name = document.getElementById('newCatName').value.trim();
+            const strm_folder = document.getElementById('newCatFolder').value.trim();
+            const plex_library_section = parseInt(document.getElementById('newCatPlexSection').value) || 999;
+            if (!name || !strm_folder) {
+                alert('Name and STRM folder are required.');
+                return;
+            }
+            const res = await fetchJSON('/api/series/categories', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name, strm_folder, plex_library_section})
+            });
+            if (res.error) { alert(res.error); return; }
+            document.getElementById('newCatName').value = '';
+            document.getElementById('newCatFolder').value = '';
+            document.getElementById('newCatPlexSection').value = '';
+            loadSeriesCategories();
+        }
+
+        async function deleteSeriesCategory(id) {
+            if (!confirm('Delete this category?')) return;
+            const res = await fetchJSON(`/api/series/categories/${id}`, {method: 'DELETE'});
+            if (res.error) { alert(res.error); return; }
+            loadSeriesCategories();
+        }
+
+        async function scrapeSeriesCatalog() {
+            document.getElementById('seriesSyncMessage').textContent = 'Syncing...';
+            await fetchJSON('/api/series/scrape', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({})
+            });
+            const poll = setInterval(async () => {
+                const status = await fetchJSON('/api/series/sync-status');
+                document.getElementById('seriesSyncMessage').textContent = status.message || '';
+                if (status.status === 'idle') {
+                    clearInterval(poll);
+                    loadSeriesList(1);
+                }
+            }, 2000);
+        }
+
+        function debounceSeriesSearch() {
+            clearTimeout(seriesSearchTimeout);
+            seriesSearchTimeout = setTimeout(() => loadSeriesList(1), 300);
+        }
+
+        async function loadSeriesList(page) {
+            seriesCurrentPage = page || 1;
+            const search = document.getElementById('seriesSearch').value;
+            const categoryId = document.getElementById('seriesFilterCategory').value;
+            const activatedOnly = document.getElementById('seriesFilterActivated').value;
+            let url = `/api/series?page=${seriesCurrentPage}&page_size=60`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+            if (categoryId && categoryId !== '0') url += `&category_id=${categoryId}`;
+            if (activatedOnly === '1') url += '&activated_only=true';
+
+            const data = await fetchJSON(url);
+            const container = document.getElementById('seriesGrid');
+            document.getElementById('seriesLabel').textContent = `${data.count.toLocaleString()} series`;
+
+            if (!data.results.length) {
+                container.innerHTML = '<div class="empty-state">No series found. Try Sync Series Catalog.</div>';
+                document.getElementById('seriesPagination').innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = data.results.map(s => `
+                <div class="movie-card" onclick="openSeriesDetail(${s.id})" data-id="${s.id}" data-category-id="${s.category_id || ''}">
+                    ${s.activated_episode_count > 0 ? `<div class="activated-badge">${s.activated_episode_count} ACTIVE</div>` : ''}
+                    <img src="${s.poster_url || ''}" alt="" loading="lazy"
+                         onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
+                    <div class="info">
+                        <div class="title" title="${(s.name||'').replace(/"/g,'&quot;')}">${s.name || 'Unknown'}</div>
+                        <div class="meta">${s.year || '?'} &middot; ${s.rating || '-'} &middot; ${s.episode_count || 0} eps</div>
+                    </div>
+                </div>
+            `).join('');
+
+            const totalPages = Math.ceil(data.count / 60);
+            let pagHTML = '';
+            if (totalPages > 1) {
+                if (seriesCurrentPage > 1) pagHTML += `<button class="btn btn-outline" onclick="loadSeriesList(${seriesCurrentPage-1})">&laquo; Prev</button>`;
+                pagHTML += `Page ${seriesCurrentPage} of ${totalPages}`;
+                if (seriesCurrentPage < totalPages) pagHTML += `<button class="btn btn-outline" onclick="loadSeriesList(${seriesCurrentPage+1})">Next &raquo;</button>`;
+            }
+            document.getElementById('seriesPagination').innerHTML = pagHTML;
+        }
+
+        async function openSeriesDetail(seriesId) {
+            currentSeriesDetail = seriesId;
+            selectedEpisodes.clear();
+            updateEpisodeSelectionBar();
+
+            document.getElementById('seriesDetailTitle').textContent = 'Loading...';
+            document.getElementById('seriesDetailModal').classList.add('active');
+
+            const seasonsData = await fetchJSON(`/api/series/${seriesId}/seasons`);
+            const seasonSel = document.getElementById('seriesDetailSeason');
+            seasonSel.innerHTML = '<option value="0">All Seasons</option>' +
+                (seasonsData.seasons || []).map(s => `<option value="${s.season_number}">Season ${s.season_number} (${s.activated_count}/${s.episode_count})</option>`).join('');
+
+            const cardEl = document.querySelector(`#seriesGrid .movie-card[data-id="${seriesId}"]`);
+            const row = cardEl ? cardEl.querySelector('.title') : null;
+            document.getElementById('seriesDetailTitle').textContent = row ? row.textContent : `Series #${seriesId}`;
+            const existingCatId = cardEl ? cardEl.getAttribute('data-category-id') : '';
+            if (existingCatId) document.getElementById('seriesDetailCategory').value = existingCatId;
+
+            if (!seasonsData.episodes_fetched) {
+                document.getElementById('seriesDetailEpisodeBody').innerHTML =
+                    '<tr><td colspan="6" class="empty-state">No episodes cached yet. Click Fetch Episodes.</td></tr>';
+                return;
+            }
+            loadSeriesDetailEpisodes();
+        }
+
+        function closeSeriesDetail(event) {
+            if (event && event.target !== event.currentTarget) return;
+            document.getElementById('seriesDetailModal').classList.remove('active');
+            currentSeriesDetail = null;
+        }
+
+        async function fetchSeriesEpisodesNow() {
+            if (!currentSeriesDetail) return;
+            document.getElementById('seriesDetailEpisodeBody').innerHTML = '<tr><td colspan="6" class="empty-state">Fetching...</td></tr>';
+            await fetchJSON(`/api/series/${currentSeriesDetail}/fetch-episodes`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({force_refresh: true})
+            });
+            const seasonsData = await fetchJSON(`/api/series/${currentSeriesDetail}/seasons`);
+            const seasonSel = document.getElementById('seriesDetailSeason');
+            seasonSel.innerHTML = '<option value="0">All Seasons</option>' +
+                (seasonsData.seasons || []).map(s => `<option value="${s.season_number}">Season ${s.season_number} (${s.activated_count}/${s.episode_count})</option>`).join('');
+            loadSeriesDetailEpisodes();
+        }
+
+        async function loadSeriesDetailEpisodes() {
+            if (!currentSeriesDetail) return;
+            const season = document.getElementById('seriesDetailSeason').value;
+            let url = `/api/series/${currentSeriesDetail}/episodes`;
+            if (season && season !== '0') url += `?season=${season}`;
+            const data = await fetchJSON(url);
+            const body = document.getElementById('seriesDetailEpisodeBody');
+
+            if (!data.results.length) {
+                body.innerHTML = '<tr><td colspan="6" class="empty-state">No episodes. Try Fetch Episodes.</td></tr>';
+                return;
+            }
+
+            body.innerHTML = data.results.map(ep => `
+                <tr class="${selectedEpisodes.has(ep.id) ? 'card-selected' : ''}" onclick="toggleEpisode(${ep.id}, this)" style="cursor:pointer;">
+                    <td><input type="checkbox" ${selectedEpisodes.has(ep.id) ? 'checked' : ''} onclick="event.stopPropagation();toggleEpisode(${ep.id}, this.closest('tr'))"></td>
+                    <td>${ep.season_number ?? '?'}</td>
+                    <td>${ep.episode_number ?? '?'}</td>
+                    <td>${(ep.name||'Unknown').replace(/</g,'&lt;')}</td>
+                    <td>${ep.air_date || '-'}</td>
+                    <td>${ep.activated ? '<span style="color:var(--success)">Activated</span>' : '<span style="color:var(--text-muted)">-</span>'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function toggleEpisode(id, rowEl) {
+            if (selectedEpisodes.has(id)) {
+                selectedEpisodes.delete(id);
+            } else {
+                selectedEpisodes.add(id);
+            }
+            if (rowEl) rowEl.classList.toggle('card-selected');
+            updateEpisodeSelectionBar();
+        }
+
+        function clearEpisodeSelection() {
+            selectedEpisodes.clear();
+            document.querySelectorAll('#seriesDetailEpisodeBody tr.card-selected').forEach(r => r.classList.remove('card-selected'));
+            updateEpisodeSelectionBar();
+        }
+
+        function updateEpisodeSelectionBar() {
+            const bar = document.getElementById('seriesEpSelectionBar');
+            const count = selectedEpisodes.size;
+            document.getElementById('seriesEpSelCount').textContent = count;
+            bar.style.display = count > 0 ? 'flex' : 'none';
+        }
+
+        async function activateSelectedEpisodes() {
+            if (!selectedEpisodes.size) return;
+            const category_id = parseInt(document.getElementById('seriesDetailCategory').value);
+            if (!category_id) { alert('Select a category first.'); return; }
+            const res = await fetchJSON('/api/episodes/activate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({episode_ids: [...selectedEpisodes], category_id})
+            });
+            if (res.failed && res.failed.length) {
+                alert(`Activated: ${res.activated.length}\nFailed: ${res.failed.length}\n` +
+                      res.failed.map(f => `#${f.episode_id}: ${f.reason}`).join('\n'));
+            }
+            clearEpisodeSelection();
+            loadSeriesDetailEpisodes();
+            loadSeriesList(seriesCurrentPage);
+        }
+
+        async function reactivateSelectedEpisodes() {
+            if (!selectedEpisodes.size) return;
+            const res = await fetchJSON('/api/episodes/reactivate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({episode_ids: [...selectedEpisodes]})
+            });
+            if (res.failed && res.failed.length) {
+                alert(`Reactivated: ${res.activated.length}\nFailed: ${res.failed.length}`);
+            }
+            clearEpisodeSelection();
+            loadSeriesDetailEpisodes();
+        }
+
+        async function deactivateSelectedEpisodes() {
+            if (!selectedEpisodes.size) return;
+            await fetchJSON('/api/episodes/deactivate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({episode_ids: [...selectedEpisodes]})
+            });
+            clearEpisodeSelection();
+            loadSeriesDetailEpisodes();
+            loadSeriesList(seriesCurrentPage);
+        }
+
         // --- Sync ---
         async function syncCatalog() {
             const selCats = allCategories.filter(c => c.selected);
@@ -2446,7 +2811,11 @@
 
         async function deleteAllDead() {
             if (!confirm('Permanently delete ALL dead movies?')) return;
-            await fetchJSON('/api/movies/dead/delete-all', {method: 'POST'});
+            showOverlay('Deleting all dead movies...');
+            const result = await fetchJSON('/api/movies/dead/delete-all', {method: 'POST'});
+            hideOverlay();
+            if (result && result.error) alert(`Delete All failed: ${result.error}`);
+            else if (result) alert(`Deleted ${result.deleted} dead movies`);
             loadDeadMovies(1);
             refreshDeadBadge();
             loadCatalogSummary();
@@ -2457,7 +2826,9 @@
             showOverlay('Restoring all dead movies...');
             const result = await fetchJSON('/api/movies/dead/restore-all', {method: 'POST'});
             hideOverlay();
-            if (result && result.restored) alert(`Restored ${result.restored} movies (${result.strm_restored} STRM folders moved back)`);
+            if (result && result.error) alert(`Restore All failed: ${result.error}`);
+            else if (result && result.restored) alert(`Restored ${result.restored} movies (${result.strm_restored} STRM folders moved back`
+                + (result.strm_failed ? `, ${result.strm_failed} failed — see log` : '') + ')');
             loadDeadMovies(1);
             refreshDeadBadge();
             refreshStatus();
@@ -2603,12 +2974,13 @@
                     const dateStr = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
                     const timeStr = d.toLocaleTimeString('en-US', {hour12: true, hour: 'numeric', minute: '2-digit'});
                     const sizeKB = (a.size / 1024).toFixed(0);
-                    return `<div onclick="viewArchive('${a.filename}')" style="padding:0.5rem 0.6rem;border-bottom:1px solid var(--border);cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:background 0.15s;" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='transparent'">
-                        <div>
+                    return `<div style="padding:0.5rem 0.6rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;transition:background 0.15s;" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='transparent'">
+                        <div onclick="viewArchive('${a.filename}')" style="cursor:pointer;flex:1;">
                             <div style="font-size:0.85rem;color:var(--text-primary);font-weight:500;">${dateStr} &middot; ${timeStr}</div>
                             <div style="font-size:0.7rem;color:var(--text-muted);">${a.entries} entries &middot; ${sizeKB} KB</div>
                         </div>
-                        <span style="color:var(--accent);font-size:0.75rem;">View &rsaquo;</span>
+                        <span onclick="viewArchive('${a.filename}')" style="cursor:pointer;color:var(--accent);font-size:0.75rem;">View &rsaquo;</span>
+                        <span onclick="deleteArchive('${a.filename}')" title="Delete archive" style="cursor:pointer;color:var(--text-muted);font-size:0.9rem;margin-left:0.6rem;padding:0.15rem 0.3rem;" onmouseover="this.style.color='#e5484d'" onmouseout="this.style.color='var(--text-muted)'">&#128465;</span>
                     </div>`;
                 }).join('');
             } catch (e) {
@@ -2626,6 +2998,16 @@
                 }
             } catch (e) {
                 alert('Archive failed: ' + e.message);
+            }
+        }
+
+        async function deleteArchive(filename) {
+            if (!confirm('Delete this archive?')) return;
+            try {
+                await fetchJSON('/api/proxy-log/archives/' + filename, {method: 'DELETE'});
+                loadArchives();
+            } catch (e) {
+                alert('Delete failed: ' + e.message);
             }
         }
 

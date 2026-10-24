@@ -234,7 +234,7 @@ The bridge needs mapping files that tell it which movies belong to which provide
 - `DISPATCHARR_CONTAINER` — the Docker container name for Dispatcharr (find it with `docker ps`)
 - `BRIDGE_DATA_DIR` — the path to the bridge's `data/` volume on the host
 
-There is also a `dump_vod_data.sh` in the repo root — this is the production version with hardcoded defaults for the development environment. Users should use `setup/dump_mappings.sh` instead, which uses generic defaults.
+The dump script is `setup/dump_mappings.sh` (the only copy — the old root-level `dump_vod_data.sh`/`dump_stream_mapping.sh` were removed). It auto-detects the Dispatcharr container when `DISPATCHARR_CONTAINER` is unset and exits non-zero with a logged error if the container is missing.
 
 > **Security note:** These scripts only extract account **names and IDs** — no passwords, usernames, or server URLs are included in the output. The bridge routes all traffic through Dispatcharr's proxy, so provider credentials are never needed.
 

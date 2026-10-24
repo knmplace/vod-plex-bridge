@@ -19,12 +19,28 @@
 #   0 */6 * * * /path/to/vod-plex-bridge/setup/dump_mappings.sh
 # =============================================================================
 
-set -e
+set -eo pipefail
 
-DISPATCHARR_CONTAINER="${DISPATCHARR_CONTAINER:-dispatcharr}"
 BRIDGE_DATA_DIR="${BRIDGE_DATA_DIR:-./data}"
 
+# Auto-detect the Dispatcharr container when not set explicitly. A stale
+# hardcoded name (e.g. after a host move) used to fail silently for months.
+if [ -z "$DISPATCHARR_CONTAINER" ]; then
+    DISPATCHARR_CONTAINER=$(docker ps --format '{{.Names}}' | grep -i dispatcharr | head -n 1 || true)
+fi
+if [ -z "$DISPATCHARR_CONTAINER" ] || ! docker inspect "$DISPATCHARR_CONTAINER" >/dev/null 2>&1; then
+    echo "$(date): ERROR: Dispatcharr container '${DISPATCHARR_CONTAINER:-<none found>}' not found - dump aborted" >&2
+    exit 1
+fi
+
 mkdir -p "$BRIDGE_DATA_DIR"
+
+# Copy a file out of the container atomically so the bridge never reads a
+# partially written JSON file.
+copy_out() {
+    docker cp "$DISPATCHARR_CONTAINER":/tmp/"$1" "$BRIDGE_DATA_DIR/.$1.tmp"
+    mv -f "$BRIDGE_DATA_DIR/.$1.tmp" "$BRIDGE_DATA_DIR/$1"
+}
 
 echo "$(date): Starting Dispatcharr data dump..."
 echo "  Container: $DISPATCHARR_CONTAINER"
@@ -75,8 +91,8 @@ for mid, streams in mapping.items():
 
 with open('/tmp/stream_mapping.json', 'w') as f:
     json.dump(output, f)
-" 2>/dev/null
-docker cp "$DISPATCHARR_CONTAINER":/tmp/stream_mapping.json "$BRIDGE_DATA_DIR/stream_mapping.json" 2>/dev/null
+"
+copy_out stream_mapping.json
 STREAM_COUNT=$(python3 -c "import json; print(len(json.load(open('$BRIDGE_DATA_DIR/stream_mapping.json'))))" 2>/dev/null || echo "?")
 echo "$STREAM_COUNT movies"
 
@@ -103,8 +119,8 @@ for a in M3UAccount.objects.filter(is_active=True):
 
 with open('/tmp/account_credentials.json', 'w') as f:
     json.dump(accounts, f)
-" 2>/dev/null
-docker cp "$DISPATCHARR_CONTAINER":/tmp/account_credentials.json "$BRIDGE_DATA_DIR/account_credentials.json" 2>/dev/null
+"
+copy_out account_credentials.json
 ACCT_COUNT=$(python3 -c "import json; print(len(json.load(open('$BRIDGE_DATA_DIR/account_credentials.json'))))" 2>/dev/null || echo "?")
 echo "$ACCT_COUNT accounts"
 
@@ -131,8 +147,8 @@ for cat in VODCategory.objects.filter(category_type='movie').order_by('name'):
     categories.append({'id': cat.id, 'name': cat.name, 'movie_ids': movie_ids})
 with open('/tmp/category_mapping.json', 'w') as f:
     json.dump(categories, f)
-" 2>/dev/null
-docker cp "$DISPATCHARR_CONTAINER":/tmp/category_mapping.json "$BRIDGE_DATA_DIR/category_mapping.json" 2>/dev/null
+"
+copy_out category_mapping.json
 CAT_COUNT=$(python3 -c "import json; print(len(json.load(open('$BRIDGE_DATA_DIR/category_mapping.json'))))" 2>/dev/null || echo "?")
 echo "$CAT_COUNT categories"
 

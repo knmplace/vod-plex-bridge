@@ -174,3 +174,67 @@ async def init_db():
         "UPDATE sync_state SET status = 'idle', message = 'Ready' WHERE id = 1 AND status != 'idle'"
     )
     await db.commit()
+
+    await db.executescript("""
+        CREATE TABLE IF NOT EXISTS series (
+            id INTEGER PRIMARY KEY,
+            uuid TEXT NOT NULL,
+            name TEXT NOT NULL,
+            year INTEGER,
+            rating REAL,
+            genre TEXT DEFAULT '',
+            description TEXT DEFAULT '',
+            tmdb_id TEXT,
+            poster_url TEXT,
+            episode_count INTEGER DEFAULT 0,
+            synced_at TEXT,
+            category_id INTEGER,
+            strm_folder TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS episodes (
+            id INTEGER PRIMARY KEY,
+            uuid TEXT NOT NULL,
+            series_id INTEGER NOT NULL,
+            name TEXT,
+            description TEXT DEFAULT '',
+            air_date TEXT,
+            rating REAL,
+            duration_secs INTEGER,
+            season_number INTEGER,
+            episode_number INTEGER,
+            tmdb_id TEXT,
+            stream_id INTEGER,
+            account_id INTEGER,
+            account_name TEXT DEFAULT '',
+            container_extension TEXT DEFAULT '',
+            alt_streams TEXT DEFAULT '[]',
+            activated INTEGER DEFAULT 0,
+            activated_at TEXT,
+            file_size INTEGER,
+            synced_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS series_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            strm_folder TEXT NOT NULL,
+            plex_library_section INTEGER DEFAULT 999,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS series_sync_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            last_catalog_sync TEXT,
+            total_series INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'idle',
+            message TEXT DEFAULT ''
+        );
+        INSERT OR IGNORE INTO series_sync_state (id) VALUES (1);
+        UPDATE series_sync_state SET status = 'idle', message = 'Ready' WHERE id = 1 AND status != 'idle';
+
+        CREATE INDEX IF NOT EXISTS idx_episodes_series ON episodes(series_id);
+        CREATE INDEX IF NOT EXISTS idx_episodes_activated ON episodes(activated);
+        CREATE INDEX IF NOT EXISTS idx_series_category ON series(category_id);
+    """)
+    await db.commit()

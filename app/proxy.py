@@ -10,7 +10,7 @@ import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 
-from config import DISPATCHARR_URL, DISPATCHARR_API_KEY
+from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, REDIRECT_STREAMING
 from database import get_db
 from error_screens import get_error_screen_data, get_error_screen_size
 
@@ -791,6 +791,16 @@ def get_log_archive(filename: str) -> list[dict] | None:
         return json.load(f)
 
 
+def delete_log_archive(filename: str) -> bool:
+    """Delete a specific archive file. Returns True if deleted."""
+    fp = os.path.join(LOG_ARCHIVE_DIR, filename)
+    if not os.path.exists(fp) or ".." in filename:
+        return False
+    os.remove(fp)
+    logger.info(f"Deleted proxy log archive: {filename}")
+    return True
+
+
 async def _check_if_stream_dead(movie_id: int) -> bool:
     try:
         from database import get_db
@@ -967,6 +977,17 @@ async def vod_file(filename: str, request: Request):
                     "content-length": str(file_size),
                 },
             )
+
+        if REDIRECT_STREAMING:
+            from redirect import get_redirect_url
+            redirect_url, redirect_err, fresh = await get_redirect_url(movie_id)
+            if redirect_url:
+                if fresh:
+                    _log_event("info", movie_id, "Redirecting to Dispatcharr proxy", movie_name=movie_name)
+                return Response(status_code=302, headers={"Location": redirect_url})
+            _log_event("error", movie_id, f"Redirect resolve failed: {redirect_err}", movie_name=movie_name)
+            err = _error_screen_response("busy", request)
+            return err if err else Response(status_code=503, content=redirect_err or "No stream available")
 
         range_start = 0
         range_end = None
@@ -1364,3 +1385,153 @@ async def _switch_to_fallback(movie_id: int, failed_stream_id: int, fallback: di
 @router.api_route("/stream/{movie_id}.mp4", methods=["GET", "HEAD"])
 async def stream_movie(movie_id: int, request: Request):
     return await vod_file(f"legacy [{movie_id}].mp4", request)
+
+
+# --- Series/episode directory-listing + redirect streaming (self-contained,
+# mirrors the movie /vod/ routes above but reads real dirs off disk plus
+# synthetic per-episode entries generated at listing time from the DB). ---
+
+import email.utils
+from datetime import datetime as _dt
+
+from config import STRM_SERIES_OUTPUT_DIR
+
+FALLBACK_EPISODE_FILE_SIZE = 2_000_000_000  # smaller than movies' FALLBACK_FILE_SIZE — episodes are shorter runtime
+
+_SYNTHETIC_EP_RE = re.compile(r'\[(\d+)\]\.\w+$')
+
+
+def _mod_autoindex_mtime(path: str) -> str:
+    return _dt.fromtimestamp(os.path.getmtime(path)).strftime("%d-%b-%Y %H:%M")
+
+
+def _series_episode_content_type(container_extension: str) -> str:
+    ext = (container_extension or "").lower().lstrip(".")
+    if ext == "mp4":
+        return "video/mp4"
+    return "video/x-matroska"
+
+
+@router.api_route("/vod-series/", methods=["GET", "HEAD"])
+async def vod_series_root(request: Request):
+    db = await get_db()
+    rows = await db.execute("SELECT id, name, strm_folder FROM series_categories ORDER BY name")
+    categories = await rows.fetchall()
+
+    links = []
+    for cat in categories:
+        count_row = await db.execute(
+            "SELECT COUNT(*) as cnt FROM series s JOIN episodes e ON e.series_id = s.id "
+            "WHERE s.category_id = ? AND e.activated = 1",
+            (cat["id"],),
+        )
+        cnt = (await count_row.fetchone())["cnt"]
+        if cnt < 1:
+            continue
+
+        cat_path = os.path.join(STRM_SERIES_OUTPUT_DIR, cat["strm_folder"])
+        if not os.path.isdir(cat_path):
+            continue
+
+        name = cat["strm_folder"]
+        mtime_str = _mod_autoindex_mtime(cat_path)
+        links.append(f'<a href="{quote(name)}">{name}</a> {mtime_str}')
+
+    html = "<html><body>\n" + "\n".join(links) + "\n</body></html>"
+    return HTMLResponse(content=html)
+
+
+@router.api_route("/vod-series/{subpath:path}", methods=["GET", "HEAD"])
+async def vod_series_file(subpath: str, request: Request):
+    full_path = os.path.join(STRM_SERIES_OUTPUT_DIR, subpath)
+
+    base_abs = os.path.abspath(STRM_SERIES_OUTPUT_DIR)
+    target_abs = os.path.abspath(full_path)
+    try:
+        if os.path.commonpath([base_abs, target_abs]) != base_abs:
+            return Response(status_code=403, content="Forbidden")
+    except ValueError:
+        return Response(status_code=403, content="Forbidden")
+
+    db = await get_db()
+
+    if os.path.isdir(target_abs):
+        entries = sorted(os.listdir(target_abs))
+        links = []
+        for name in entries:
+            entry_path = os.path.join(target_abs, name)
+            mtime_str = _mod_autoindex_mtime(entry_path)
+            links.append(f'<a href="{quote(name)}">{name}</a> {mtime_str}')
+
+        season_match = re.match(r'Season (\d+)$', os.path.basename(target_abs.rstrip(os.sep)))
+        if season_match:
+            season_num = int(season_match.group(1))
+            series_folder = os.path.basename(os.path.dirname(target_abs.rstrip(os.sep)))
+            category_folder = os.path.basename(os.path.dirname(os.path.dirname(target_abs.rstrip(os.sep))))
+
+            series_row = await db.execute(
+                "SELECT s.id, s.name, s.year FROM series s JOIN series_categories c ON s.category_id = c.id "
+                "WHERE s.strm_folder = ? AND c.strm_folder = ?",
+                (series_folder, category_folder),
+            )
+            series = await series_row.fetchone()
+            if series:
+                ep_rows = await db.execute(
+                    "SELECT * FROM episodes WHERE series_id = ? AND season_number = ? AND activated = 1",
+                    (series["id"], season_num),
+                )
+                episodes = await ep_rows.fetchall()
+                now_mtime_str = _dt.now().strftime("%d-%b-%Y %H:%M")
+                for ep in episodes:
+                    from series_generator import build_synthetic_episode_filename
+                    filename = build_synthetic_episode_filename(ep, series)
+                    if filename not in entries:
+                        links.append(f'<a href="{quote(filename)}">{filename}</a> {now_mtime_str}')
+
+        html = "<html><body>\n" + "\n".join(links) + "\n</body></html>"
+        return HTMLResponse(content=html)
+
+    if os.path.isfile(target_abs) and target_abs.lower().endswith(".nfo"):
+        with open(target_abs, "rb") as f:
+            content = f.read()
+        return Response(
+            status_code=200,
+            content=content,
+            headers={
+                "Content-Type": "text/xml",
+                "Last-Modified": email.utils.formatdate(os.path.getmtime(target_abs), usegmt=True),
+            },
+        )
+
+    basename = os.path.basename(target_abs)
+    m = _SYNTHETIC_EP_RE.search(basename)
+    if m:
+        episode_id = int(m.group(1))
+        row = await db.execute(
+            "SELECT id, uuid, container_extension, file_size, activated FROM episodes WHERE id = ?",
+            (episode_id,),
+        )
+        episode = await row.fetchone()
+        if not episode or not episode["activated"]:
+            return Response(status_code=404, content="Episode not found or not activated")
+
+        content_type = _series_episode_content_type(episode["container_extension"])
+        file_size = episode["file_size"] or FALLBACK_EPISODE_FILE_SIZE
+
+        if request.method == "HEAD":
+            return Response(
+                status_code=200,
+                headers={
+                    "accept-ranges": "bytes",
+                    "content-type": content_type,
+                    "content-length": str(file_size),
+                },
+            )
+
+        from redirect import get_episode_redirect_url
+        redirect_url, redirect_err, _fresh = await get_episode_redirect_url(episode_id)
+        if redirect_url:
+            return Response(status_code=302, headers={"Location": redirect_url})
+        return Response(status_code=503, content=redirect_err or "No stream available")
+
+    return Response(status_code=404, content="Not found")

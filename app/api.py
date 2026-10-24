@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import re
@@ -9,13 +10,16 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN
+from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN, STRM_SERIES_OUTPUT_DIR, PLEX_SERIES_LIBRARY_ID
 from database import get_db
 from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing
 from generator import generate_strm_files, sanitize_filename, write_strm_for_movie, parse_title, get_folder_name
 from stream_mapper import apply_stream_mapping_to_db, load_stream_mapping, pick_stream_for_account
-from proxy import probe_file_size, get_proxy_log, get_all_pipes, _log_event, archive_proxy_log, cleanup_old_archives, list_log_archives, get_log_archive
+from proxy import probe_file_size, get_proxy_log, get_all_pipes, _log_event, archive_proxy_log, cleanup_old_archives, list_log_archives, get_log_archive, delete_log_archive
 from health import run_health_checks, get_health_status, get_health_log, health_check_scheduler
+from series_scraper import scrape_series_catalog, fetch_series_episodes
+from series_generator import write_tvshow_and_season_dirs, write_episode_nfo_batch
+from redirect import _pick_episode_relation_with_capacity
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -620,6 +624,13 @@ async def proxy_log_archive_detail(filename: str):
     if data is None:
         return JSONResponse(status_code=404, content={"error": "Archive not found"})
     return data
+
+
+@router.delete("/proxy-log/archives/{filename}")
+async def proxy_log_archive_delete(filename: str):
+    if not delete_log_archive(filename):
+        return JSONResponse(status_code=404, content={"error": "Archive not found"})
+    return {"status": "ok"}
 
 
 @router.post("/proxy-log/archive-now")
@@ -1416,6 +1427,9 @@ async def _fetch_headers_validated(movies: list[dict]) -> tuple[list[int], list[
             await _mark_activation_dead(movie_id, movie_name, movie.get("year"), str(e))
             failed_ids.append(movie_id)
 
+    if activated_ids:
+        await _plex_scan_library()
+
     return activated_ids, failed_ids
 
 
@@ -1651,6 +1665,30 @@ async def _plex_remove_movies(movie_ids: list[int]):
     except Exception as e:
         logger.warning("Plex removal failed: %s", e)
         return 0
+
+
+async def _plex_scan_library(library_id: str | None = None):
+    """Trigger Plex to scan a library section for newly-activated STRM files.
+    Defaults to the movies library (PLEX_LIBRARY_ID) when library_id is None."""
+    section_id = library_id if library_id is not None else PLEX_LIBRARY_ID
+    if not PLEX_URL or not PLEX_TOKEN:
+        logger.info("Plex URL/token not configured, skipping library scan")
+        return
+    if not section_id:
+        logger.warning("Plex library scan skipped: no library section id configured")
+        return
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"{PLEX_URL}/library/sections/{section_id}/refresh",
+                params={"X-Plex-Token": PLEX_TOKEN},
+            )
+            if resp.status_code in (200, 204):
+                logger.info("Plex library scan triggered (section %s)", section_id)
+            else:
+                logger.warning("Plex library scan trigger failed: %d", resp.status_code)
+    except Exception as e:
+        logger.warning("Plex library scan trigger error: %s", e)
 
 
 def _movie_folder_name(movie) -> str:
@@ -2489,21 +2527,20 @@ async def delete_dead_movies(request: Request):
 async def delete_all_dead():
     db = await get_db()
     try:
-        rows = await db.execute("SELECT id, name, year, strm_folder FROM movies WHERE dead = 1")
-        movies = await rows.fetchall()
-        movie_ids = [m["id"] for m in movies]
+        rows = await db.execute("SELECT COUNT(*) FROM movies WHERE dead = 1")
+        total = (await rows.fetchone())[0]
 
         if os.path.isdir(DEAD_DIR):
-            shutil.rmtree(DEAD_DIR)
+            shutil.rmtree(DEAD_DIR, ignore_errors=True)
             os.makedirs(DEAD_DIR, exist_ok=True)
 
-        if movie_ids:
-            placeholders = ",".join("?" for _ in movie_ids)
-            await db.execute(f"DELETE FROM movies WHERE id IN ({placeholders})", movie_ids)
-            await db.execute(f"DELETE FROM movie_categories WHERE movie_id IN ({placeholders})", movie_ids)
-
+        # Subquery instead of an IN (?, ?, ...) list — a large dead set used to
+        # exceed SQLite's bound-variable limit and fail the whole request.
+        await db.execute("DELETE FROM movie_categories WHERE movie_id IN (SELECT id FROM movies WHERE dead = 1)")
+        await db.execute("DELETE FROM movies WHERE dead = 1")
         await db.commit()
-        return {"status": "ok", "deleted": len(movies)}
+        logger.info("Deleted all %d dead movies", total)
+        return {"status": "ok", "deleted": total}
     finally:
         pass
 
@@ -2562,19 +2599,28 @@ async def restore_all_dead_movies():
             return {"status": "ok", "restored": 0, "strm_restored": 0}
 
         restored_strm = 0
+        failed = 0
         for m in movies:
-            folder_name = _movie_folder_name(m)
-            dead_folder = os.path.join(DEAD_DIR, folder_name)
-            live_folder = os.path.join(STRM_OUTPUT_DIR, folder_name)
-            if os.path.isdir(dead_folder):
-                shutil.move(dead_folder, live_folder)
-                restored_strm += 1
-            elif not os.path.isdir(live_folder):
-                try:
+            # One bad folder must not abort the whole bulk restore — that used to
+            # 500 the request before the DB update ran, leaving nothing restored.
+            try:
+                folder_name = _movie_folder_name(m)
+                dead_folder = os.path.join(DEAD_DIR, folder_name)
+                live_folder = os.path.join(STRM_OUTPUT_DIR, folder_name)
+                if os.path.isdir(live_folder):
+                    # Already live (e.g. a duplicate row for the same title) — moving
+                    # would nest the dead copy inside it, so just drop the dead copy.
+                    if os.path.isdir(dead_folder):
+                        shutil.rmtree(dead_folder, ignore_errors=True)
+                elif os.path.isdir(dead_folder):
+                    shutil.move(dead_folder, live_folder)
+                    restored_strm += 1
+                else:
                     await write_strm_for_movie(dict(m))
                     restored_strm += 1
-                except Exception:
-                    pass
+            except Exception as e:
+                failed += 1
+                logger.warning("Restore-all: STRM restore failed for movie %s: %s", m["id"], e)
 
         await db.execute(
             "UPDATE movies SET dead = 0, dead_at = NULL, stream_dead = 0, stream_dead_count = 0, "
@@ -2586,8 +2632,8 @@ async def restore_all_dead_movies():
         await db.execute("UPDATE sync_state SET active_strm_count = ? WHERE id = 1", (strm_count,))
         await db.commit()
 
-        logger.info("Restored all %d dead movies (%d STRM folders restored)", total, restored_strm)
-        return {"status": "ok", "restored": total, "strm_restored": restored_strm}
+        logger.info("Restored all %d dead movies (%d STRM folders restored, %d failed)", total, restored_strm, failed)
+        return {"status": "ok", "restored": total, "strm_restored": restored_strm, "strm_failed": failed}
     finally:
         pass
 
@@ -3322,3 +3368,383 @@ async def _upsert_movie_from_api(db, movie):
         trailer_key,
         datetime.now(timezone.utc).isoformat(),
     ))
+
+
+# --- Series / Episode routes (Part 2) ---
+
+@router.get("/series")
+async def list_series(
+    page: int = 1,
+    page_size: int = 20,
+    search: str = "",
+    category_id: int = 0,
+    activated_only: bool = False,
+):
+    db = await get_db()
+    offset = (page - 1) * page_size
+    conditions = ["s.name != ''"]
+    params = []
+
+    if search:
+        conditions.append("s.name LIKE ?")
+        params.append(f"%{search}%")
+
+    if category_id:
+        conditions.append("s.category_id = ?")
+        params.append(category_id)
+
+    if activated_only:
+        conditions.append("s.id IN (SELECT series_id FROM episodes WHERE activated = 1)")
+
+    where = " AND ".join(conditions)
+
+    count_row = await db.execute(f"SELECT COUNT(*) as cnt FROM series s WHERE {where}", params)
+    count = (await count_row.fetchone())["cnt"]
+
+    rows = await db.execute(
+        f"SELECT s.*, "
+        f"(SELECT COUNT(*) FROM episodes e WHERE e.series_id = s.id AND e.activated = 1) as activated_episode_count "
+        f"FROM series s WHERE {where} ORDER BY s.name LIMIT ? OFFSET ?",
+        params + [page_size, offset],
+    )
+    series = [dict(r) for r in await rows.fetchall()]
+    return {"count": count, "page": page, "page_size": page_size, "results": series}
+
+
+@router.get("/series/{series_id}/seasons")
+async def get_series_seasons(series_id: int):
+    db = await get_db()
+    rows = await db.execute(
+        "SELECT season_number, COUNT(*) as episode_count, "
+        "SUM(CASE WHEN activated = 1 THEN 1 ELSE 0 END) as activated_count "
+        "FROM episodes WHERE series_id = ? GROUP BY season_number ORDER BY season_number",
+        (series_id,),
+    )
+    seasons = [dict(r) for r in await rows.fetchall()]
+    if not seasons:
+        return {"series_id": series_id, "episodes_fetched": False, "seasons": []}
+    return {"series_id": series_id, "episodes_fetched": True, "seasons": seasons}
+
+
+@router.get("/series/{series_id}/episodes")
+async def get_series_episodes_list(series_id: int, season: int = 0):
+    db = await get_db()
+    if season:
+        rows = await db.execute(
+            "SELECT * FROM episodes WHERE series_id = ? AND season_number = ? ORDER BY episode_number",
+            (series_id, season),
+        )
+    else:
+        rows = await db.execute(
+            "SELECT * FROM episodes WHERE series_id = ? ORDER BY season_number, episode_number",
+            (series_id,),
+        )
+    episodes = [dict(r) for r in await rows.fetchall()]
+    return {"series_id": series_id, "results": episodes}
+
+
+@router.post("/series/{series_id}/fetch-episodes")
+async def fetch_series_episodes_route(series_id: int, request: Request):
+    body = await request.json() if request.headers.get("content-length", "0") != "0" else {}
+    force_refresh = bool(body.get("force_refresh", False))
+    relation_id = body.get("relation_id")
+    result = await fetch_series_episodes(series_id, force_refresh=force_refresh, relation_id=relation_id)
+    return result
+
+
+@router.get("/series/categories")
+async def list_series_categories():
+    db = await get_db()
+    rows = await db.execute(
+        "SELECT c.*, (SELECT COUNT(*) FROM series s WHERE s.category_id = c.id) as series_count "
+        "FROM series_categories c ORDER BY c.name"
+    )
+    return {"results": [dict(r) for r in await rows.fetchall()]}
+
+
+@router.post("/series/categories")
+async def create_series_category(request: Request):
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    strm_folder = (body.get("strm_folder") or "").strip()
+    plex_library_section = body.get("plex_library_section", 999)
+
+    if not name or not strm_folder:
+        return JSONResponse(status_code=400, content={"error": "name and strm_folder are required"})
+
+    db = await get_db()
+    cursor = await db.execute(
+        "INSERT INTO series_categories (name, strm_folder, plex_library_section) VALUES (?, ?, ?)",
+        (name, strm_folder, plex_library_section),
+    )
+    await db.commit()
+    return {"id": cursor.lastrowid, "name": name, "strm_folder": strm_folder, "plex_library_section": plex_library_section}
+
+
+@router.put("/series/categories/{category_id}")
+async def update_series_category(category_id: int, request: Request):
+    body = await request.json()
+    db = await get_db()
+
+    row = await db.execute("SELECT * FROM series_categories WHERE id = ?", (category_id,))
+    existing = await row.fetchone()
+    if not existing:
+        return JSONResponse(status_code=404, content={"error": "Category not found"})
+
+    name = body.get("name", existing["name"])
+    strm_folder = body.get("strm_folder", existing["strm_folder"])
+    plex_library_section = body.get("plex_library_section", existing["plex_library_section"])
+
+    await db.execute(
+        "UPDATE series_categories SET name = ?, strm_folder = ?, plex_library_section = ? WHERE id = ?",
+        (name, strm_folder, plex_library_section, category_id),
+    )
+    await db.commit()
+    return {"id": category_id, "name": name, "strm_folder": strm_folder, "plex_library_section": plex_library_section}
+
+
+@router.delete("/series/categories/{category_id}")
+async def delete_series_category(category_id: int):
+    db = await get_db()
+    count_row = await db.execute("SELECT COUNT(*) as cnt FROM series WHERE category_id = ?", (category_id,))
+    in_use = (await count_row.fetchone())["cnt"]
+    if in_use > 0:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Cannot delete category: {in_use} series are assigned to it"},
+        )
+    await db.execute("DELETE FROM series_categories WHERE id = ?", (category_id,))
+    await db.commit()
+    return {"deleted": category_id}
+
+
+@router.post("/series/scrape")
+async def scrape_series_route(request: Request):
+    body = await request.json() if request.headers.get("content-length", "0") != "0" else {}
+    max_series = int(body.get("max_series", 0))
+    asyncio.create_task(scrape_series_catalog(max_series=max_series))
+    return {"status": "started"}
+
+
+@router.get("/series/sync-status")
+async def series_sync_status():
+    db = await get_db()
+    row = await db.execute("SELECT * FROM series_sync_state WHERE id = 1")
+    return dict(await row.fetchone())
+
+
+@router.post("/episodes/activate")
+async def activate_episodes(request: Request):
+    body = await request.json()
+    episode_ids = body.get("episode_ids", [])
+    category_id = body.get("category_id")
+
+    if not episode_ids:
+        return JSONResponse(status_code=400, content={"error": "episode_ids is required"})
+    if not category_id:
+        return JSONResponse(status_code=400, content={"error": "category_id is required"})
+
+    db = await get_db()
+    cat_row = await db.execute("SELECT * FROM series_categories WHERE id = ?", (category_id,))
+    category = await cat_row.fetchone()
+    if not category:
+        return JSONResponse(status_code=404, content={"error": "Category not found"})
+    category = dict(category)
+
+    activated = []
+    failed = []
+    activated_series_ids = set()
+
+    async with httpx.AsyncClient() as client:
+        for episode_id in episode_ids:
+            try:
+                row = await db.execute("SELECT * FROM episodes WHERE id = ?", (episode_id,))
+                episode = await row.fetchone()
+                if not episode:
+                    failed.append({"episode_id": episode_id, "reason": "Episode not found"})
+                    continue
+                episode = dict(episode)
+
+                picked = await _pick_episode_relation_with_capacity(client, episode)
+                if not picked:
+                    failed.append({"episode_id": episode_id, "reason": "No provider capacity available"})
+                    continue
+
+                stream_id, account_id = picked
+                account_name = ""
+                if account_id:
+                    try:
+                        alts = json.loads(episode.get("alt_streams") or "[]")
+                    except (json.JSONDecodeError, TypeError):
+                        alts = []
+                    if account_id == episode.get("account_id"):
+                        account_name = episode.get("account_name", "")
+                    else:
+                        for alt in alts:
+                            if alt.get("account_id") == account_id:
+                                account_name = alt.get("account_name", "")
+                                break
+
+                await db.execute(
+                    "UPDATE episodes SET activated = 1, stream_id = ?, account_id = ?, account_name = ?, "
+                    "activated_at = ? WHERE id = ?",
+                    (stream_id, account_id, account_name, datetime.now(timezone.utc).isoformat(), episode_id),
+                )
+                await db.commit()
+
+                activated.append(episode_id)
+                activated_series_ids.add(episode["series_id"])
+            except Exception as e:
+                logger.error("Activate error for episode %s: %s", episode_id, e)
+                failed.append({"episode_id": episode_id, "reason": str(e)})
+
+    for series_id in activated_series_ids:
+        series_row = await db.execute("SELECT * FROM series WHERE id = ?", (series_id,))
+        series = await series_row.fetchone()
+        if not series:
+            continue
+        series = dict(series)
+
+        await write_tvshow_and_season_dirs(series, category)
+
+        ep_rows = await db.execute(
+            "SELECT * FROM episodes WHERE series_id = ? AND activated = 1", (series_id,)
+        )
+        episodes = [dict(r) for r in await ep_rows.fetchall()]
+        await write_episode_nfo_batch(series, category, episodes)
+
+    if activated:
+        # Precedence: category's plex_library_section wins when explicitly set (not the
+        # 999 "unset" sentinel); otherwise fall back to the global PLEX_SERIES_LIBRARY_ID.
+        cat_section = category.get("plex_library_section")
+        if cat_section is not None and cat_section != 999:
+            scan_library_id = str(cat_section)
+        elif PLEX_SERIES_LIBRARY_ID:
+            scan_library_id = PLEX_SERIES_LIBRARY_ID
+        else:
+            scan_library_id = None
+        if scan_library_id:
+            await _plex_scan_library(scan_library_id)
+        else:
+            logger.warning("Episode activation: no series Plex library section configured, skipping scan")
+
+    return {"activated": activated, "failed": failed}
+
+
+@router.post("/episodes/reactivate")
+async def reactivate_episodes(request: Request):
+    body = await request.json()
+    episode_ids = body.get("episode_ids", [])
+    if not episode_ids:
+        return JSONResponse(status_code=400, content={"error": "episode_ids is required"})
+
+    db = await get_db()
+    activated = []
+    failed = []
+    touched_series_ids = set()
+
+    async with httpx.AsyncClient() as client:
+        for episode_id in episode_ids:
+            try:
+                row = await db.execute("SELECT * FROM episodes WHERE id = ?", (episode_id,))
+                episode = await row.fetchone()
+                if not episode:
+                    failed.append({"episode_id": episode_id, "reason": "Episode not found"})
+                    continue
+                episode = dict(episode)
+
+                picked = await _pick_episode_relation_with_capacity(client, episode)
+                if not picked:
+                    failed.append({"episode_id": episode_id, "reason": "No provider capacity available"})
+                    continue
+
+                stream_id, account_id = picked
+                account_name = episode.get("account_name", "") if account_id == episode.get("account_id") else ""
+
+                await db.execute(
+                    "UPDATE episodes SET activated = 1, stream_id = ?, account_id = ?, account_name = ?, "
+                    "activated_at = ? WHERE id = ?",
+                    (stream_id, account_id, account_name, datetime.now(timezone.utc).isoformat(), episode_id),
+                )
+                await db.commit()
+
+                activated.append(episode_id)
+                touched_series_ids.add(episode["series_id"])
+            except Exception as e:
+                logger.error("Reactivate error for episode %s: %s", episode_id, e)
+                failed.append({"episode_id": episode_id, "reason": str(e)})
+
+    for series_id in touched_series_ids:
+        series_row = await db.execute("SELECT * FROM series WHERE id = ?", (series_id,))
+        series = await series_row.fetchone()
+        if not series:
+            continue
+        series = dict(series)
+
+        cat_row = await db.execute("SELECT * FROM series_categories WHERE id = ?", (series.get("category_id"),))
+        category = await cat_row.fetchone()
+        if not category:
+            continue
+        category = dict(category)
+
+        await write_tvshow_and_season_dirs(series, category)
+
+        ep_rows = await db.execute(
+            "SELECT * FROM episodes WHERE series_id = ? AND activated = 1", (series_id,)
+        )
+        episodes = [dict(r) for r in await ep_rows.fetchall()]
+        await write_episode_nfo_batch(series, category, episodes, overwrite=True)
+
+    # No Plex scan trigger and no deletion here — reactivate only re-picks a working
+    # stream relation and regenerates NFOs for episodes that were already activated.
+    return {"activated": activated, "failed": failed}
+
+
+@router.post("/episodes/deactivate")
+async def deactivate_episodes(request: Request):
+    body = await request.json()
+    episode_ids = body.get("episode_ids", [])
+    if not episode_ids:
+        return JSONResponse(status_code=400, content={"error": "episode_ids is required"})
+
+    db = await get_db()
+    deactivated = []
+
+    for episode_id in episode_ids:
+        try:
+            row = await db.execute("SELECT * FROM episodes WHERE id = ?", (episode_id,))
+            episode = await row.fetchone()
+            if not episode:
+                continue
+            episode = dict(episode)
+
+            await db.execute("UPDATE episodes SET activated = 0 WHERE id = ?", (episode_id,))
+            await db.commit()
+
+            series_row = await db.execute("SELECT * FROM series WHERE id = ?", (episode["series_id"],))
+            series = await series_row.fetchone()
+            if series:
+                series = dict(series)
+                cat_row = await db.execute("SELECT * FROM series_categories WHERE id = ?", (series.get("category_id"),))
+                category = await cat_row.fetchone()
+                if category:
+                    category = dict(category)
+                    from series_generator import get_series_folder_name, build_synthetic_episode_filename
+                    folder_name = get_series_folder_name(series)
+                    season = episode.get("season_number") or 0
+                    season_dir = os.path.join(
+                        STRM_SERIES_OUTPUT_DIR, category["strm_folder"], folder_name, f"Season {season:02d}"
+                    )
+                    filename = build_synthetic_episode_filename(episode, series)
+                    base_name = os.path.splitext(filename)[0]
+                    nfo_path = os.path.join(season_dir, f"{base_name}.nfo")
+                    if os.path.exists(nfo_path):
+                        os.remove(nfo_path)
+
+            deactivated.append(episode_id)
+        except Exception as e:
+            logger.error("Deactivate error for episode %s: %s", episode_id, e)
+
+    # Season/series dirs and tvshow.nfo are left in place even if now empty — simpler
+    # behavior than the plugin's cleanup, per spec (no cascade cleanup here).
+    return {"deactivated": deactivated}
