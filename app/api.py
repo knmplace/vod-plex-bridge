@@ -1902,7 +1902,8 @@ async def detect_language(request: Request):
     try:
         placeholders = ",".join("?" for _ in movie_ids)
         rows = await db.execute(
-            f"SELECT id, tmdb_id FROM movies WHERE id IN ({placeholders}) AND tmdb_id IS NOT NULL AND tmdb_id != ''",
+            f"SELECT id, tmdb_id FROM movies WHERE id IN ({placeholders}) AND tmdb_id IS NOT NULL AND tmdb_id != '' "
+            "AND COALESCE(tmdb_locked, 0) = 0",
             movie_ids,
         )
         movies = await rows.fetchall()
@@ -1968,7 +1969,7 @@ async def _bulk_detect_languages():
     try:
         rows = await db.execute(
             "SELECT id, tmdb_id FROM movies WHERE tmdb_id IS NOT NULL AND tmdb_id != '' "
-            "AND (language = '' OR language IS NULL) AND name != ''"
+            "AND (language = '' OR language IS NULL) AND name != '' AND COALESCE(tmdb_locked, 0) = 0"
         )
         movies = await rows.fetchall()
         total = len(movies)
@@ -2508,13 +2509,15 @@ async def detect_single_language(movie_id: int):
     db = await get_db()
     try:
         row = await db.execute(
-            "SELECT id, tmdb_id FROM movies WHERE id = ?", (movie_id,)
+            "SELECT id, tmdb_id, tmdb_locked FROM movies WHERE id = ?", (movie_id,)
         )
         movie = await row.fetchone()
         if not movie:
             return JSONResponse(status_code=404, content={"error": "Movie not found"})
         if not movie["tmdb_id"]:
             return {"id": movie_id, "language": None, "message": "No TMDB ID"}
+        if movie["tmdb_locked"]:
+            return {"id": movie_id, "language": None, "message": "Locked to provider data"}
 
         tmdb_data, _ = await tmdb_local.movie_details(movie["tmdb_id"])
         if tmdb_data is None:
@@ -2782,7 +2785,8 @@ async def _run_tmdb_search():
     db = await get_db()
     try:
         count_row = await db.execute(
-            "SELECT COUNT(*) as cnt FROM movies WHERE (tmdb_id IS NULL OR tmdb_id = '') AND tmdb_searched = 0 AND name != ''"
+            "SELECT COUNT(*) as cnt FROM movies WHERE (tmdb_id IS NULL OR tmdb_id = '') AND tmdb_searched = 0 AND name != '' "
+            "AND COALESCE(tmdb_locked, 0) = 0"
         )
         total = (await count_row.fetchone())["cnt"]
         await db.execute(

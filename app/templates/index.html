@@ -1584,6 +1584,36 @@
                     <span id="tmdbSettingsMsg" style="margin-left:0.6rem;color:var(--text-muted);"></span>
                 </div>
             </div>
+            <div class="panel">
+                <div class="panel-header">Provider-only titles (no TMDB ID)</div>
+                <div class="panel-body" style="font-size:0.8rem;">
+                    <div style="color:var(--text-muted);margin-bottom:0.6rem;">Locked titles keep the provider's poster and details: no TMDB title search, TMDB update or language lookup. They can still be browsed and activated.</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.6rem;">
+                        <select id="poKind" onchange="poReload(true)"><option value="movie">Movies</option><option value="series">Shows</option></select>
+                        <select id="poState" onchange="poReload(true)">
+                            <option value="unlocked">No TMDB ID, not locked</option>
+                            <option value="locked">Locked</option>
+                            <option value="all">All without TMDB ID</option>
+                        </select>
+                        <select id="poCategory" onchange="poReload(false)"><option value="">All categories</option></select>
+                        <input id="poSearch" type="text" placeholder="Search title" style="min-width:12rem;" onkeydown="if(event.key==='Enter')poReload(false)">
+                        <button class="btn btn-outline" style="font-size:0.75rem;" onclick="poReload(false)">Search</button>
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.6rem;">
+                        <label><input type="checkbox" id="poPageAll" onchange="poTogglePage(this.checked)"> Select all on page</label>
+                        <button class="btn btn-outline" style="font-size:0.75rem;" onclick="poSelectAllMatching()">Select all <span id="poTotal">0</span> matching</button>
+                        <button class="btn btn-primary" style="font-size:0.75rem;" onclick="poApply(true)">Lock to provider data</button>
+                        <button class="btn btn-outline" style="font-size:0.75rem;" onclick="poApply(false)">Unlock</button>
+                        <span id="poMsg" style="color:var(--text-muted);"></span>
+                    </div>
+                    <div id="poList" style="max-height:28rem;overflow-y:auto;border:1px solid var(--border);border-radius:4px;"></div>
+                    <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem;">
+                        <button class="btn btn-outline" style="font-size:0.75rem;" onclick="poPage(-1)">Prev</button>
+                        <span id="poPageInfo" style="color:var(--text-muted);"></span>
+                        <button class="btn btn-outline" style="font-size:0.75rem;" onclick="poPage(1)">Next</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1661,7 +1691,7 @@
                             <option value="0">Off</option>
                             <option value="24">On — 6:00 AM daily</option>
                         </select>
-                        <button id="btnRunNow" class="btn btn-primary" onclick="triggerManualRefresh()" style="font-size:0.8rem;display:none;">Run Now</button>
+                        <button id="btnRunNow" class="btn btn-primary" onclick="triggerManualRefresh()" style="font-size:0.8rem;">Run Now</button>
                         <span id="scheduleMsg" style="font-size:0.75rem;color:#c9d1d9;"></span>
                     </div>
                 </div>
@@ -1806,6 +1836,122 @@
             const data = await resp.json().catch(() => ({}));
             if (!resp.ok) throw new Error(data.detail || data.error || `HTTP ${resp.status}`);
             return data;
+        }
+
+        // Provider-only titles: lock titles without a TMDB ID to provider data
+        const PO_LIMIT = 200;
+        let poOffset = 0, poTotal = 0, poAllMatching = false;
+        const poSelected = new Set();
+
+        function poFilter() {
+            return {
+                kind: document.getElementById('poKind').value,
+                state: document.getElementById('poState').value,
+                category_id: document.getElementById('poCategory').value,
+                q: document.getElementById('poSearch').value.trim(),
+            };
+        }
+
+        async function poReload(resetCategory) {
+            if (resetCategory) document.getElementById('poCategory').value = '';
+            poOffset = 0;
+            poClearSelection();
+            await poLoad(resetCategory);
+        }
+
+        function poClearSelection() {
+            poSelected.clear();
+            poAllMatching = false;
+            document.getElementById('poPageAll').checked = false;
+        }
+
+        async function poLoad(refreshCategories = true) {
+            const f = poFilter();
+            const params = new URLSearchParams({ kind: f.kind, state: f.state, q: f.q, limit: PO_LIMIT, offset: poOffset });
+            if (f.category_id) params.set('category_id', f.category_id);
+            const list = document.getElementById('poList');
+            try {
+                const data = await tmdbFetch(`/api/tmdb-store/provider-only?${params}`);
+                poTotal = data.total;
+                document.getElementById('poTotal').textContent = tmdbNum(data.total);
+                if (refreshCategories) {
+                    const sel = document.getElementById('poCategory');
+                    const cur = sel.value;
+                    sel.innerHTML = '<option value="">All categories</option>' + data.categories.map(c =>
+                        `<option value="${c.id}">${escapeHtml(c.name)} (${tmdbNum(c.count)})</option>`).join('');
+                    sel.value = data.categories.some(c => String(c.id) === cur) ? cur : '';
+                }
+                list.innerHTML = data.items.length ? data.items.map(it => `
+                    <label style="display:flex;gap:0.6rem;align-items:center;padding:0.35rem 0.5rem;border-bottom:1px solid var(--border);cursor:pointer;">
+                        <input type="checkbox" class="po-item" value="${it.id}" ${poAllMatching || poSelected.has(it.id) ? 'checked' : ''} onchange="poToggle(${it.id}, this.checked)">
+                        ${it.poster_url ? `<img src="${escapeHtml(it.poster_url)}" loading="lazy" style="width:2rem;height:3rem;object-fit:cover;border-radius:2px;" onerror="this.style.visibility='hidden'">` : '<span style="width:2rem;"></span>'}
+                        <span style="flex:1;">${escapeHtml(it.name)}${it.year ? ` (${it.year})` : ''}
+                            <span style="display:block;color:var(--text-muted);font-size:0.72rem;">${escapeHtml(it.categories || '')}</span></span>
+                        ${it.locked ? '<span class="badge" style="background:var(--text-muted);">Locked</span>' : ''}
+                    </label>`).join('') : '<div style="padding:0.6rem;color:var(--text-muted);">No titles match.</div>';
+                const end = Math.min(poOffset + PO_LIMIT, poTotal);
+                document.getElementById('poPageInfo').textContent = poTotal ? `${tmdbNum(poOffset + 1)}-${tmdbNum(end)} of ${tmdbNum(poTotal)}` : '';
+                poUpdateMsg();
+            } catch (e) {
+                list.innerHTML = `<div style="padding:0.6rem;color:var(--danger);">${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        function poToggle(id, on) {
+            if (poAllMatching && !on) {
+                // Leaving "all matching" mode: keep the visible page selected except this one
+                poAllMatching = false;
+                document.querySelectorAll('.po-item').forEach(cb => poSelected.add(Number(cb.value)));
+            }
+            on ? poSelected.add(id) : poSelected.delete(id);
+            poUpdateMsg();
+        }
+
+        function poTogglePage(on) {
+            if (!on) poAllMatching = false;
+            document.querySelectorAll('.po-item').forEach(cb => {
+                cb.checked = on;
+                on ? poSelected.add(Number(cb.value)) : poSelected.delete(Number(cb.value));
+            });
+            poUpdateMsg();
+        }
+
+        function poSelectAllMatching() {
+            poAllMatching = true;
+            document.querySelectorAll('.po-item').forEach(cb => { cb.checked = true; });
+            poUpdateMsg();
+        }
+
+        function poUpdateMsg() {
+            const n = poAllMatching ? poTotal : poSelected.size;
+            document.getElementById('poMsg').textContent = n ? `${tmdbNum(n)} selected` : '';
+        }
+
+        function poPage(dir) {
+            const next = poOffset + dir * PO_LIMIT;
+            if (next < 0 || next >= poTotal) return;
+            poOffset = next;
+            poLoad(false);
+        }
+
+        async function poApply(locked) {
+            const f = poFilter();
+            const n = poAllMatching ? poTotal : poSelected.size;
+            if (!n) { document.getElementById('poMsg').textContent = 'Nothing selected'; return; }
+            if (n > 50 && !confirm(`${locked ? 'Lock' : 'Unlock'} ${n.toLocaleString()} titles?`)) return;
+            const body = { kind: f.kind, locked, state: f.state, q: f.q, category_id: f.category_id ? Number(f.category_id) : null };
+            if (poAllMatching) body.all_matching = true; else body.ids = [...poSelected];
+            try {
+                const r = await tmdbFetch('/api/tmdb-store/provider-only/lock', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+                });
+                poOffset = 0;
+                poClearSelection();
+                await poLoad(true);
+                document.getElementById('poMsg').textContent = `${tmdbNum(r.updated)} ${locked ? 'locked' : 'unlocked'}`;
+            } catch (e) {
+                document.getElementById('poMsg').textContent = e.message;
+            }
         }
 
         function tmdbSchedule() {
@@ -2012,6 +2158,7 @@
             } else if (tab === 'tmdb') {
                 document.getElementById('tabTmdb').classList.add('active');
                 loadTmdbStatus();
+                poLoad(true);
             } else if (tab === 'settings') {
                 document.getElementById('tabSettings').classList.add('active');
                 loadConnection();
@@ -3893,7 +4040,6 @@
             const data = await fetchJSON('/api/schedule');
             const hours = data.refresh_interval_hours || 0;
             document.getElementById('refreshInterval').value = hours;
-            document.getElementById('btnRunNow').style.display = hours ? '' : 'none';
 
             const container = document.getElementById('refreshReportContainer');
             const latestEl = document.getElementById('latestReportBody');
@@ -3948,7 +4094,6 @@
                 body: JSON.stringify({refresh_interval_hours: hours})
             });
             const label = hours ? 'On — 6:00 AM daily' : 'Off';
-            document.getElementById('btnRunNow').style.display = hours ? '' : 'none';
             msg.textContent = `Daily Run: ${label}`;
             setTimeout(() => { msg.textContent = ''; }, 3000);
         }

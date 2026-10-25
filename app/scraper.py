@@ -411,7 +411,8 @@ async def enrich_from_tmdb(limit: int = 5000) -> dict:
             result["store_refreshed"] += cur.rowcount
         await db.commit()
 
-    pending = "tmdb_check = 1 AND tmdb_id IS NOT NULL AND tmdb_id != '' AND name != ''"
+    pending = ("tmdb_check = 1 AND tmdb_id IS NOT NULL AND tmdb_id != '' AND name != '' "
+               "AND COALESCE(tmdb_locked, 0) = 0")
     rows = await db.execute(
         f"SELECT id, tmdb_id, genre, description, imdb_id, poster_url, cast_info, year, duration_seconds, activated "
         f"FROM movies WHERE {pending} ORDER BY activated DESC LIMIT ?", (limit,),
@@ -512,7 +513,7 @@ async def search_tmdb_for_missing(batch_size: int = 50) -> dict:
     rows = await db.execute(
         "SELECT id, name, year FROM movies "
         "WHERE (tmdb_id IS NULL OR tmdb_id = '') AND tmdb_searched = 0 AND name != '' "
-        "LIMIT ?",
+        "AND COALESCE(tmdb_locked, 0) = 0 LIMIT ?",
         (batch_size,),
     )
     movies = [dict(r) for r in await rows.fetchall()]
