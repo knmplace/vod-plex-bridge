@@ -13,7 +13,9 @@ from generator import parse_title
 
 logger = logging.getLogger(__name__)
 
-_HEADERS = {"X-Plex-Token": PLEX_TOKEN, "Accept": "application/json"}
+def _headers() -> dict:
+    # Built per call so a token saved in Settings applies without a restart.
+    return {"X-Plex-Token": PLEX_TOKEN, "Accept": "application/json"}
 _PAGE = 1000
 # Files the bridge itself serves to Plex; those titles already show as ACTIVE.
 _BRIDGE_ROOTS = tuple(r + "/" for r in (PLEX_MOVIE_MOUNT_ROOT, PLEX_SERIES_MOUNT_ROOT) if r)
@@ -112,7 +114,7 @@ async def _list(client: httpx.AsyncClient, section: str, item_type: int) -> list
 async def _read_plex():
     movies, shows = _Index(), _Index()
     counts = {"plex_movies": 0, "plex_shows": 0}
-    async with httpx.AsyncClient(timeout=120, headers=_HEADERS) as client:
+    async with httpx.AsyncClient(timeout=120, headers=_headers()) as client:
         resp = await client.get(f"{PLEX_URL}/library/sections")
         resp.raise_for_status()
         for d in resp.json().get("MediaContainer", {}).get("Directory", []):

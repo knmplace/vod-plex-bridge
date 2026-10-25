@@ -162,13 +162,26 @@ async def _test_plex(client: httpx.AsyncClient, v: dict) -> dict:
     libraries = [{"id": d.get("key"), "title": d.get("title"), "type": d.get("type")}
                  for d in resp.json().get("MediaContainer", {}).get("Directory", [])]
     ids = {lib["id"] for lib in libraries}
-    missing = [f"{name} {v[k]}" for k, name in (("PLEX_LIBRARY_ID", "movie library"),
-                                               ("PLEX_SERIES_LIBRARY_ID", "series library"))
-               if v[k] and v[k] not in ids]
+    titles = {lib["id"]: lib["title"] for lib in libraries}
+    db = await get_db()
+    rows = await (await db.execute(
+        "SELECT name, plex_library_section FROM series_categories ORDER BY name")).fetchall()
+    categories = []
+    for r in rows:
+        own = r["plex_library_section"] not in (None, 999)
+        section = str(r["plex_library_section"]) if own else v["PLEX_SERIES_LIBRARY_ID"]
+        categories.append({"name": r["name"], "id": section or "", "own": own,
+                           "title": titles.get(section, "not found in Plex" if section else "none")})
+    checks = [("PLEX_LIBRARY_ID", "movie library")]
+    # The series ID is only a fallback, so it matters only when some category has no library of its own.
+    if not rows or any(not c["own"] for c in categories):
+        checks.append(("PLEX_SERIES_LIBRARY_ID", "fallback series library"))
+    missing = [f"{name} {v[k]}" for k, name in checks if v[k] and v[k] not in ids]
+    missing += [f"series category {c['name']} library {c['id']}" for c in categories if c["own"] and c["id"] not in ids]
     message = f"Connected to Plex — {len(libraries)} libraries"
     if missing:
         message += f". Not found: {', '.join(missing)}"
-    return {"ok": not missing, "message": message, "libraries": libraries}
+    return {"ok": not missing, "message": message, "libraries": libraries, "categories": categories}
 
 
 async def _test_tmdb(client: httpx.AsyncClient, v: dict) -> dict:

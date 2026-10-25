@@ -7,7 +7,9 @@ from config import PLEX_URL, PLEX_TOKEN, PLEX_SERIES_MOUNT_ROOT
 
 logger = logging.getLogger(__name__)
 
-_HEADERS = {"X-Plex-Token": PLEX_TOKEN, "Accept": "application/json"}
+def _headers() -> dict:
+    # Built per call so a token saved in Settings applies without a restart.
+    return {"X-Plex-Token": PLEX_TOKEN, "Accept": "application/json"}
 SHOW_AGENT = "tv.plex.agents.series"
 SHOW_SCANNER = "Plex TV Series"
 
@@ -21,7 +23,7 @@ def category_location(strm_folder: str) -> str:
 
 
 async def list_show_sections() -> list[dict]:
-    async with httpx.AsyncClient(timeout=10, headers=_HEADERS) as client:
+    async with httpx.AsyncClient(timeout=10, headers=_headers()) as client:
         resp = await client.get(f"{PLEX_URL}/library/sections")
         resp.raise_for_status()
     sections = []
@@ -57,7 +59,7 @@ async def _set_locations(section: dict, locations: list[str]):
     params += [("location", p) for p in locations]
     try:
         # Plex walks the new folders before answering, which can take well over 15s.
-        async with httpx.AsyncClient(timeout=60, headers=_HEADERS) as client:
+        async with httpx.AsyncClient(timeout=60, headers=_headers()) as client:
             resp = await client.put(f"{PLEX_URL}/library/sections/{section['id']}", params=params)
             resp.raise_for_status()
     except httpx.TimeoutException:
@@ -99,7 +101,7 @@ async def create_section(name: str, path: str) -> int:
     ]
     dirs = []
     try:
-        async with httpx.AsyncClient(timeout=60, headers=_HEADERS) as client:
+        async with httpx.AsyncClient(timeout=60, headers=_headers()) as client:
             resp = await client.post(f"{PLEX_URL}/library/sections", params=params)
             resp.raise_for_status()
         if resp.content:
@@ -119,7 +121,7 @@ async def create_section(name: str, path: str) -> int:
 
 
 async def delete_section(section_id: int):
-    async with httpx.AsyncClient(timeout=15, headers=_HEADERS) as client:
+    async with httpx.AsyncClient(timeout=15, headers=_headers()) as client:
         resp = await client.delete(f"{PLEX_URL}/library/sections/{section_id}")
         resp.raise_for_status()
     logger.info("Plex: deleted library %s", section_id)

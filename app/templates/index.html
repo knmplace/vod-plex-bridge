@@ -19,9 +19,9 @@
             --bg-card: #1a2236;
             --bg-card-hover: #1f2a42;
             --border: #2a3654;
-            --text-primary: #e2e8f0;
-            --text-secondary: #94a3b8;
-            --text-muted: #64748b;
+            --text-primary: #f8fafc;
+            --text-secondary: #e2e8f0;
+            --text-muted: #cbd5e1;
             --accent: #3b82f6;
             --accent-hover: #2563eb;
             --success: #22c55e;
@@ -66,7 +66,7 @@
             border: 1px solid var(--border);
             background: transparent;
             color: var(--text-secondary);
-            font-size: 0.75rem;
+            font-size: 0.81rem;
             font-weight: 500;
             cursor: pointer;
             transition: all 0.15s;
@@ -83,7 +83,7 @@
         }
         .sub-nav.active { display: flex; }
         .sub-nav-label {
-            font-size: 0.68rem;
+            font-size: 0.74rem;
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
@@ -96,7 +96,7 @@
             border: 1px solid var(--border);
             background: transparent;
             color: var(--text-secondary);
-            font-size: 0.72rem;
+            font-size: 0.78rem;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.15s;
@@ -142,16 +142,16 @@
             gap: 0.4rem;
         }
         .stat-inline .value { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
-        .stat-inline .label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }
+        .stat-inline .label { font-size: 0.76rem; color: var(--text-muted); text-transform: uppercase; }
 
         .dashboard-bar .btn { margin: 0; }
-        .dashboard-bar .msg { font-size: 0.75rem; color: var(--text-secondary); margin-left: auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .dashboard-bar .msg { font-size: 0.81rem; color: var(--text-secondary); margin-left: auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
         .btn {
             padding: 0.4rem 0.8rem;
             border-radius: 5px;
             border: none;
-            font-size: 0.75rem;
+            font-size: 0.81rem;
             font-weight: 500;
             cursor: pointer;
             transition: all 0.15s;
@@ -191,11 +191,11 @@
         .conn-modes { display: flex; gap: 1.25rem; flex-wrap: wrap; margin-bottom: 0.75rem; font-size: 0.85rem; font-weight: 600; }
         .conn-modes label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
         .conn-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.6rem 1rem; }
-        .conn-field { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); }
-        .conn-field em { font-style: normal; font-weight: 400; color: var(--text-muted); }
+        .conn-field { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.88rem; font-weight: 600; color: var(--text-primary); }
+        .conn-field em { font-style: normal; font-weight: 400; color: var(--text-secondary); }
         .conn-field input { padding: 0.45rem 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 0.85rem; }
         .conn-field input:focus { outline: none; border-color: var(--accent); }
-        .conn-note { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.75rem; line-height: 1.5; }
+        .conn-note { font-size: 0.86rem; color: var(--text-secondary); margin-top: 0.75rem; line-height: 1.5; }
         .settings-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.9rem; flex-wrap: wrap; }
         .settings-msg { font-size: 0.8rem; }
         .settings-layout { display: grid; grid-template-columns: 190px 1fr; gap: 1rem; max-width: 1100px; margin: 0 auto 1rem; align-items: start; }
@@ -208,19 +208,19 @@
             .settings-side { flex-direction: row; overflow-x: auto; position: static; }
             .settings-side button { white-space: nowrap; }
         }
-        .set-intro { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; margin: 0 0 1rem; }
+        .set-intro { font-size: 0.9rem; color: var(--text-primary); line-height: 1.5; margin: 0 0 1rem; }
         .set-field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 1rem; max-width: 560px; }
-        .set-label { font-size: 0.8rem; font-weight: 600; color: var(--text-primary); }
-        .set-src { font-style: normal; font-weight: 400; font-size: 0.7rem; color: var(--text-muted); margin-left: 0.35rem; }
+        .set-label { font-size: 0.92rem; font-weight: 600; color: var(--text-primary); }
+        .set-src { font-style: normal; font-weight: 400; font-size: 0.84rem; color: var(--text-secondary); margin-left: 0.35rem; }
         .set-src.warn, .set-help.warn { color: var(--warning); }
         .set-field input[type=text], .set-field input[type=password], .set-field select { padding: 0.45rem 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 0.85rem; }
         .set-field input:focus, .set-field select:focus { outline: none; border-color: var(--accent); }
-        .set-help { font-size: 0.72rem; color: var(--text-muted); line-height: 1.45; }
-        .set-eg { color: var(--text-secondary); white-space: nowrap; }
-        .set-clear { font-size: 0.72rem; color: var(--danger); align-self: flex-start; }
+        .set-help { font-size: 0.84rem; color: var(--text-secondary); line-height: 1.45; }
+        .set-eg { color: var(--text-primary); white-space: nowrap; }
+        .set-clear { font-size: 0.78rem; color: var(--danger); align-self: flex-start; }
         .set-libs { margin-top: 0.75rem; border-collapse: collapse; font-size: 0.8rem; }
         .set-libs th, .set-libs td { text-align: left; padding: 0.3rem 0.9rem 0.3rem 0; border-bottom: 1px solid var(--border); }
-        .set-libs th { color: var(--text-muted); font-weight: 600; }
+        .set-libs th { color: var(--text-secondary); font-weight: 600; }
         .acct-menu { position: relative; }
         .acct-btn { display: inline-flex; align-items: center; gap: 0.4rem; }
         .acct-drop { display: none; position: absolute; right: 0; top: calc(100% + 4px); min-width: 150px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.35); z-index: 200; overflow: hidden; }
@@ -241,7 +241,7 @@
             user-select: none;
         }
         .panel-header .collapse-arrow {
-            font-size: 0.65rem;
+            font-size: 0.71rem;
             margin-right: 0.4rem;
             transition: transform 0.2s;
             display: inline-block;
@@ -266,7 +266,7 @@
             color: var(--text-primary);
             border-radius: 5px;
             padding: 0.4rem 0.6rem;
-            font-size: 0.75rem;
+            font-size: 0.81rem;
             margin-bottom: 0.4rem;
         }
         .search-input:focus { outline: none; border-color: var(--accent); }
@@ -281,10 +281,10 @@
             border-radius: 5px;
             cursor: pointer;
             transition: background 0.15s;
-            font-size: 0.78rem;
+            font-size: 0.84rem;
         }
         .list-item:hover { background: var(--bg-card-hover); }
-        .list-item .count { color: var(--text-muted); font-size: 0.7rem; }
+        .list-item .count { color: var(--text-muted); font-size: 0.76rem; }
         .list-item.selected { background: var(--accent); color: #fff; }
         .list-item.selected .count { color: rgba(255,255,255,0.7); }
 
@@ -310,13 +310,13 @@
             border-radius: 5px;
             cursor: pointer;
             transition: background 0.15s;
-            font-size: 0.75rem;
+            font-size: 0.81rem;
             background: var(--bg-secondary);
             border: 1px solid var(--border);
         }
         .cat-chip:hover { border-color: var(--accent); }
         .cat-chip.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
-        .cat-chip .count { font-size: 0.68rem; color: var(--text-muted); margin-left: 0.4rem; }
+        .cat-chip .count { font-size: 0.74rem; color: var(--text-muted); margin-left: 0.4rem; }
         .cat-chip.selected .count { color: rgba(255,255,255,0.7); }
 
         .browse-section {
@@ -337,14 +337,14 @@
             color: var(--text-primary);
             border-radius: 5px;
             padding: 0.35rem 0.5rem;
-            font-size: 0.75rem;
+            font-size: 0.81rem;
         }
         .browse-toolbar select:focus, .browse-toolbar input:focus { outline: none; border-color: var(--accent); }
 
         .multi-select { position: relative; display: inline-block; }
         .multi-select-btn {
             background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text-primary);
-            border-radius: 5px; padding: 0.35rem 0.5rem; font-size: 0.75rem; cursor: pointer;
+            border-radius: 5px; padding: 0.35rem 0.5rem; font-size: 0.81rem; cursor: pointer;
             white-space: nowrap; min-width: 120px; text-align: left;
         }
         .multi-select-btn:hover { border-color: var(--accent); }
@@ -358,7 +358,7 @@
         .multi-select-dropdown.open { display: block; }
         .multi-select-dropdown label {
             display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.6rem;
-            cursor: pointer; font-size: 0.75rem; color: var(--text-primary);
+            cursor: pointer; font-size: 0.81rem; color: var(--text-primary);
         }
         .multi-select-dropdown label:hover { background: var(--bg-card); }
         .multi-select-dropdown input[type="checkbox"] { accent-color: var(--accent); }
@@ -367,10 +367,10 @@
         }
         .multi-select-actions button {
             background: none; border: none; color: var(--accent); cursor: pointer;
-            font-size: 0.7rem; padding: 0;
+            font-size: 0.76rem; padding: 0;
         }
         .multi-select-actions button:hover { text-decoration: underline; }
-        .ms-count { background: var(--accent); color: #fff; border-radius: 8px; padding: 0 5px; font-size: 0.65rem; margin-left: 4px; }
+        .ms-count { background: var(--accent); color: #fff; border-radius: 8px; padding: 0 5px; font-size: 0.71rem; margin-left: 4px; }
 
         .movie-grid {
             display: grid;
@@ -403,7 +403,7 @@
         }
         .movie-card .info { padding: 0.4rem 0.45rem 0.45rem; }
         .movie-card .title {
-            font-size: 0.74rem;
+            font-size: 0.8rem;
             font-weight: 600;
             line-height: 1.25;
             overflow: hidden;
@@ -411,14 +411,14 @@
             white-space: nowrap;
         }
         .movie-card .meta {
-            font-size: 0.64rem;
+            font-size: 0.7rem;
             color: var(--text-secondary);
             margin-top: 0.15rem;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
-        .movie-card .meta.sub { color: var(--text-muted); font-size: 0.62rem; }
+        .movie-card .meta.sub { color: var(--text-muted); font-size: 0.68rem; }
 
         /* Info chips (provider / language) */
         .movie-card .tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 0.3rem; }
@@ -457,7 +457,7 @@
         .movie-card .plex-badge {
             position: absolute;
             left: 6px; top: 50%; transform: translateY(-50%);
-            font-size: 0.6rem; font-weight: 800; letter-spacing: 0.06em;
+            font-size: 0.66rem; font-weight: 800; letter-spacing: 0.06em;
             padding: 2px 8px;
             border-radius: 999px;
             background: #a3e635; color: #1a2e05;
@@ -486,7 +486,7 @@
         .movie-card .rating-chip {
             position: absolute;
             bottom: 6px; left: 6px;
-            font-size: 0.62rem; font-weight: 700;
+            font-size: 0.68rem; font-weight: 700;
             color: #fde68a;
             background: rgba(10,14,23,0.82);
             border: 1px solid rgba(255,255,255,0.12);
@@ -502,7 +502,7 @@
             border: 2px solid rgba(255,255,255,0.75);
             background: rgba(0,0,0,0.45);
             display: flex; align-items: center; justify-content: center;
-            font-size: 0.75rem; font-weight: 700;
+            font-size: 0.81rem; font-weight: 700;
             color: transparent;
             opacity: 0;
             transition: opacity 0.15s;
@@ -539,7 +539,7 @@
             border: 1px solid rgba(255,255,255,0.16);
             background: rgba(17,24,39,0.9);
             color: var(--text-primary);
-            font-size: 0.64rem; font-weight: 700;
+            font-size: 0.7rem; font-weight: 700;
             cursor: pointer;
             transition: background 0.12s, border-color 0.12s, color 0.12s;
         }
@@ -564,7 +564,7 @@
             justify-content: center;
             gap: 0.5rem;
             padding: 0.6rem;
-            font-size: 0.75rem;
+            font-size: 0.81rem;
             color: var(--text-secondary);
         }
 
@@ -580,7 +580,7 @@
             color: #fff;
             border-radius: 10px;
             padding: 0.05rem 0.45rem;
-            font-size: 0.68rem;
+            font-size: 0.74rem;
             font-weight: 600;
         }
 
@@ -652,7 +652,7 @@
         .health-status.down { color: var(--danger); }
         .health-status.unknown { color: var(--text-muted); }
         .health-time {
-            font-size: 0.65rem;
+            font-size: 0.71rem;
             color: var(--text-muted);
         }
 
@@ -703,7 +703,7 @@
             max-height: 75vh;
             overflow-y: auto;
             font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-            font-size: 0.78rem;
+            font-size: 0.84rem;
             line-height: 1.6;
         }
         .log-entry {
@@ -715,13 +715,13 @@
         }
         .log-entry:hover { background: var(--bg-card-hover); }
         .log-ts { color: var(--text-muted); white-space: nowrap; min-width: 80px; }
-        .log-level { font-weight: 600; text-transform: uppercase; font-size: 0.68rem; min-width: 42px; }
+        .log-level { font-weight: 600; text-transform: uppercase; font-size: 0.74rem; min-width: 42px; }
         .log-level.info { color: var(--accent); }
         .log-level.warn { color: var(--warning); }
         .log-level.error { color: var(--danger); }
         .log-msg { color: var(--text-primary); }
-        .log-meta { color: var(--text-muted); font-size: 0.72rem; }
-        .log-movie { color: var(--success); font-size: 0.72rem; }
+        .log-meta { color: var(--text-muted); font-size: 0.78rem; }
+        .log-movie { color: var(--success); font-size: 0.78rem; }
 
         .summary-section { padding: 1rem 1.5rem; }
         .summary-grid {
@@ -737,14 +737,14 @@
         .summary-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 0.78rem;
+            font-size: 0.84rem;
         }
         .summary-table th {
             text-align: left;
             padding: 0.4rem 0.6rem;
             border-bottom: 2px solid var(--border);
             color: var(--text-muted);
-            font-size: 0.7rem;
+            font-size: 0.76rem;
             text-transform: uppercase;
         }
         .summary-table td {
@@ -753,11 +753,11 @@
         }
         .summary-table td.num { text-align: right; font-weight: 600; color: var(--accent); }
         .summary-table tr:hover { background: var(--bg-card-hover); }
-        .summary-table.compact td { padding: 0.25rem 0.4rem; font-size: 0.73rem; }
-        .summary-table.compact th { padding: 0.3rem 0.4rem; font-size: 0.65rem; }
+        .summary-table.compact td { padding: 0.25rem 0.4rem; font-size: 0.79rem; }
+        .summary-table.compact th { padding: 0.3rem 0.4rem; font-size: 0.71rem; }
         .cat-hidden-row { opacity: 0.45; }
         .cat-hide-btn {
-            cursor: pointer; font-size: 0.6rem; padding: 0.1rem 0.35rem;
+            cursor: pointer; font-size: 0.66rem; padding: 0.1rem 0.35rem;
             border-radius: 3px; border: 1px solid var(--border); background: transparent;
             color: var(--text-muted); margin-left: 0.3rem; vertical-align: middle;
         }
@@ -767,7 +767,7 @@
 
         .cat-browse-tag {
             display: inline-block;
-            font-size: 0.65rem;
+            font-size: 0.71rem;
             background: var(--bg-card);
             border: 1px solid var(--border);
             padding: 0.1rem 0.4rem;
@@ -799,12 +799,12 @@
             font-weight: 600;
         }
         .stream-movie-meta {
-            font-size: 0.75rem;
+            font-size: 0.81rem;
             color: var(--text-muted);
             margin-left: 0.5rem;
         }
         .stream-status-badge {
-            font-size: 0.7rem;
+            font-size: 0.76rem;
             font-weight: 600;
             padding: 0.15rem 0.5rem;
             border-radius: 10px;
@@ -815,7 +815,7 @@
         .stream-status-badge.error { background: var(--danger); color: #fff; }
         .stream-status-badge.starting { background: var(--warning); color: #000; }
         .stream-client-badge {
-            font-size: 0.68rem;
+            font-size: 0.74rem;
             font-weight: 600;
             padding: 0.1rem 0.45rem;
             border-radius: 8px;
@@ -873,7 +873,7 @@
             padding: 0.6rem 0.75rem;
         }
         .segment-title {
-            font-size: 0.68rem;
+            font-size: 0.74rem;
             color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.03em;
@@ -898,13 +898,13 @@
         .segment-status .dot.off { background: var(--text-muted); }
         .segment-status .dot.err { background: var(--danger); }
         .segment-detail {
-            font-size: 0.72rem;
+            font-size: 0.78rem;
             color: var(--text-secondary);
             line-height: 1.5;
         }
 
         .plex-section-label {
-            font-size: 0.72rem;
+            font-size: 0.78rem;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -934,7 +934,7 @@
             display: flex;
             align-items: center;
             gap: 0.3rem;
-            font-size: 0.75rem;
+            font-size: 0.81rem;
             font-weight: 600;
         }
         .plex-session-state .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
@@ -943,7 +943,7 @@
         .plex-session-state .dot.buffering { background: var(--warning); animation: pulse 0.5s infinite; }
 
         .plex-session-title { font-weight: 600; font-size: 0.88rem; }
-        .plex-session-meta { font-size: 0.72rem; color: var(--text-muted); }
+        .plex-session-meta { font-size: 0.78rem; color: var(--text-muted); }
         .plex-session-progress {
             height: 4px;
             background: var(--bg-secondary);
@@ -959,7 +959,7 @@
         }
         .plex-session-right {
             text-align: right;
-            font-size: 0.72rem;
+            font-size: 0.78rem;
             color: var(--text-secondary);
             white-space: nowrap;
         }
@@ -1074,7 +1074,7 @@
             <div class="panel">
                 <div class="panel-header">
                     Movies
-                    <span style="font-size:0.75rem;color:var(--text-muted)" id="browseLabel"></span>
+                    <span style="font-size:0.81rem;color:var(--text-muted)" id="browseLabel"></span>
                 </div>
                 <div class="browse-toolbar">
                     <input type="text" id="movieSearch" placeholder="Search movies..." style="width:200px;" oninput="debounceSearch()">
@@ -1123,13 +1123,13 @@
                         <button class="multi-select-btn" onclick="toggleMs('msProv')">All Providers</button>
                         <div class="multi-select-dropdown" id="msProvDrop"></div>
                     </div>
-                    <button class="btn btn-outline" id="clearFiltersBtn" style="padding:0.2rem 0.6rem;font-size:0.72rem;display:none;" onclick="clearBrowseFilters()">Clear filters</button>
+                    <button class="btn btn-outline" id="clearFiltersBtn" style="padding:0.2rem 0.6rem;font-size:0.78rem;display:none;" onclick="clearBrowseFilters()">Clear filters</button>
                     <div id="selectionBar" style="display:none;" class="selection-bar">
                         <span class="count" id="selCount">0</span> selected
-                        <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="activateSelected()">Activate</button>
-                        <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="deactivateSelected()">Deactivate</button>
-                        <button class="btn btn-primary" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="detectLanguage()">Detect Language</button>
-                        <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="clearSelection()">Clear</button>
+                        <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="activateSelected()">Activate</button>
+                        <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="deactivateSelected()">Deactivate</button>
+                        <button class="btn btn-primary" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="detectLanguage()">Detect Language</button>
+                        <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="clearSelection()">Clear</button>
                     </div>
                 </div>
                 <div class="panel-body">
@@ -1159,12 +1159,12 @@
                 <div class="panel-header">
                     Catalog Import
                     <div style="display:flex;gap:0.4rem;" onclick="event.stopPropagation()">
-                        <button class="btn btn-primary" style="font-size:0.72rem;padding:0.25rem 0.6rem;" onclick="syncCatalog()">Sync Selected</button>
-                        <button class="btn btn-outline" style="font-size:0.72rem;padding:0.25rem 0.6rem;" onclick="loadCategories()">Reload Categories</button>
+                        <button class="btn btn-primary" style="font-size:0.78rem;padding:0.25rem 0.6rem;" onclick="syncCatalog()">Sync Selected</button>
+                        <button class="btn btn-outline" style="font-size:0.78rem;padding:0.25rem 0.6rem;" onclick="loadCategories()">Reload Categories</button>
                     </div>
                 </div>
                 <div class="panel-body" style="padding:0.6rem 0.875rem;">
-                    <p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.75rem;">
+                    <p style="font-size:0.84rem;color:var(--text-secondary);margin-bottom:0.75rem;">
                         Select providers and categories below to control which movies are imported into your catalog. Click <strong>Reload Categories</strong> to fetch available categories from Dispatcharr, select the ones you want, then click <strong>Sync Selected</strong> to import movies. Right-click a category to hide it from browse results.
                     </p>
                     <div class="top-panels" style="padding:0;">
@@ -1180,8 +1180,8 @@
                                 </div>
                             </div>
                             <div class="panel-footer">
-                                <button class="btn btn-outline" style="font-size:0.7rem;" onclick="selectAllProviders()">All</button>
-                                <button class="btn btn-outline" style="font-size:0.7rem;" onclick="clearProviders()">None</button>
+                                <button class="btn btn-outline" style="font-size:0.76rem;" onclick="selectAllProviders()">All</button>
+                                <button class="btn btn-outline" style="font-size:0.76rem;" onclick="clearProviders()">None</button>
                             </div>
                         </div>
 
@@ -1191,8 +1191,8 @@
                                 <span><span class="collapse-arrow">&#9660;</span>Categories</span>
                                 <div style="display:flex;align-items:center;gap:0.5rem;" onclick="event.stopPropagation()">
                                     <span class="badge" id="selectedCatCount">0</span>
-                                    <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="selectAllCategories()">All</button>
-                                    <button class="btn btn-outline" style="font-size:0.65rem;padding:0.2rem 0.5rem;" onclick="clearCategories()">None</button>
+                                    <button class="btn btn-outline" style="font-size:0.71rem;padding:0.2rem 0.5rem;" onclick="selectAllCategories()">All</button>
+                                    <button class="btn btn-outline" style="font-size:0.71rem;padding:0.2rem 0.5rem;" onclick="clearCategories()">None</button>
                                 </div>
                             </div>
                             <div class="panel-body">
@@ -1240,7 +1240,7 @@
                 <div class="panel">
                     <div class="panel-header">By Provider</div>
                     <div class="panel-body" style="max-height:350px;overflow-y:auto;">
-                        <div style="font-size:0.75rem;color:#888;text-align:center;padding:4px 8px 6px;line-height:1.3;">Includes providers available as fallback streams, even if not initially selected</div>
+                        <div style="font-size:0.82rem;color:var(--text-secondary);text-align:center;padding:4px 8px 6px;line-height:1.3;">Includes providers available as fallback streams, even if not initially selected</div>
                         <table class="summary-table compact">
                             <thead><tr><th>Provider</th><th style="text-align:right">Total</th><th style="text-align:right">Active</th></tr></thead>
                             <tbody id="summaryProviders"><tr><td colspan="3" class="empty-state">Loading...</td></tr></tbody>
@@ -1260,12 +1260,12 @@
                     <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
                         <span>By Category</span>
                         <div style="display:flex;align-items:center;gap:0.4rem;">
-                            <button class="btn btn-outline" id="catRemoveBtn" style="font-size:0.65rem;padding:0.15rem 0.5rem;border-color:#e74c3c;color:#e74c3c;" onclick="toggleCatRemoveMode()">Remove</button>
-                            <input type="text" class="search-input" id="summaryCatSearch" style="width:150px;margin:0;font-size:0.7rem;padding:0.2rem 0.4rem;" placeholder="Search..." oninput="renderCatalogSummary()">
+                            <button class="btn btn-outline" id="catRemoveBtn" style="font-size:0.71rem;padding:0.15rem 0.5rem;border-color:#e74c3c;color:#e74c3c;" onclick="toggleCatRemoveMode()">Remove</button>
+                            <input type="text" class="search-input" id="summaryCatSearch" style="width:150px;margin:0;font-size:0.76rem;padding:0.2rem 0.4rem;" placeholder="Search..." oninput="renderCatalogSummary()">
                         </div>
                     </div>
                     <div id="catRemoveBar" style="display:none;"></div>
-                    <div style="text-align:center;padding:0.3rem 0;font-size:0.7rem;color:var(--text-muted);border-bottom:1px solid var(--border);">Categories currently in catalog</div>
+                    <div style="text-align:center;padding:0.3rem 0;font-size:0.76rem;color:var(--text-muted);border-bottom:1px solid var(--border);">Categories currently in catalog</div>
                     <div class="panel-body" style="max-height:350px;overflow-y:auto;">
                         <table class="summary-table compact">
                             <thead><tr><th id="catRemoveThCb" style="width:24px;display:none;"></th><th>Category</th><th style="text-align:right">Total</th><th style="text-align:right">Active</th></tr></thead>
@@ -1292,8 +1292,8 @@
                         <select class="search-input" id="newCatPlexSection" title="Plex TV library this category's folder is added to" style="width:200px;margin-bottom:0;">
                             <option value="new">+ Create new Plex library</option>
                         </select>
-                        <button class="btn btn-primary" style="font-size:0.72rem;padding:0.25rem 0.6rem;" onclick="createSeriesCategory()">Add Category</button>
-                        <button class="btn" style="font-size:0.72rem;padding:0.25rem 0.6rem;" title="Re-add every category folder to its Plex library" onclick="syncSeriesCategoriesToPlex()">Sync Plex Folders</button>
+                        <button class="btn btn-primary" style="font-size:0.78rem;padding:0.25rem 0.6rem;" onclick="createSeriesCategory()">Add Category</button>
+                        <button class="btn" style="font-size:0.78rem;padding:0.25rem 0.6rem;" title="Re-add every category folder to its Plex library" onclick="syncSeriesCategoriesToPlex()">Sync Plex Folders</button>
                     </div>
                     <table class="summary-table compact" id="seriesCategoryTable">
                         <thead><tr><th>Name</th><th>STRM Folder</th><th>Plex Library</th><th style="text-align:right">Series</th><th style="text-align:right">Active</th><th></th></tr></thead>
@@ -1305,7 +1305,7 @@
             <div class="panel">
                 <div class="panel-header">
                     Browse Series
-                    <span style="font-size:0.75rem;color:var(--text-muted)" id="seriesLabel"></span>
+                    <span style="font-size:0.81rem;color:var(--text-muted)" id="seriesLabel"></span>
                 </div>
                 <div class="browse-toolbar">
                     <input type="text" id="seriesSearch" placeholder="Search series..." style="width:200px;" oninput="debounceSeriesSearch()">
@@ -1317,12 +1317,12 @@
                         <option value="1">Activated</option>
                         <option value="0">Not Activated</option>
                     </select>
-                    <button class="btn btn-warning" style="font-size:0.72rem;" onclick="scrapeSeriesCatalog()">Sync Series Catalog</button>
+                    <button class="btn btn-warning" style="font-size:0.78rem;" onclick="scrapeSeriesCatalog()">Sync Series Catalog</button>
                     <span class="msg" id="seriesSyncMessage"></span>
                 </div>
                 <div id="seriesLibraryBanner" style="display:none;align-items:center;gap:0.75rem;padding:0.5rem 1rem;background:var(--bg-card-hover);border-left:3px solid var(--accent);font-size:0.82rem;">
                     <span id="seriesLibraryBannerText"></span>
-                    <button class="btn btn-outline" style="padding:0.15rem 0.6rem;font-size:0.72rem;" onclick="showSeriesCatalog()">Back to catalog</button>
+                    <button class="btn btn-outline" style="padding:0.15rem 0.6rem;font-size:0.78rem;" onclick="showSeriesCatalog()">Back to catalog</button>
                 </div>
                 <div class="panel-body">
                     <div id="seriesGrid" class="movie-grid">
@@ -1340,7 +1340,7 @@
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
                 <div style="display:flex;align-items:center;gap:0.6rem;min-width:0;">
                     <h2 id="seriesDetailTitle" style="margin:0;font-size:1.1rem;"></h2>
-                    <button class="btn btn-danger" id="seriesDetailTrailer" style="display:none;padding:0.2rem 0.6rem;font-size:0.72rem;">&#9654; Trailer</button>
+                    <button class="btn btn-danger" id="seriesDetailTrailer" style="display:none;padding:0.2rem 0.6rem;font-size:0.78rem;">&#9654; Trailer</button>
                 </div>
                 <span class="trailer-close" style="position:static;" onclick="closeSeriesDetail()">&times;</span>
             </div>
@@ -1349,13 +1349,13 @@
                 <select id="seriesDetailSeason" onchange="loadSeriesDetailEpisodes()">
                     <option value="0">All Seasons</option>
                 </select>
-                <button class="btn btn-outline" style="font-size:0.72rem;" onclick="fetchSeriesEpisodesNow()">Fetch Episodes</button>
+                <button class="btn btn-outline" style="font-size:0.78rem;" onclick="fetchSeriesEpisodesNow()">Fetch Episodes</button>
                 <div id="seriesEpSelectionBar" style="display:none;gap:0.4rem;align-items:center;">
                     <span class="count" id="seriesEpSelCount">0</span> selected
-                    <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="activateSelectedEpisodes()">Activate</button>
-                    <button class="btn btn-primary" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="reactivateSelectedEpisodes()">Reactivate</button>
-                    <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="deactivateSelectedEpisodes()">Deactivate</button>
-                    <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="clearEpisodeSelection()">Clear</button>
+                    <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="activateSelectedEpisodes()">Activate</button>
+                    <button class="btn btn-primary" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="reactivateSelectedEpisodes()">Reactivate</button>
+                    <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="deactivateSelectedEpisodes()">Deactivate</button>
+                    <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="clearEpisodeSelection()">Clear</button>
                 </div>
             </div>
             <table class="summary-table compact" id="seriesDetailEpisodeTable">
@@ -1371,15 +1371,15 @@
             <div class="panel">
                 <div class="panel-header">
                     Dead Movies
-                    <span style="font-size:0.75rem;color:var(--text-muted)" id="deadLabel">Movies no longer available from provider</span>
+                    <span style="font-size:0.81rem;color:var(--text-muted)" id="deadLabel">Movies no longer available from provider</span>
                 </div>
                 <div class="browse-toolbar">
                     <input type="text" id="deadSearch" placeholder="Search dead movies..." style="width:200px;" oninput="debounceDeadSearch()">
                     <div id="deadSelectionBar" style="display:none;" class="selection-bar">
                         <span class="count" id="deadSelCount">0</span> selected
-                        <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="restoreDeadSelected()">Restore</button>
-                        <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="deleteDeadSelected()">Delete</button>
-                        <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="clearDeadSelection()">Clear</button>
+                        <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="restoreDeadSelected()">Restore</button>
+                        <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="deleteDeadSelected()">Delete</button>
+                        <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="clearDeadSelection()">Clear</button>
                     </div>
                     <div style="margin-left:auto;display:flex;gap:0.4rem;">
                         <button class="btn btn-success" onclick="restoreAllDead()">Restore All</button>
@@ -1405,16 +1405,16 @@
                     <div class="panel-header">
                         Proxy Activity Log
                         <div style="display:flex;gap:0.4rem;align-items:center;">
-                            <label style="font-size:0.7rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                            <label style="font-size:0.76rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
                                 <input type="checkbox" id="logAutoRefresh" checked style="accent-color:var(--accent);"> Auto-refresh
                             </label>
-                            <select id="logLevelFilter" onchange="renderProxyLog()" style="padding:0.2rem 0.4rem;font-size:0.7rem;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;">
+                            <select id="logLevelFilter" onchange="renderProxyLog()" style="padding:0.2rem 0.4rem;font-size:0.76rem;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;">
                                 <option value="">All Levels</option>
                                 <option value="info">Info</option>
                                 <option value="warn">Warning</option>
                                 <option value="error">Error</option>
                             </select>
-                            <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="loadProxyLog()">Refresh</button>
+                            <button class="btn btn-outline" style="font-size:0.76rem;padding:0.2rem 0.5rem;" onclick="loadProxyLog()">Refresh</button>
                         </div>
                     </div>
                     <div class="panel-body" style="padding:0;flex:1;overflow:hidden;">
@@ -1430,9 +1430,9 @@
                     <div class="panel-header">
                         Archived Logs
                         <div style="display:flex;gap:0.4rem;align-items:center;">
-                            <label style="font-size:0.7rem;font-weight:normal;"><input type="checkbox" id="archiveSelectAll" onchange="document.querySelectorAll('.archive-cb').forEach(cb => cb.checked = this.checked)"> All</label>
-                            <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="deleteSelectedArchives()">Delete selected</button>
-                            <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="archiveNow()">Archive Now</button>
+                            <label style="font-size:0.76rem;font-weight:normal;"><input type="checkbox" id="archiveSelectAll" onchange="document.querySelectorAll('.archive-cb').forEach(cb => cb.checked = this.checked)"> All</label>
+                            <button class="btn btn-outline" style="font-size:0.76rem;padding:0.2rem 0.5rem;" onclick="deleteSelectedArchives()">Delete selected</button>
+                            <button class="btn btn-outline" style="font-size:0.76rem;padding:0.2rem 0.5rem;" onclick="archiveNow()">Archive Now</button>
                         </div>
                     </div>
                     <div class="panel-body" style="padding:0;flex:1;overflow-y:auto;">
@@ -1465,10 +1465,10 @@
                 <div class="panel-header">
                     Active Streams
                     <div style="display:flex;gap:0.4rem;align-items:center;">
-                        <label style="font-size:0.7rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                        <label style="font-size:0.76rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
                             <input type="checkbox" id="streamAutoRefresh" checked style="accent-color:var(--accent);"> Auto-refresh
                         </label>
-                        <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="loadActiveStreams()">Refresh</button>
+                        <button class="btn btn-outline" style="font-size:0.76rem;padding:0.2rem 0.5rem;" onclick="loadActiveStreams()">Refresh</button>
                     </div>
                 </div>
                 <div class="panel-body" id="streamsContainer">
@@ -1481,10 +1481,10 @@
                     Plex Now Playing
                     <span class="tab-badge" id="plexSessionsBadge" style="display:none;margin-left:0.4rem;">0</span>
                     <div style="display:flex;gap:0.4rem;align-items:center;margin-left:auto;">
-                        <label style="font-size:0.7rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                        <label style="font-size:0.76rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
                             <input type="checkbox" id="plexAutoRefresh" checked style="accent-color:var(--accent);"> Auto-refresh
                         </label>
-                        <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="loadPlexSessions()">Refresh</button>
+                        <button class="btn btn-outline" style="font-size:0.76rem;padding:0.2rem 0.5rem;" onclick="loadPlexSessions()">Refresh</button>
                     </div>
                 </div>
                 <div class="panel-body" id="plexSessionsContainer">
@@ -1500,10 +1500,10 @@
                 <div class="panel-header">
                     System Health Status
                     <div style="display:flex;gap:0.4rem;align-items:center;">
-                        <label style="font-size:0.7rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
+                        <label style="font-size:0.76rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
                             <input type="checkbox" id="healthAutoRefresh" checked style="accent-color:var(--accent);"> Auto-refresh
                         </label>
-                        <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="triggerHealthCheck()">Check Now</button>
+                        <button class="btn btn-outline" style="font-size:0.76rem;padding:0.2rem 0.5rem;" onclick="triggerHealthCheck()">Check Now</button>
                     </div>
                 </div>
                 <div class="panel-body">
@@ -1549,9 +1549,9 @@
                             </div>
                         </div>
                         <div style="display:flex;gap:0.5rem;align-items:center;">
-                            <span class="msg" id="streamHealthMsg" style="font-size:0.75rem;color:var(--text-muted);"></span>
+                            <span class="msg" id="streamHealthMsg" style="font-size:0.81rem;color:var(--text-muted);"></span>
                         </div>
-                        <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.5rem;">
+                        <div style="font-size:0.76rem;color:var(--text-muted);margin-top:0.5rem;">
                             Dead detection: activation validates streams (1-strike) &middot; playback errors mark dead immediately &middot; configure refresh schedule in Settings tab
                         </div>
                     </div>
@@ -1576,7 +1576,7 @@
                         <button class="btn" id="tmdbOff" onclick="tmdbToggle(false)" style="border-radius:0;">Off</button>
                     </div>
                     <span id="tmdbToggleText" style="flex:1;min-width:16rem;font-size:0.8rem;color:var(--text-muted);"></span>
-                    <button class="btn btn-outline" id="tmdbClearBtn" style="display:none;font-size:0.75rem;" onclick="tmdbClear()"></button>
+                    <button class="btn btn-outline" id="tmdbClearBtn" style="display:none;font-size:0.81rem;" onclick="tmdbClear()"></button>
                 </div>
             </div>
             <div class="panel" style="margin-bottom:1rem;">
@@ -1592,11 +1592,11 @@
                         </table>
                     </div>
                     <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.5rem;">
-                        <button class="btn btn-outline tmdb-run" style="font-size:0.75rem;" onclick="tmdbRun('burst')">Run fill burst now</button>
-                        <button class="btn btn-outline tmdb-run" style="font-size:0.75rem;" onclick="tmdbRun('changes')">Check TMDB changes</button>
-                        <button class="btn btn-outline tmdb-run" style="font-size:0.75rem;" onclick="tmdbRun('export')">Refresh TMDB ID list</button>
-                        <button class="btn btn-outline tmdb-run" style="font-size:0.75rem;" onclick="tmdbRun('match')">Match titles without a TMDB ID</button>
-                        <button class="btn btn-outline" id="tmdbRetentionBtn" style="font-size:0.75rem;" onclick="tmdbRetention(true)">Preview retention cleanup</button>
+                        <button class="btn btn-outline tmdb-run" style="font-size:0.81rem;" onclick="tmdbRun('burst')">Run fill burst now</button>
+                        <button class="btn btn-outline tmdb-run" style="font-size:0.81rem;" onclick="tmdbRun('changes')">Check TMDB changes</button>
+                        <button class="btn btn-outline tmdb-run" style="font-size:0.81rem;" onclick="tmdbRun('export')">Refresh TMDB ID list</button>
+                        <button class="btn btn-outline tmdb-run" style="font-size:0.81rem;" onclick="tmdbRun('match')">Match titles without a TMDB ID</button>
+                        <button class="btn btn-outline" id="tmdbRetentionBtn" style="font-size:0.81rem;" onclick="tmdbRetention(true)">Preview retention cleanup</button>
                     </div>
                     <div id="tmdbRetentionText" style="color:var(--text-muted);"></div>
                     <div id="tmdbRetentionPreview" style="display:none;margin-top:0.5rem;padding:0.6rem;border:1px solid var(--warning);border-radius:6px;"></div>
@@ -1638,20 +1638,20 @@
                         </select>
                         <select id="poCategory" onchange="poReload(false)"><option value="">All categories</option></select>
                         <input id="poSearch" type="text" placeholder="Search title" style="min-width:12rem;" onkeydown="if(event.key==='Enter')poReload(false)">
-                        <button class="btn btn-outline" style="font-size:0.75rem;" onclick="poReload(false)">Search</button>
+                        <button class="btn btn-outline" style="font-size:0.81rem;" onclick="poReload(false)">Search</button>
                     </div>
                     <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.6rem;">
                         <label><input type="checkbox" id="poPageAll" onchange="poTogglePage(this.checked)"> Select all on page</label>
-                        <button class="btn btn-outline" style="font-size:0.75rem;" onclick="poSelectAllMatching()">Select all <span id="poTotal">0</span> matching</button>
-                        <button class="btn btn-primary" style="font-size:0.75rem;" onclick="poApply(true)">Lock to provider data</button>
-                        <button class="btn btn-outline" style="font-size:0.75rem;" onclick="poApply(false)">Unlock</button>
+                        <button class="btn btn-outline" style="font-size:0.81rem;" onclick="poSelectAllMatching()">Select all <span id="poTotal">0</span> matching</button>
+                        <button class="btn btn-primary" style="font-size:0.81rem;" onclick="poApply(true)">Lock to provider data</button>
+                        <button class="btn btn-outline" style="font-size:0.81rem;" onclick="poApply(false)">Unlock</button>
                         <span id="poMsg" style="color:var(--text-muted);"></span>
                     </div>
                     <div id="poList" style="max-height:28rem;overflow-y:auto;border:1px solid var(--border);border-radius:4px;"></div>
                     <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem;">
-                        <button class="btn btn-outline" style="font-size:0.75rem;" onclick="poPage(-1)">Prev</button>
+                        <button class="btn btn-outline" style="font-size:0.81rem;" onclick="poPage(-1)">Prev</button>
                         <span id="poPageInfo" style="color:var(--text-muted);"></span>
-                        <button class="btn btn-outline" style="font-size:0.75rem;" onclick="poPage(1)">Next</button>
+                        <button class="btn btn-outline" style="font-size:0.81rem;" onclick="poPage(1)">Next</button>
                     </div>
                 </div>
             </div>
@@ -1700,7 +1700,7 @@
                             <option value="24">On — 6:00 AM daily</option>
                         </select>
                         <button id="btnRunNow" class="btn btn-primary" onclick="triggerManualRefresh()" style="font-size:0.8rem;">Run Now</button>
-                        <span id="scheduleMsg" style="font-size:0.75rem;color:#c9d1d9;"></span>
+                        <span id="scheduleMsg" style="font-size:0.81rem;color:#c9d1d9;"></span>
                     </div>
                 </div>
             </div>
@@ -1716,8 +1716,8 @@
                     <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
                         Run History
                         <div style="display:flex;gap:0.4rem;align-items:center;">
-                            <label style="font-size:0.7rem;font-weight:normal;"><input type="checkbox" id="runSelectAll" onchange="document.querySelectorAll('.run-cb').forEach(cb => cb.checked = this.checked)"> All</label>
-                            <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="deleteSelectedRuns()">Delete selected</button>
+                            <label style="font-size:0.76rem;font-weight:normal;"><input type="checkbox" id="runSelectAll" onchange="document.querySelectorAll('.run-cb').forEach(cb => cb.checked = this.checked)"> All</label>
+                            <button class="btn btn-outline" style="font-size:0.76rem;padding:0.2rem 0.5rem;" onclick="deleteSelectedRuns()">Delete selected</button>
                         </div>
                     </div>
                     <div class="panel-body" id="archiveReportBody" style="font-size:0.85rem;color:#e6edf3;max-height:320px;overflow-y:auto;max-width:500px;margin:0 auto;">
@@ -1923,7 +1923,7 @@
                         <input type="checkbox" class="po-item" value="${it.id}" ${poAllMatching || poSelected.has(it.id) ? 'checked' : ''} onchange="poToggle(${it.id}, this.checked)">
                         ${it.poster_url ? `<img src="${escapeHtml(it.poster_url)}" loading="lazy" style="width:2rem;height:3rem;object-fit:cover;border-radius:2px;" onerror="this.style.visibility='hidden'">` : '<span style="width:2rem;"></span>'}
                         <span style="flex:1;">${escapeHtml(it.name)}${it.year ? ` (${it.year})` : ''}
-                            <span style="display:block;color:var(--text-muted);font-size:0.72rem;">${escapeHtml(it.categories || '')}</span></span>
+                            <span style="display:block;color:var(--text-muted);font-size:0.78rem;">${escapeHtml(it.categories || '')}</span></span>
                         ${it.locked ? '<span class="badge" style="background:var(--text-muted);">Locked</span>' : ''}
                     </label>`).join('') : '<div style="padding:0.6rem;color:var(--text-muted);">No titles match.</div>';
                 const end = Math.min(poOffset + PO_LIMIT, poTotal);
@@ -2054,7 +2054,7 @@
                 document.getElementById('tmdbSettingsFields').innerHTML = TMDB_FIELDS.map(([k, label, hint]) => `
                     <label class="conn-field" style="display:flex;flex-direction:column;gap:0.25rem;"><span><b>${label}</b></span>
                         <input type="number" min="0" id="tmdbSet_${k}" value="${Number(s.settings[k])}">
-                        <span style="font-size:0.7rem;color:var(--text-muted);">${hint}</span></label>`).join('');
+                        <span style="font-size:0.76rem;color:var(--text-muted);">${hint}</span></label>`).join('');
                 tmdbSettingsLoaded = true;
             }
         }
@@ -2094,7 +2094,7 @@
                 box.style.display = '';
                 box.innerHTML = `<div style="font-weight:600;margin-bottom:0.3rem;">Retention preview - nothing has been deleted</div>
                     <div style="margin-bottom:0.5rem;">${tmdbNum(r.referenced)} catalog TMDB IDs; ${tmdbNum(r.unreferenced_titles)} stored titles are not in the catalog and are kept until the cache limit. Cleanup would remove ${tmdbNum(r.titles_removed)} expired title record(s) (${tmdbNum(r.expired_referenced_titles)} in the catalog, refetched next burst), ${tmdbNum(r.seasons_removed)} season cache row(s), ${tmdbNum(r.searches_removed)} old search answer(s), and ${tmdbNum(r.gone_removed)} old missing-title marker(s).</div>
-                    <button class="btn btn-warning" style="font-size:0.75rem;" onclick="tmdbRetention(false)">Apply retention cleanup</button>`;
+                    <button class="btn btn-warning" style="font-size:0.81rem;" onclick="tmdbRetention(false)">Apply retention cleanup</button>`;
             } catch (e) { alert('Retention failed: ' + e.message); }
         }
 
@@ -2783,7 +2783,7 @@
                         <td style="text-align:right">${c.series_count || 0}</td>
                         <td style="text-align:right">${c.active_series_count || 0}</td>
                         <td style="text-align:right">
-                            <button class="btn btn-danger" style="padding:0.15rem 0.5rem;font-size:0.68rem;" onclick="event.stopPropagation();deleteSeriesCategory(${c.id})">Delete</button>
+                            <button class="btn btn-danger" style="padding:0.15rem 0.5rem;font-size:0.74rem;" onclick="event.stopPropagation();deleteSeriesCategory(${c.id})">Delete</button>
                         </td>
                     </tr>
                 `).join('');
@@ -3319,9 +3319,9 @@
             if (catRemoveMode) {
                 removeBar.style.display = 'flex';
                 removeBar.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.8rem;background:rgba(231,76,60,0.1);border-bottom:1px solid rgba(231,76,60,0.3);';
-                removeBar.innerHTML = `<span style="font-size:0.75rem;color:#e74c3c;flex:1;">${catRemoveSet.size} selected</span>`
-                    + `<button class="btn btn-outline" style="font-size:0.65rem;padding:0.15rem 0.5rem;background:#e74c3c;color:#fff;border-color:#e74c3c;" onclick="removeSelectedCategories()" ${catRemoveSet.size ? '' : 'disabled'}>Remove Selected</button>`
-                    + `<button class="btn btn-outline" style="font-size:0.65rem;padding:0.15rem 0.5rem;" onclick="toggleCatRemoveMode()">Cancel</button>`;
+                removeBar.innerHTML = `<span style="font-size:0.81rem;color:#e74c3c;flex:1;">${catRemoveSet.size} selected</span>`
+                    + `<button class="btn btn-outline" style="font-size:0.71rem;padding:0.15rem 0.5rem;background:#e74c3c;color:#fff;border-color:#e74c3c;" onclick="removeSelectedCategories()" ${catRemoveSet.size ? '' : 'disabled'}>Remove Selected</button>`
+                    + `<button class="btn btn-outline" style="font-size:0.71rem;padding:0.15rem 0.5rem;" onclick="toggleCatRemoveMode()">Cancel</button>`;
             } else {
                 removeBar.style.display = 'none';
             }
@@ -3771,9 +3771,9 @@
                         <input type="checkbox" class="archive-cb" value="${a.filename}" style="margin-right:0.6rem;">
                         <div onclick="viewArchive('${a.filename}')" style="cursor:pointer;flex:1;">
                             <div style="font-size:0.85rem;color:var(--text-primary);font-weight:500;">${dateStr} &middot; ${timeStr}</div>
-                            <div style="font-size:0.7rem;color:var(--text-muted);">${a.entries} entries &middot; ${sizeKB} KB</div>
+                            <div style="font-size:0.76rem;color:var(--text-muted);">${a.entries} entries &middot; ${sizeKB} KB</div>
                         </div>
-                        <span onclick="viewArchive('${a.filename}')" style="cursor:pointer;color:var(--accent);font-size:0.75rem;">View &rsaquo;</span>
+                        <span onclick="viewArchive('${a.filename}')" style="cursor:pointer;color:var(--accent);font-size:0.81rem;">View &rsaquo;</span>
                         <span onclick="deleteArchive('${a.filename}')" title="Delete archive" style="cursor:pointer;color:var(--text-muted);font-size:0.9rem;margin-left:0.6rem;padding:0.15rem 0.3rem;" onmouseover="this.style.color='#e5484d'" onmouseout="this.style.color='var(--text-muted)'">&#128465;</span>
                     </div>`;
                 }).join('');
@@ -4041,8 +4041,8 @@
                 fields: [
                     ['PLEX_URL', 'Plex server URL', 'The address of your Plex Media Server, including port 32400.', 'http://192.168.1.20:32400', 'url'],
                     ['PLEX_TOKEN', 'Plex token', 'Lets the bridge talk to Plex as you. To find it: in Plex Web open any movie, choose ... > Get Info > View XML, and copy the X-Plex-Token value from the address bar.', 'xxxxxxxxxxxxxxxxxxxx', 'secret'],
-                    ['PLEX_LIBRARY_ID', 'Movie library ID', 'The number of the Plex library that holds bridge movies. Test shows each library with its ID.', '7', 'number'],
-                    ['PLEX_SERIES_LIBRARY_ID', 'Series library ID', 'The number of the Plex library that holds bridge series. Leave blank if you do not use series. Series categories can also set their own library.', '12', 'number'],
+                    ['PLEX_LIBRARY_ID', 'Movie library ID', 'The number of the Plex library that holds bridge movies. All movie categories currently go into this one library. Test shows each library with its ID.', '7', 'number'],
+                    ['PLEX_SERIES_LIBRARY_ID', 'Fallback series library ID', 'Series go into the library set on their category (Series > Categories, where each category can create or pick its own Plex library). This ID is only used for a category that has no library of its own. Leave blank if every category has one. Test lists which library each category uses.', '12', 'number'],
                     ['PLEX_MOVIE_MOUNT_ROOT', 'Movie folder as Plex sees it', 'Where the bridge movie folder appears on the Plex machine (usually an rclone mount of http://bridge:8585/vod/). Used to match titles to Plex and to scan only the changed folder.', '/mnt/vod-bridge', 'path'],
                     ['PLEX_SERIES_MOUNT_ROOT', 'Series folder as Plex sees it', 'Where the bridge series folder (/vod-series/) appears on the Plex machine.', '/mnt/vod-bridge-series', 'path'],
                 ],
@@ -4170,6 +4170,8 @@
             document.getElementById('setResult').innerHTML = r?.libraries?.length
                 ? `<table class="set-libs"><tr><th>ID</th><th>Library</th><th>Type</th></tr>${
                     r.libraries.map(l => `<tr><td>${escapeHtml(l.id)}</td><td>${escapeHtml(l.title)}</td><td>${escapeHtml(l.type)}</td></tr>`).join('')}</table>`
+                    + (r.categories?.length ? `<table class="set-libs"><tr><th>Series category</th><th>Plex library</th><th></th></tr>${
+                        r.categories.map(c => `<tr><td>${escapeHtml(c.name)}</td><td>${escapeHtml(c.id ? c.id + ' - ' + c.title : c.title)}</td><td>${c.own ? 'own library' : 'uses fallback'}</td></tr>`).join('')}</table>` : '')
                 : '';
         }
 
@@ -4239,7 +4241,7 @@
                 archiveEl.innerHTML = reports.map((r, i) =>
                     `<div style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border,#30363d);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:0.6rem;" onclick="openRunDetail(${i})" onmouseover="this.style.background='rgba(88,166,255,0.08)'" onmouseout="this.style.background='transparent'">
                         <input type="checkbox" class="run-cb" value="${i}" onclick="event.stopPropagation()">
-                        <span style="color:#58a6ff;flex:1;">${r.date}${i === 0 ? ' <span style="color:#8b949e;font-size:0.75rem;">(last run)</span>' : ''}</span>
+                        <span style="color:#58a6ff;flex:1;">${r.date}${i === 0 ? ' <span style="color:#8b949e;font-size:0.81rem;">(last run)</span>' : ''}</span>
                         <span style="color:#8b949e;font-size:0.8rem;">${_formatDuration(r.elapsed)}</span>
                     </div>`
                 ).join('');
@@ -4422,13 +4424,13 @@
                     <span style="color:var(--text-muted)">/</span>
                     <span class="time">${totalTime}</span>
                     <span class="remaining">(${remainTime} remaining)</span>
-                    <span style="margin-left:auto;font-size:0.72rem;color:var(--text-muted);">Streaming for ${formatDuration(s.age_seconds || 0)}</span>
+                    <span style="margin-left:auto;font-size:0.78rem;color:var(--text-muted);">Streaming for ${formatDuration(s.age_seconds || 0)}</span>
                 </div>
                 <div class="stream-progress">
                     <div class="stream-progress-download" style="width:${dlPct}%"></div>
                     <div class="stream-progress-plex" style="width:${plexPct}%"></div>
                 </div>
-                <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:var(--text-muted);margin-bottom:0.75rem;">
+                <div style="display:flex;justify-content:space-between;font-size:0.74rem;color:var(--text-muted);margin-bottom:0.75rem;">
                     <span>Plex: ${plexPct}%</span>
                     <span>Downloaded: ${dlPct}%</span>
                 </div>
@@ -4534,7 +4536,7 @@
                     <span class="dot ${dotClass}"></span>
                 </div>
                 <div>
-                    <div class="plex-session-title">${escapeHtml(s.title)}${yearStr}${typeLabel ? ' <span style="font-size:0.68rem;color:var(--text-muted);font-weight:400;">' + typeLabel + '</span>' : ''}</div>
+                    <div class="plex-session-title">${escapeHtml(s.title)}${yearStr}${typeLabel ? ' <span style="font-size:0.74rem;color:var(--text-muted);font-weight:400;">' + typeLabel + '</span>' : ''}</div>
                     <div class="plex-session-meta">
                         ${escapeHtml(playerInfo)} &mdash; ${location}${address}
                         ${qualityLine ? ' &bull; ' + qualityLine : ''}
