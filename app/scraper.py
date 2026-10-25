@@ -388,7 +388,10 @@ async def enrich_from_tmdb(limit: int = 5000) -> dict:
     description, poster, IMDb ID, cast and year; runtime only fills a blank duration,
     since the provider's real length drives the proxy throttle."""
     global _cancel
-    result = {"enriched": 0, "changed": 0, "nfo_rewritten": 0, "store_refreshed": 0, "remaining": 0}
+    result = {"enriched": 0, "changed": 0, "nfo_rewritten": 0, "store_refreshed": 0, "remaining": 0,
+              "not_found": 0, "fields": {},
+              # per source: answered from the local TMDB library vs a TMDB API call
+              "local": 0, "local_changed": 0, "api": 0, "api_changed": 0}
     if not tmdb_local.has_credentials():
         logger.warning("TMDB_API_KEY/TMDB_READ_TOKEN not set, skipping enrichment")
         return result
@@ -427,6 +430,7 @@ async def enrich_from_tmdb(limit: int = 5000) -> dict:
         try:
             tmdb_data, local = await tmdb_local.movie_details(movie["tmdb_id"])
             if tmdb_data is None:
+                result["not_found"] += 1
                 await db.execute("UPDATE movies SET tmdb_check = 0 WHERE id = ?", (movie["id"],))
                 continue
             poster_path = tmdb_data.get("poster_path")
@@ -450,8 +454,13 @@ async def enrich_from_tmdb(limit: int = 5000) -> dict:
                 (*changes.values(), datetime.now(timezone.utc).isoformat(), movie["id"]),
             )
             result["enriched"] += 1
+            source = "local" if local else "api"
+            result[source] += 1
             if changes:
                 result["changed"] += 1
+                result[f"{source}_changed"] += 1
+                for k in changes:
+                    result["fields"][k] = result["fields"].get(k, 0) + 1
                 if movie["activated"]:
                     rewrite.append((movie["id"], "poster_url" in changes))
             if not local:

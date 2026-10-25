@@ -3188,6 +3188,15 @@ async def _run_scheduled_refresh():
                 report.append(f"TMDB enrichment: {te['enriched']} checked, {te['changed']} changed, "
                               f"{te['nfo_rewritten']} NFOs rewritten, {te['store_refreshed']} refreshed in the "
                               f"TMDB library, {te['remaining']} still pending")
+                report.append(f"TMDB sources: {te['local']} answered from the local TMDB library "
+                              f"({te['local_changed']} changed), {te['api']} needed a TMDB API call "
+                              f"({te['api_changed']} changed), {te['not_found']} not found on TMDB")
+                if te["fields"]:
+                    labels = {"genre": "genre", "description": "description", "poster_url": "poster",
+                              "imdb_id": "IMDb ID", "cast_info": "cast", "year": "year",
+                              "duration_seconds": "runtime"}
+                    report.append("TMDB changes: " + ", ".join(
+                        f"{labels.get(k, k)} {n}" for k, n in sorted(te["fields"].items(), key=lambda kv: -kv[1])))
             except Exception as e:
                 report.append(f"TMDB enrichment: FAILED ({e})")
 
