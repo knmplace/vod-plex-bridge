@@ -226,7 +226,11 @@ vod-plex-bridge/
 
 ## Configuration Reference
 
-All configuration is done through environment variables in `.env`:
+Configuration comes from environment variables in `.env`. The Dispatcharr, Plex, TMDB and
+streaming values can also be entered in the app under **Settings** (one section per service,
+with a Test button for each). A value saved there overrides `.env`; clearing it falls back to
+`.env`. API keys, tokens and passwords saved in Settings are encrypted in the database with
+`SETTINGS_KEY` (or, when that is not set, a key file generated in the data folder).
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -240,6 +244,7 @@ All configuration is done through environment variables in `.env`:
 | `TMDB_API_KEY` | No | — | TMDB API key for metadata enrichment |
 | `TMDB_READ_TOKEN` | No | — | TMDB v4 read access token (alternative to API key) |
 | `DISPATCHARR_API_KEY` | No | — | Dispatcharr API key (used for VPN IP display) |
+| `SETTINGS_KEY` | Recommended | — | Any long random string; encrypts secrets saved in Settings. Keep it safe: if lost, saved secrets must be re-entered |
 | `DATA_DIR` | No | `./data` | Host path for database and mapping files |
 | `PLEX_VOD_DIR` | No | `./plex-vod` | Host path for internal .strm/.nfo storage (Plex reads via rclone, not this path directly) |
 
