@@ -4111,8 +4111,6 @@ async def deactivate_episodes(request: Request):
         except Exception as e:
             logger.error("Deactivate error for episode %s: %s", episode_id, e)
 
-    # Season/series dirs and tvshow.nfo are left in place even if now empty — simpler
-    # behavior than the plugin's cleanup, per spec (no cascade cleanup here).
     plex_removed = 0
     if deactivated:
         # Episodes can span categories with different Plex sections; group by section.
@@ -4131,5 +4129,20 @@ async def deactivate_episodes(request: Request):
             by_section.setdefault(section, []).append(r["id"])
         for section, ids in by_section.items():
             plex_removed += await _plex_remove_episodes(ids, section)
+
+        # A show with no active episodes left is released from its library, folder and all.
+        rows = await db.execute(
+            f"""SELECT s.*, sc.strm_folder AS cat_folder FROM series s
+                JOIN series_categories sc ON sc.id = s.category_id
+                WHERE s.id IN (SELECT series_id FROM episodes WHERE id IN ({placeholders}))
+                  AND NOT EXISTS (SELECT 1 FROM episodes e WHERE e.series_id = s.id AND e.activated = 1)""",
+            deactivated,
+        )
+        from series_generator import get_series_folder_name
+        for s in await rows.fetchall():
+            show_dir = os.path.join(STRM_SERIES_OUTPUT_DIR, s["cat_folder"], get_series_folder_name(s))
+            shutil.rmtree(show_dir, ignore_errors=True)
+            await db.execute("UPDATE series SET category_id = NULL WHERE id = ?", (s["id"],))
+        await db.commit()
 
     return {"deactivated": deactivated, "plex_removed": plex_removed}

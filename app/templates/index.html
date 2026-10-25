@@ -1582,6 +1582,31 @@
             }
         }
 
+        // After any change made through the API, reload the header counts and whatever the visible tab shows.
+        let _refreshVisibleTimer = null;
+        function refreshVisibleData() {
+            clearTimeout(_refreshVisibleTimer);
+            _refreshVisibleTimer = setTimeout(() => {
+                const shown = id => document.getElementById(id)?.classList.contains('active');
+                refreshActivatedCount();
+                if (shown('tabBrowse')) loadMovies(currentPage);
+                else if (shown('tabSeries')) {
+                    loadSeriesCategories();
+                    loadSeriesList(seriesCurrentPage);
+                    if (shown('seriesDetailModal')) loadSeriesDetailEpisodes();
+                } else if (shown('tabDead')) loadDeadMovies(deadPage);
+                else if (shown('tabCatalog')) loadCatalogSummary();
+            }, 600);
+        }
+
+        const _nativeFetch = window.fetch.bind(window);
+        window.fetch = async (url, opts) => {
+            const resp = await _nativeFetch(url, opts);
+            const method = ((opts && opts.method) || 'GET').toUpperCase();
+            if (method !== 'GET' && String(url).startsWith('/api/')) refreshVisibleData();
+            return resp;
+        };
+
         // --- Collapsible Panels ---
         function togglePanel(panelId) {
             const panel = document.getElementById(panelId);
@@ -1699,7 +1724,7 @@
                 refreshBrowseFilters();
                 loadMovies(currentPage);
                 loadCatalogSummary();
-                refreshActivatedCount();
+                refreshVisibleData();
             }
             _syncWasActive = s.status !== 'idle';
 
