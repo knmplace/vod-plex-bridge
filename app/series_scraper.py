@@ -221,6 +221,14 @@ async def _upsert_episode(db, ep):
                 "account_name": m3u_alt.get("name", "") or "",
                 "ext": p.get("container_extension", "") or "",
             })
+    else:
+        # Dispatcharr's provider-info episodes carry no per-episode stream id —
+        # only the series relation's account. The episode proxy selects that
+        # account's relation itself when given m3u_account_id.
+        m3u = ep.get("m3u_account") or {}
+        account_id = m3u.get("id")
+        account_name = m3u.get("name", "") or ""
+        container_extension = ep.get("container_extension", "") or ""
 
     await db.execute("""
         INSERT INTO episodes (id, uuid, series_id, name, description, air_date, rating,
@@ -235,10 +243,10 @@ async def _upsert_episode(db, ep):
             season_number=excluded.season_number, episode_number=excluded.episode_number,
             tmdb_id=excluded.tmdb_id,
             stream_id = CASE WHEN excluded.stream_id IS NOT NULL THEN excluded.stream_id ELSE episodes.stream_id END,
-            account_id = CASE WHEN excluded.stream_id IS NOT NULL THEN excluded.account_id ELSE episodes.account_id END,
-            account_name = CASE WHEN excluded.stream_id IS NOT NULL THEN excluded.account_name ELSE episodes.account_name END,
-            container_extension = CASE WHEN excluded.stream_id IS NOT NULL THEN excluded.container_extension ELSE episodes.container_extension END,
-            alt_streams = CASE WHEN excluded.stream_id IS NOT NULL THEN excluded.alt_streams ELSE episodes.alt_streams END,
+            account_id = CASE WHEN excluded.account_id IS NOT NULL THEN excluded.account_id ELSE episodes.account_id END,
+            account_name = CASE WHEN excluded.account_id IS NOT NULL THEN excluded.account_name ELSE episodes.account_name END,
+            container_extension = CASE WHEN excluded.account_id IS NOT NULL THEN excluded.container_extension ELSE episodes.container_extension END,
+            alt_streams = CASE WHEN excluded.account_id IS NOT NULL THEN excluded.alt_streams ELSE episodes.alt_streams END,
             synced_at=excluded.synced_at
     """, (
         ep["id"],
@@ -300,6 +308,7 @@ async def fetch_series_episodes(series_id: int, force_refresh: bool = False, rel
             continue
         ep = dict(ep)
         ep.setdefault("series_id", series_id)
+        ep.setdefault("m3u_account", data.get("m3u_account"))
         try:
             await _upsert_episode(db, ep)
             synced += 1

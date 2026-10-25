@@ -209,12 +209,15 @@ _episode_resolve_locks: dict[int, asyncio.Lock] = {}
 _episode_resolve_cache: dict[int, dict] = {}  # episode_id -> {"url": str, "account_id": int, "ts": float}
 
 
-async def _pick_episode_relation_with_capacity(client: httpx.AsyncClient, episode: dict) -> tuple[int, int] | None:
+async def _pick_episode_relation_with_capacity(client: httpx.AsyncClient, episode: dict) -> tuple[int | None, int] | None:
     """Same as _pick_relation_with_capacity but for an episode dict (same field
-    names: stream_id, account_id, alt_streams)."""
+    names: stream_id, account_id, alt_streams). Episodes usually have no
+    stream_id (Dispatcharr doesn't expose one), so an account alone is enough —
+    the returned stream_id may be None."""
     primary_sid = episode.get("stream_id")
     primary_acct = episode.get("account_id")
-    if primary_sid and await _account_has_capacity(client, primary_acct):
+    has_primary = bool(primary_sid or primary_acct)
+    if has_primary and await _account_has_capacity(client, primary_acct):
         return primary_sid, primary_acct
 
     try:
@@ -225,10 +228,10 @@ async def _pick_episode_relation_with_capacity(client: httpx.AsyncClient, episod
     for alt in alts:
         sid = alt.get("stream_id")
         acct = alt.get("account_id")
-        if sid and await _account_has_capacity(client, acct):
+        if (sid or acct) and await _account_has_capacity(client, acct):
             return sid, acct
 
-    if primary_sid:
+    if has_primary:
         return primary_sid, primary_acct
     return None
 
@@ -258,7 +261,7 @@ async def get_episode_redirect_url(episode_id: int) -> tuple[str | None, str | N
             return None, "Episode not found", True
         episode = dict(episode)
 
-        if not episode.get("uuid") or not episode.get("stream_id"):
+        if not episode.get("uuid") or not (episode.get("stream_id") or episode.get("account_id")):
             return None, "No stream mapping", True
 
         async with httpx.AsyncClient() as client:
@@ -268,7 +271,14 @@ async def get_episode_redirect_url(episode_id: int) -> tuple[str | None, str | N
             return None, "No provider capacity available", True
 
         stream_id, account_id = picked
-        url = f"{DISPATCHARR_URL}/proxy/vod/episode/{episode['uuid']}?stream_id={stream_id}"
+        params = []
+        if account_id:
+            params.append(f"m3u_account_id={account_id}")
+        if stream_id:
+            params.append(f"stream_id={stream_id}")
+        url = f"{DISPATCHARR_URL}/proxy/vod/episode/{episode['uuid']}"
+        if params:
+            url += "?" + "&".join(params)
 
         _episode_resolve_cache[episode_id] = {"url": url, "account_id": account_id, "ts": now}
 

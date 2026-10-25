@@ -3736,6 +3736,21 @@ async def series_sync_status():
     return dict(await row.fetchone())
 
 
+async def _ensure_episode_mapping(db, episode: dict, refetched_series: set) -> dict:
+    """Episodes cached before account mapping existed have no stream_id/account_id.
+    Re-pull the series' episode list from Dispatcharr once and reload the row."""
+    if episode.get("stream_id") or episode.get("account_id"):
+        return episode
+    series_id = episode.get("series_id")
+    if not series_id or series_id in refetched_series:
+        return episode
+    refetched_series.add(series_id)
+    await fetch_series_episodes(series_id)
+    row = await db.execute("SELECT * FROM episodes WHERE id = ?", (episode["id"],))
+    fresh = await row.fetchone()
+    return dict(fresh) if fresh else episode
+
+
 @router.post("/episodes/activate")
 async def activate_episodes(request: Request):
     body = await request.json()
@@ -3758,6 +3773,7 @@ async def activate_episodes(request: Request):
     failed = []
     activated_series_ids = set()
 
+    refetched_series = set()
     async with httpx.AsyncClient() as client:
         for episode_id in episode_ids:
             try:
@@ -3767,6 +3783,7 @@ async def activate_episodes(request: Request):
                     failed.append({"episode_id": episode_id, "reason": "Episode not found"})
                     continue
                 episode = dict(episode)
+                episode = await _ensure_episode_mapping(db, episode, refetched_series)
 
                 picked = await _pick_episode_relation_with_capacity(client, episode)
                 if not picked:
@@ -3846,6 +3863,7 @@ async def reactivate_episodes(request: Request):
     failed = []
     touched_series_ids = set()
 
+    refetched_series = set()
     async with httpx.AsyncClient() as client:
         for episode_id in episode_ids:
             try:
@@ -3855,6 +3873,7 @@ async def reactivate_episodes(request: Request):
                     failed.append({"episode_id": episode_id, "reason": "Episode not found"})
                     continue
                 episode = dict(episode)
+                episode = await _ensure_episode_mapping(db, episode, refetched_series)
 
                 picked = await _pick_episode_relation_with_capacity(client, episode)
                 if not picked:
