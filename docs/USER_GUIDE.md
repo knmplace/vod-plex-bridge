@@ -1,6 +1,6 @@
 # VOD Plex Bridge — User Guide
 
-This guide covers VOD Plex Bridge **v0.38.1**. It explains what the app does, how to set it up, and how to use each tab. For a first-time install (Docker, compose, the mapping dump script), see [INSTALL.md](../INSTALL.md). Come back here once the container is running.
+This guide covers VOD Plex Bridge **v0.39.0**. It explains what the app does, how to set it up, and how to use each tab. For a first-time install (Docker, compose, the mapping dump script), see [INSTALL.md](../INSTALL.md). Come back here once the container is running.
 
 Placeholders used throughout:
 
@@ -262,7 +262,7 @@ Summary tables show counts **by provider** (fallback providers included), **by l
 - **Search** by title, and **sort** by rating, year or name (ascending or descending).
 - **Filters**: activated or not, decade, genre, language, category, provider (the last four are multi-select). Use **Clear filters** to reset them. Page size can be 60, 100, 200 or 300.
 - **Activate or deactivate one movie** with the button on its card.
-- **Bulk actions**: click cards to select them. The selection bar then offers **Activate**, **Deactivate**, **Detect Language** and **Clear**.
+- **Bulk actions**: click cards to select them. The selection bar then offers **Activate**, **Deactivate** and **Clear**. Language detection runs automatically in the Daily Run, and you can run it for a single movie from its details.
 
 What happens when you activate:
 
@@ -352,6 +352,7 @@ Provider blocks are usually temporary. Many dead movies play fine after a restor
 ### 6.3 Proxy Logs
 
 - **Activity log**: live streaming and proxy events, with auto-refresh, a level filter and a **Refresh** button.
+- **Redirect mode**: each playback logs one line naming the account and stream it went to, for example "Redirecting to Dispatcharr proxy via Account A, stream 1234". The line says so when a fallback account was used because the primary was full, or when all accounts were full. Plex re-requests a title every minute or two while it buffers, and those repeats are not logged. A new line appears only after 15 minutes of quiet, or as "Redirect switched to …" when the stream changes.
 - **Archived logs**: older logs are archived automatically every 4 hours (change this with `LOG_ARCHIVE_INTERVAL`), and old archives are cleaned up. Click **Archive Now** to archive immediately, click an archive to view it, and select archives to **Delete** them.
 
 ### Other monitoring tabs

@@ -8,7 +8,7 @@ Versions follow `MAJOR.MINOR.PATCH`. A minor bump (0.36 → 0.37) marks a major 
 
 ## Why the jump from 0.35 to 0.38
 
-The last stable release was **v0.35.6**, and the last pre-release was **v0.35.9-beta.1**. Versions 0.36.0 through 0.38.1 were developed and run locally, and none of them was pushed until now. **v0.38.1 is the first published release since 0.35.9.** It contains everything below in one update.
+The last stable release was **v0.35.6**, and the last pre-release was **v0.35.9-beta.1**. Versions 0.36.0 through 0.38.1 were developed and run locally, and none of them was pushed until then. **v0.38.1 was the first published release since 0.35.9.** It contains everything from 0.36.0 to 0.38.1 in one update.
 
 The three minor bumps each mark a major feature:
 
@@ -26,6 +26,20 @@ The three minor bumps each mark a major feature:
 - **Providers (XC) are read-only for now.** See 0.38.1.
 - **rclone is still required** for Plex or Jellyfin to see the bridge's movie and series folders. You install and run it separately; see the [User Guide](docs/USER_GUIDE.md). A future version is planned to have rclone built in.
 - **Series need their own Plex TV library**, either per category or through the `PLEX_SERIES_LIBRARY_ID` fallback, plus an rclone mount of `/vod-series/`.
+
+---
+
+## [0.39.0] — 2026-10-25
+
+### Added
+- **Redirect targets in the proxy log.** In redirect mode, the log line now names the account and stream the playback went to, for example "via Account A, stream 1234".
+  - It notes when a fallback account was used because the primary was full, and when all accounts were full.
+
+### Changed
+- **One redirect log line per playback.** Plex re-requests a title every minute or two while it buffers, and each repeat used to add another line. Now a redirect is logged once, then again only after 15 minutes of quiet, or as "Redirect switched to …" when the stream changes.
+
+### Removed
+- The **Detect Language** button in the Movies selection bar, and the API endpoint behind it. The Daily Run detects languages for new movies, and per-movie detection is still available from a movie's details.
 
 ---
 
