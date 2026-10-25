@@ -241,6 +241,18 @@ async def init_db():
         CREATE INDEX IF NOT EXISTS idx_episodes_series ON episodes(series_id);
         CREATE INDEX IF NOT EXISTS idx_episodes_activated ON episodes(activated);
         CREATE INDEX IF NOT EXISTS idx_series_category ON series(category_id);
+
+        -- Provider (Dispatcharr) series categories, loaded from series_category_mapping.json.
+        -- Separate from series_categories, which are the user's Plex destinations.
+        CREATE TABLE IF NOT EXISTS series_provider_categories (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS series_provider_category_map (
+            series_id INTEGER NOT NULL,
+            category_id INTEGER NOT NULL,
+            PRIMARY KEY (category_id, series_id)
+        );
     """)
     await db.commit()
 

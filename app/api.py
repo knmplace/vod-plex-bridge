@@ -351,6 +351,7 @@ async def load_categories():
 
 CATEGORY_MAPPING_FILE = os.environ.get("CATEGORY_MAPPING_FILE", "/data/category_mapping.json")
 STREAM_MAPPING_FILE = os.environ.get("STREAM_MAPPING_FILE", "/data/stream_mapping.json")
+SERIES_CATEGORY_MAPPING_FILE = os.environ.get("SERIES_CATEGORY_MAPPING_FILE", "/data/series_category_mapping.json")
 
 
 async def _trigger_dump_regen():
@@ -3455,12 +3456,64 @@ async def _upsert_movie_from_api(db, movie):
 
 # --- Series / Episode routes (Part 2) ---
 
+_series_cat_mapping_mtime = 0.0
+
+
+async def _refresh_series_provider_categories():
+    """Reload provider series categories from the host dump whenever the file changes."""
+    global _series_cat_mapping_mtime
+    import json as _json
+
+    try:
+        mtime = os.path.getmtime(SERIES_CATEGORY_MAPPING_FILE)
+    except OSError:
+        return
+    if mtime == _series_cat_mapping_mtime:
+        return
+    try:
+        with open(SERIES_CATEGORY_MAPPING_FILE) as f:
+            categories = _json.load(f)
+    except Exception as e:
+        logger.warning(f"Could not read series category mapping: {e}")
+        return
+
+    db = await get_db()
+    await db.execute("DELETE FROM series_provider_category_map")
+    await db.execute("DELETE FROM series_provider_categories")
+    await db.executemany(
+        "INSERT INTO series_provider_categories (id, name) VALUES (?, ?)",
+        [(c["id"], c["name"]) for c in categories],
+    )
+    await db.executemany(
+        "INSERT OR IGNORE INTO series_provider_category_map (series_id, category_id) VALUES (?, ?)",
+        [(sid, c["id"]) for c in categories for sid in c.get("series_ids", [])],
+    )
+    await db.commit()
+    _series_cat_mapping_mtime = mtime
+    logger.info(f"Loaded {len(categories)} provider series categories")
+
+
+@router.get("/series/provider-categories")
+async def list_series_provider_categories():
+    await _refresh_series_provider_categories()
+    db = await get_db()
+    rows = await db.execute(
+        "SELECT c.id, c.name, COUNT(s.id) as series_count "
+        "FROM series_provider_categories c "
+        "JOIN series_provider_category_map m ON m.category_id = c.id "
+        "JOIN series s ON s.id = m.series_id AND s.name != '' "
+        "GROUP BY c.id ORDER BY c.name"
+    )
+    return {"results": [dict(r) for r in await rows.fetchall()]}
+
+
 @router.get("/series")
 async def list_series(
     page: int = 1,
     page_size: int = 20,
     search: str = "",
     category_id: int = 0,
+    provider_category_id: int = 0,
     activated_only: bool = False,
 ):
     db = await get_db()
@@ -3475,6 +3528,11 @@ async def list_series(
     if category_id:
         conditions.append("s.category_id = ?")
         params.append(category_id)
+
+    if provider_category_id:
+        await _refresh_series_provider_categories()
+        conditions.append("s.id IN (SELECT series_id FROM series_provider_category_map WHERE category_id = ?)")
+        params.append(provider_category_id)
 
     if activated_only:
         conditions.append("s.id IN (SELECT series_id FROM episodes WHERE activated = 1)")

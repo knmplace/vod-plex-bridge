@@ -152,4 +152,46 @@ copy_out category_mapping.json
 CAT_COUNT=$(python3 -c "import json; print(len(json.load(open('$BRIDGE_DATA_DIR/category_mapping.json'))))" 2>/dev/null || echo "?")
 echo "$CAT_COUNT categories"
 
+# --- 4. Series Category Mappings ---
+# Lists provider series categories and which series IDs belong to each, limited
+# to active accounts and categories enabled on that account.
+echo -n "  Dumping series category mappings... "
+docker exec "$DISPATCHARR_CONTAINER" python3 -c "
+import os, sys, json, logging
+logging.disable(logging.CRITICAL)
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dispatcharr.settings')
+sys.path.insert(0, '/app')
+sys.stdout = open(os.devnull, 'w')
+sys.stderr = open(os.devnull, 'w')
+import django; django.setup()
+from django.apps import apps
+from django.db.models import F
+VODCategory = apps.get_model('vod', 'VODCategory')
+M3USeriesRelation = apps.get_model('vod', 'M3USeriesRelation')
+rels = (
+    M3USeriesRelation.objects
+    .filter(
+        m3u_account__is_active=True,
+        category__isnull=False,
+        category__m3u_relations__m3u_account=F('m3u_account'),
+        category__m3u_relations__enabled=True,
+    )
+    .values_list('category_id', 'series_id')
+    .distinct()
+)
+by_cat = {}
+for cid, sid in rels:
+    by_cat.setdefault(cid, set()).add(sid)
+names = dict(VODCategory.objects.filter(id__in=by_cat.keys()).values_list('id', 'name'))
+categories = [
+    {'id': cid, 'name': names.get(cid, str(cid)), 'series_ids': sorted(sids)}
+    for cid, sids in sorted(by_cat.items(), key=lambda x: names.get(x[0], '').lower())
+]
+with open('/tmp/series_category_mapping.json', 'w') as f:
+    json.dump(categories, f)
+"
+copy_out series_category_mapping.json
+SCAT_COUNT=$(python3 -c "import json; print(len(json.load(open('$BRIDGE_DATA_DIR/series_category_mapping.json'))))" 2>/dev/null || echo "?")
+echo "$SCAT_COUNT series categories"
+
 echo "$(date): Dump complete."
