@@ -970,6 +970,14 @@
             <span class="value" id="activeStrm">-</span>
             <span class="label">STRM</span>
         </div>
+        <div class="stat-inline" title="Series with at least one activated episode (episodes in brackets)">
+            <span class="value" id="seriesActiveCount">-</span>
+            <span class="label">Series Active</span>
+        </div>
+        <div class="stat-inline" title="Episode .strm files on disk for series">
+            <span class="value" id="seriesStrmCount">-</span>
+            <span class="label">Series STRM</span>
+        </div>
         <button class="btn btn-warning" onclick="detectAllLanguages()">Detect All Languages</button>
         <button class="btn btn-warning" onclick="tmdbSearch()">TMDB Search</button>
         <button class="btn btn-outline" disabled style="opacity:0.5;cursor:not-allowed;" title="Disabled pending redesign">Scan Dead</button>
@@ -1215,8 +1223,8 @@
                         <button class="btn" style="font-size:0.72rem;padding:0.25rem 0.6rem;" title="Re-add every category folder to its Plex library" onclick="syncSeriesCategoriesToPlex()">Sync Plex Folders</button>
                     </div>
                     <table class="summary-table compact" id="seriesCategoryTable">
-                        <thead><tr><th>Name</th><th>STRM Folder</th><th>Plex Library</th><th style="text-align:right">Series</th><th></th></tr></thead>
-                        <tbody id="seriesCategoryBody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
+                        <thead><tr><th>Name</th><th>STRM Folder</th><th>Plex Library</th><th style="text-align:right">Series</th><th style="text-align:right">Active</th><th></th></tr></thead>
+                        <tbody id="seriesCategoryBody"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -1231,9 +1239,13 @@
                     <select id="seriesFilterCategory" onchange="loadSeriesList(1)">
                         <option value="0">All Categories</option>
                     </select>
+                    <select id="seriesFilterLibrary" onchange="loadSeriesList(1)">
+                        <option value="0">All Libraries</option>
+                    </select>
                     <select id="seriesFilterActivated" onchange="loadSeriesList(1)">
                         <option value="">All Series</option>
-                        <option value="1">Has Activated Episodes</option>
+                        <option value="1">Activated</option>
+                        <option value="0">Not Activated</option>
                     </select>
                     <button class="btn btn-warning" style="font-size:0.72rem;" onclick="scrapeSeriesCatalog()">Sync Series Catalog</button>
                     <span class="msg" id="seriesSyncMessage"></span>
@@ -1674,8 +1686,21 @@
         }
 
         async function refreshActivatedCount() {
-            const data = await fetchJSON('/api/movies/activated-count');
+            const [data, sd] = await Promise.all([
+                fetchJSON('/api/movies/activated-count'), fetchJSON('/api/series/activated-count')]);
             document.getElementById('activatedCount').textContent = data.count?.toLocaleString() || '0';
+            document.getElementById('seriesActiveCount').textContent =
+                `${(sd.series || 0).toLocaleString()} (${(sd.episodes || 0).toLocaleString()} ep)`;
+            document.getElementById('seriesStrmCount').textContent = (sd.strm_files || 0).toLocaleString();
+        }
+
+        function showLibrarySeries(categoryId, activated) {
+            document.getElementById('seriesSearch').value = '';
+            document.getElementById('seriesFilterCategory').value = '0';
+            document.getElementById('seriesFilterLibrary').value = String(categoryId);
+            document.getElementById('seriesFilterActivated').value = activated;
+            loadSeriesList(1);
+            document.getElementById('seriesGrid').scrollIntoView({behavior: 'smooth', block: 'start'});
         }
 
         // --- Providers ---
@@ -2157,20 +2182,27 @@
 
             const body = document.getElementById('seriesCategoryBody');
             if (!seriesCategories.length) {
-                body.innerHTML = '<tr><td colspan="5" class="empty-state">No categories yet. Add one above.</td></tr>';
+                body.innerHTML = '<tr><td colspan="6" class="empty-state">No categories yet. Add one above.</td></tr>';
             } else {
                 body.innerHTML = seriesCategories.map(c => `
                     <tr>
                         <td>${(c.name||'').replace(/</g,'&lt;')}</td>
                         <td>${(c.strm_folder||'').replace(/</g,'&lt;')}</td>
                         <td>${plexLibraryLabel(c.plex_library_section)}</td>
-                        <td style="text-align:right">${c.series_count || 0}</td>
+                        <td style="text-align:right"><a href="#" title="Show these series" onclick="showLibrarySeries(${c.id}, '');return false;">${c.series_count || 0}</a></td>
+                        <td style="text-align:right"><a href="#" title="Show active series" onclick="showLibrarySeries(${c.id}, '1');return false;">${c.active_series_count || 0}</a></td>
                         <td style="text-align:right">
                             <button class="btn btn-danger" style="padding:0.15rem 0.5rem;font-size:0.68rem;" onclick="deleteSeriesCategory(${c.id})">Delete</button>
                         </td>
                     </tr>
                 `).join('');
             }
+
+            const libSel = document.getElementById('seriesFilterLibrary');
+            const libVal = libSel.value;
+            libSel.innerHTML = '<option value="0">All Libraries</option>' +
+                seriesCategories.map(c => `<option value="${c.id}">${(c.name||'').replace(/</g,'&lt;')}</option>`).join('');
+            libSel.value = seriesCategories.some(c => String(c.id) === libVal) ? libVal : '0';
 
             const detailSel = document.getElementById('seriesDetailCategory');
             detailSel.innerHTML = seriesCategories.map(c => `<option value="${c.id}">${(c.name||'').replace(/</g,'&lt;')}</option>`).join('')
@@ -2254,7 +2286,9 @@
             let url = `/api/series?page=${seriesCurrentPage}&page_size=60`;
             if (search) url += `&search=${encodeURIComponent(search)}`;
             if (categoryId && categoryId !== '0') url += `&provider_category_id=${categoryId}`;
-            if (activatedOnly === '1') url += '&activated_only=true';
+            const libraryId = document.getElementById('seriesFilterLibrary').value;
+            if (libraryId && libraryId !== '0') url += `&category_id=${libraryId}`;
+            if (activatedOnly) url += `&activated=${activatedOnly}`;
 
             const data = await fetchJSON(url);
             const container = document.getElementById('seriesGrid');
@@ -2408,6 +2442,8 @@
             clearEpisodeSelection();
             loadSeriesDetailEpisodes();
             loadSeriesList(seriesCurrentPage);
+            loadSeriesCategories();
+            refreshActivatedCount();
         }
 
         async function reactivateSelectedEpisodes() {
@@ -2434,6 +2470,8 @@
             clearEpisodeSelection();
             loadSeriesDetailEpisodes();
             loadSeriesList(seriesCurrentPage);
+            loadSeriesCategories();
+            refreshActivatedCount();
         }
 
         // --- Sync ---

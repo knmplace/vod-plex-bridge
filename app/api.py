@@ -3576,6 +3576,7 @@ async def list_series(
     category_id: int = 0,
     provider_category_id: int = 0,
     activated_only: bool = False,
+    activated: str = "",
 ):
     db = await get_db()
     offset = (page - 1) * page_size
@@ -3595,8 +3596,10 @@ async def list_series(
         conditions.append("s.id IN (SELECT series_id FROM series_provider_category_map WHERE category_id = ?)")
         params.append(provider_category_id)
 
-    if activated_only:
+    if activated_only or activated == "1":
         conditions.append("s.id IN (SELECT series_id FROM episodes WHERE activated = 1)")
+    elif activated == "0":
+        conditions.append("s.id NOT IN (SELECT series_id FROM episodes WHERE activated = 1)")
 
     where = " AND ".join(conditions)
 
@@ -3654,11 +3657,30 @@ async def fetch_series_episodes_route(series_id: int, request: Request):
     return result
 
 
+def _count_series_strm_files() -> int:
+    if not os.path.exists(STRM_SERIES_OUTPUT_DIR):
+        return 0
+    return sum(1 for _, _, files in os.walk(STRM_SERIES_OUTPUT_DIR)
+               for f in files if f.endswith(".strm"))
+
+
+@router.get("/series/activated-count")
+async def series_activated_count():
+    db = await get_db()
+    row = await db.execute(
+        "SELECT COUNT(DISTINCT series_id) as series, COUNT(*) as episodes FROM episodes WHERE activated = 1"
+    )
+    r = await row.fetchone()
+    return {"series": r["series"], "episodes": r["episodes"], "strm_files": _count_series_strm_files()}
+
+
 @router.get("/series/categories")
 async def list_series_categories():
     db = await get_db()
     rows = await db.execute(
-        "SELECT c.*, (SELECT COUNT(*) FROM series s WHERE s.category_id = c.id) as series_count "
+        "SELECT c.*, (SELECT COUNT(*) FROM series s WHERE s.category_id = c.id) as series_count, "
+        "(SELECT COUNT(DISTINCT e.series_id) FROM episodes e JOIN series s ON s.id = e.series_id "
+        " WHERE s.category_id = c.id AND e.activated = 1) as active_series_count "
         "FROM series_categories c ORDER BY c.name"
     )
     return {"results": [dict(r) for r in await rows.fetchall()]}
