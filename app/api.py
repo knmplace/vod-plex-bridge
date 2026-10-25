@@ -2327,6 +2327,11 @@ async def stream_health_stats():
 async def _run_catalog_sync(max_movies: int = 0, category_ids: list = None, account_ids: list = None):
     try:
         await scrape_catalog(max_movies=max_movies, category_ids=category_ids, account_ids=account_ids)
+        if not is_cancelled() and max_movies == 0:
+            db = await get_db()
+            pruned = await _prune_unselected_movies(db)
+            if pruned:
+                await _append_sync_message(f", {pruned} removed (not in selected categories/providers)")
         if not is_cancelled():
             await apply_stream_mapping_to_db()
         if not is_cancelled():
@@ -2480,6 +2485,9 @@ async def _run_full_sync():
         await scrape_catalog(category_ids=category_ids)
         if is_cancelled():
             return
+        pruned = await _prune_unselected_movies(db)
+        if pruned:
+            await _append_sync_message(f", {pruned} removed (not in selected categories/providers)")
         await apply_stream_mapping_to_db()
         if is_cancelled():
             return
@@ -3133,7 +3141,7 @@ async def _run_scheduled_refresh():
             if uuid_changes:
                 parts.append(f"{uuid_changes} UUID changes")
             if removed:
-                parts.append(f"{removed} removed (no longer in Dispatcharr)")
+                parts.append(f"{removed} removed (gone from Dispatcharr or deselected)")
             report.append(f"Catalog: {', '.join(parts)}")
         except Exception as e:
             report.append(f"Catalog: FAILED ({e})")
@@ -3202,6 +3210,88 @@ async def _run_scheduled_refresh():
 _uuid_change_counter = 0
 
 
+async def _wanted_movie_ids(db) -> set | None:
+    """Movie ids covered by the selected categories/providers, per the dumps.
+
+    None means the selection can't be resolved (nothing selected, or no dump),
+    and callers must not prune in that case.
+    """
+    import json as _json
+    sel_cat_rows = await db.execute("SELECT category_id FROM selected_categories WHERE enabled = 1")
+    selected_cats = {r["category_id"] for r in await sel_cat_rows.fetchall()}
+    if not selected_cats or not os.path.exists(CATEGORY_MAPPING_FILE):
+        return None
+    with open(CATEGORY_MAPPING_FILE) as f:
+        dump_cats = _json.load(f)
+    wanted = set()
+    for dc in dump_cats:
+        if dc["id"] in selected_cats:
+            wanted.update(dc.get("movie_ids", []))
+
+    # Filter by selected providers (skip if all providers selected)
+    sel_acct_rows = await db.execute("SELECT account_id FROM selected_accounts WHERE enabled = 1")
+    selected_accts = {r["account_id"] for r in await sel_acct_rows.fetchall()}
+    if selected_accts and wanted:
+        all_acct_rows = await db.execute("SELECT id FROM m3u_accounts")
+        all_acct_ids = {r["id"] for r in await all_acct_rows.fetchall()}
+        if not selected_accts >= all_acct_ids and os.path.exists(STREAM_MAPPING_FILE):
+            with open(STREAM_MAPPING_FILE) as f:
+                stream_map = _json.load(f)
+            provider_movie_ids = set()
+            for mid_str, info in stream_map.items():
+                entries = info if isinstance(info, list) else [info]
+                if any(e.get("account_id") in selected_accts for e in entries):
+                    provider_movie_ids.add(int(mid_str))
+            before = len(wanted)
+            wanted &= provider_movie_ids
+            logger.info(f"Selection: provider filter {before} -> {len(wanted)} movies")
+    return wanted
+
+
+async def _prune_unselected_movies(db) -> int:
+    """Remove movies outside the current category/provider selection (Plex, STRM, DB rows)."""
+    wanted = await _wanted_movie_ids(db)
+    if not wanted:
+        # An empty result is far more likely a bad dump than a real "remove everything".
+        return 0
+    rows = await db.execute("SELECT id, name, year, strm_folder, activated FROM movies")
+    stale = [dict(r) for r in await rows.fetchall() if r["id"] not in wanted]
+    if not stale:
+        return 0
+
+    activated = [m for m in stale if m["activated"]]
+    if activated:
+        await _plex_remove_movies([m["id"] for m in activated])
+        _remove_strm_folders(activated)
+
+    ids = [m["id"] for m in stale]
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        ph = ",".join("?" for _ in chunk)
+        await db.execute(f"DELETE FROM movie_categories WHERE movie_id IN ({ph})", chunk)
+        await db.execute(f"DELETE FROM movies WHERE id IN ({ph})", chunk)
+
+    total_row = await db.execute("SELECT COUNT(*) as cnt FROM movies")
+    total = (await total_row.fetchone())["cnt"]
+    await db.execute(
+        "UPDATE sync_state SET total_movies = ?, active_strm_count = ? WHERE id = 1",
+        (total, _count_strm_folders()),
+    )
+    await db.commit()
+    logger.info("Pruned %d movies outside the selected categories/providers (%d were activated)",
+                len(stale), len(activated))
+    return len(stale)
+
+
+async def _append_sync_message(suffix: str):
+    db = await get_db()
+    row = await db.execute("SELECT message FROM sync_state WHERE id = 1")
+    result = await row.fetchone()
+    await db.execute("UPDATE sync_state SET message = ? WHERE id = 1",
+                     (f"{(result['message'] if result else '') or ''}{suffix}",))
+    await db.commit()
+
+
 async def _run_catalog_refresh():
     """Re-scrape full VOD catalog from Dispatcharr to pick up new/changed movies."""
     synced, total, uuid_changes, removed = await _run_catalog_refresh_counted()
@@ -3215,6 +3305,9 @@ async def _run_catalog_refresh_counted() -> tuple[int, int, int, int]:
     _uuid_change_counter = 0
 
     db = await get_db()
+
+    # --- Phase 0: Drop movies outside the current selection ---
+    pruned = await _prune_unselected_movies(db)
 
     # --- Phase 1: Refresh existing catalog movies ---
     rows = await db.execute("SELECT id, name, year, activated, dead, strm_folder FROM movies WHERE name != ''")
@@ -3287,42 +3380,9 @@ async def _run_catalog_refresh_counted() -> tuple[int, int, int, int]:
     # --- Phase 2: Discover new movies in selected categories/providers ---
     new_added = 0
     if not is_cancelled():
-        sel_cat_rows = await db.execute("SELECT category_id FROM selected_categories WHERE enabled = 1")
-        selected_cats = [r["category_id"] for r in await sel_cat_rows.fetchall()]
-        sel_acct_rows = await db.execute("SELECT account_id FROM selected_accounts WHERE enabled = 1")
-        selected_accts = set(r["account_id"] for r in await sel_acct_rows.fetchall())
+        cat_movie_ids = await _wanted_movie_ids(db)
 
-        if selected_cats:
-            # Get movie IDs in selected categories from category_mapping dump
-            cat_movie_ids = set()
-            if os.path.exists(CATEGORY_MAPPING_FILE):
-                with open(CATEGORY_MAPPING_FILE) as f:
-                    dump_cats = _json.load(f)
-                selected_cat_set = set(selected_cats)
-                for dc in dump_cats:
-                    if dc["id"] in selected_cat_set:
-                        cat_movie_ids.update(dc.get("movie_ids", []))
-
-            # Filter by selected providers (skip if all providers selected)
-            if selected_accts and cat_movie_ids:
-                all_acct_rows = await db.execute("SELECT id FROM m3u_accounts")
-                all_acct_ids = {r["id"] for r in await all_acct_rows.fetchall()}
-                if selected_accts >= all_acct_ids:
-                    logger.info("Catalog refresh: all providers selected, skipping provider filter")
-                else:
-                    stream_map_file = os.environ.get("STREAM_MAPPING_FILE", "/data/stream_mapping.json")
-                    if os.path.exists(stream_map_file):
-                        with open(stream_map_file) as f:
-                            stream_map = _json.load(f)
-                        provider_movie_ids = set()
-                        for mid_str, info in stream_map.items():
-                            entries = info if isinstance(info, list) else [info]
-                            if any(e.get("account_id") in selected_accts for e in entries):
-                                provider_movie_ids.add(int(mid_str))
-                        before = len(cat_movie_ids)
-                        cat_movie_ids = cat_movie_ids & provider_movie_ids
-                        logger.info(f"Catalog refresh: provider filter {before} -> {len(cat_movie_ids)} movies")
-
+        if cat_movie_ids is not None:
             # Find movies in selected categories that aren't in our catalog yet
             new_movie_ids = cat_movie_ids - existing_id_set
             if new_movie_ids:
@@ -3369,6 +3429,8 @@ async def _run_catalog_refresh_counted() -> tuple[int, int, int, int]:
     count = (await count_row.fetchone())["cnt"]
     status = "cancelled" if is_cancelled() else "complete"
     parts = [f"{total_updated}/{total_target} updated"]
+    if pruned:
+        parts.append(f"{pruned} removed (category/provider deselected)")
     if removed:
         parts.append(f"{removed} removed (no longer in Dispatcharr)")
     if failed:
@@ -3390,7 +3452,7 @@ async def _run_catalog_refresh_counted() -> tuple[int, int, int, int]:
     await db.commit()
     logger.info(f"Catalog refresh {status}: {', '.join(parts)}")
 
-    return total_updated + new_added, count, _uuid_change_counter, removed
+    return total_updated + new_added, count, _uuid_change_counter, removed + pruned
 
 
 async def _upsert_movie_from_api(db, movie):

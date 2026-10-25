@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime, timezone
 
 import httpx
@@ -71,7 +72,7 @@ async def _upsert_series(db, series):
 
 
 async def _prune_removed_series(db, seen_ids: set) -> int:
-    """Delete series no longer in Dispatcharr's catalog. Only called after a full,
+    """Delete series not in seen_ids (gone from Dispatcharr or in no enabled category). Only called after a full,
     uninterrupted scrape; series with any activated episode are kept."""
     rows = await db.execute(
         "SELECT id FROM series WHERE id NOT IN (SELECT series_id FROM episodes WHERE activated = 1)"
@@ -86,6 +87,24 @@ async def _prune_removed_series(db, seen_ids: set) -> int:
     if stale:
         logger.info("Series scrape: removed %d series no longer in Dispatcharr", len(stale))
     return len(stale)
+
+
+def _enabled_category_series_ids() -> set | None:
+    """Series ids in at least one enabled provider series category, per the dump.
+    None when the dump is missing or empty, so callers don't prune on bad data."""
+    path = os.environ.get("SERIES_CATEGORY_MAPPING_FILE", "/data/series_category_mapping.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            cats = json.load(f)
+    except (OSError, ValueError) as e:
+        logger.warning("Series category dump unreadable, skipping category prune: %s", e)
+        return None
+    ids = set()
+    for c in cats:
+        ids.update(c.get("series_ids", []))
+    return ids or None
 
 
 async def scrape_series_catalog(max_series: int = 0):
@@ -154,6 +173,11 @@ async def scrape_series_catalog(max_series: int = 0):
 
     pruned = 0
     if completed and seen_ids:
+        # Series whose provider categories are all disabled in Dispatcharr still come back
+        # from /api/vod/series/, so drop them along with series gone from Dispatcharr.
+        in_enabled = _enabled_category_series_ids()
+        if in_enabled is not None:
+            seen_ids &= in_enabled
         pruned = await _prune_removed_series(db, seen_ids)
 
     count_row = await db.execute("SELECT COUNT(*) as cnt FROM series")
