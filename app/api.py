@@ -3119,8 +3119,8 @@ async def _enrich_from_provider_info(batch_size: int = 200):
 
 
 async def _run_scheduled_refresh():
-    """Daily run cycle: dump regen → categories → catalog refresh → apply mapping → provider-info enrichment → TMDB enrichment (local library first) → activated stream_id update → language detection (new movies only, background).
-    NO provider calls. NO dead scan. NO TMDB title search. All data comes from the Dispatcharr API and TMDB (local library first)."""
+    """Daily run cycle: dump regen → categories → catalog refresh → apply mapping → provider-info enrichment → TMDB title search (titles without a TMDB ID, each tried once) → TMDB enrichment (local library first) → activated stream_id update → language detection (new movies only, background).
+    NO provider calls. NO dead scan. All data comes from the Dispatcharr API and TMDB (local library first)."""
     import time
     start = time.time()
     report = []
@@ -3179,6 +3179,17 @@ async def _run_scheduled_refresh():
             report.append(f"Provider-info enrichment: {pi_enriched} movies enriched")
         except Exception as e:
             report.append(f"Provider-info enrichment: FAILED ({e})")
+
+        # 5a. TMDB title search — titles without a TMDB ID, each searched once (local library first),
+        # before enrichment so a found ID is enriched and language-tagged in this same run
+        if tmdb_local.has_credentials():
+            await _set_status("refreshing", "Daily run: searching TMDB for titles without a TMDB ID...")
+            try:
+                ts = await search_tmdb_for_missing(batch_size=2000)
+                report.append(f"TMDB title search: {ts['found']} found, {ts['not_found']} not found, "
+                              f"{ts['skipped']} skipped")
+            except Exception as e:
+                report.append(f"TMDB title search: FAILED ({e})")
 
         # 5b. TMDB enrichment — local TMDB library first, TMDB only on a miss
         if tmdb_local.has_credentials():

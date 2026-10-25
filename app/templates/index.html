@@ -1034,8 +1034,6 @@
             <span class="value" id="activeStrm">-</span>
             <span class="label">STRM</span>
         </div>
-        <button class="btn btn-warning" onclick="detectAllLanguages()">Detect All Languages</button>
-        <button class="btn btn-warning" onclick="tmdbSearch()">TMDB Search</button>
         <button class="btn btn-outline" disabled style="opacity:0.5;cursor:not-allowed;" title="Disabled pending redesign">Scan Dead</button>
         <button class="btn btn-danger" onclick="clearCatalog()">Clear Catalog</button>
         <button class="btn btn-danger" onclick="clearStrm()">Clear STRMs</button>
@@ -3218,11 +3216,6 @@
             }
         }
 
-        async function detectAllLanguages() {
-            await fetchJSON('/api/movies/detect-language-all', {method: 'POST'});
-            refreshStatus();
-        }
-
         async function refreshGenreFilter() {
             const data = await fetchJSON('/api/genres');
             buildMsDropdown('msGenre', data.genres.map(g => ({ value: g.genre, label: `${g.genre} (${g.cnt.toLocaleString()})` })));
@@ -3285,7 +3278,7 @@
                     langTbody.innerHTML += `<tr style="color:var(--text-muted)"><td>Unknown</td><td class="num" style="color:var(--text-muted)">${catalogData.language_unknown.toLocaleString()}</td></tr>`;
                 }
             } else {
-                langTbody.innerHTML = '<tr><td colspan="2" class="empty-state">Run "Detect All Languages" first</td></tr>';
+                langTbody.innerHTML = '<tr><td colspan="2" class="empty-state">Languages are detected during the Daily Run</td></tr>';
             }
 
             // Categories
@@ -3648,28 +3641,6 @@
                         refreshDeadBadge();
                         loadMovies(currentPage);
                         refreshActivatedCount();
-                        loadCatalogSummary();
-                    }
-                }, 2000);
-            };
-            pollUntilDone();
-        }
-
-        async function tmdbSearch() {
-            showOverlay('Searching TMDB for Missing Metadata...');
-            await fetchJSON('/api/movies/tmdb-search', {method: 'POST'});
-            refreshStatus();
-            const pollUntilDone = () => {
-                setTimeout(async () => {
-                    const s = await fetchJSON('/api/status');
-                    updateOverlayProgress(s.message || '');
-                    if (s.status !== 'idle' && s.status !== 'error') {
-                        refreshStatus();
-                        pollUntilDone();
-                    } else {
-                        hideOverlay();
-                        refreshStatus();
-                        loadMovies(currentPage);
                         loadCatalogSummary();
                     }
                 }, 2000);
