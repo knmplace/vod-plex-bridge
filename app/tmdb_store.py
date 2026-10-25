@@ -479,6 +479,14 @@ def mark_gone(media_type: str, tmdb_id: int) -> None:
             conn.execute("DELETE FROM seasons WHERE tmdb_id=?", (int(tmdb_id),))
 
 
+def list_fetched_since(media_type: str, since: float) -> list[int]:
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT tmdb_id FROM titles WHERE media_type=? AND fetched_at > ?", (media_type, since),
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
 def list_stale_ids(media_type: str, limit: int) -> list[int]:
     with _conn() as conn:
         rows = conn.execute(

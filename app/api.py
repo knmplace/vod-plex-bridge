@@ -2333,6 +2333,8 @@ async def _run_catalog_sync(max_movies: int = 0, category_ids: list = None, acco
             logger.info("Post-sync provider-info enrichment: %d movies", enriched)
         if not is_cancelled():
             await search_tmdb_for_missing()
+        if not is_cancelled() and tmdb_local.has_credentials():
+            await enrich_from_tmdb()
 
         if not is_cancelled() and tmdb_local.has_credentials():
             asyncio.create_task(_bulk_detect_languages())
@@ -3086,8 +3088,8 @@ async def _enrich_from_provider_info(batch_size: int = 200):
 
 
 async def _run_scheduled_refresh():
-    """Daily run cycle: dump regen → categories → catalog refresh → apply mapping → provider-info enrichment → activated stream_id update → language detection (new movies only, background).
-    NO provider calls. NO dead scan. NO TMDB title search. All data comes from Dispatcharr API and TMDB (language only) only."""
+    """Daily run cycle: dump regen → categories → catalog refresh → apply mapping → provider-info enrichment → TMDB enrichment (local library first) → activated stream_id update → language detection (new movies only, background).
+    NO provider calls. NO dead scan. NO TMDB title search. All data comes from the Dispatcharr API and TMDB (local library first)."""
     import time
     start = time.time()
     report = []
@@ -3146,6 +3148,17 @@ async def _run_scheduled_refresh():
             report.append(f"Provider-info enrichment: {pi_enriched} movies enriched")
         except Exception as e:
             report.append(f"Provider-info enrichment: FAILED ({e})")
+
+        # 5b. TMDB enrichment — local TMDB library first, TMDB only on a miss
+        if tmdb_local.has_credentials():
+            await _set_status("refreshing", "Daily run: enriching metadata from TMDB...")
+            try:
+                te = await enrich_from_tmdb()
+                report.append(f"TMDB enrichment: {te['enriched']} checked, {te['changed']} changed, "
+                              f"{te['nfo_rewritten']} NFOs rewritten, {te['store_refreshed']} refreshed in the "
+                              f"TMDB library, {te['remaining']} still pending")
+            except Exception as e:
+                report.append(f"TMDB enrichment: FAILED ({e})")
 
         # 6. Activated stream_id refresh (DB only, no provider calls)
         await _set_status("refreshing", "Daily run: checking activated movies for stream_id changes...")
@@ -3443,9 +3456,18 @@ async def _upsert_movie_from_api(db, movie):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             uuid=excluded.uuid, name=excluded.name, year=excluded.year,
-            rating=excluded.rating, genre=excluded.genre,
-            description=excluded.description, tmdb_id=excluded.tmdb_id,
-            poster_url=excluded.poster_url, cast_info=excluded.cast_info,
+            rating=excluded.rating,
+            genre=CASE WHEN movies.tmdb_enriched_at IS NOT NULL AND COALESCE(movies.genre, '') != ''
+                       THEN movies.genre ELSE excluded.genre END,
+            description=CASE WHEN movies.tmdb_enriched_at IS NOT NULL AND COALESCE(movies.description, '') != ''
+                             THEN movies.description ELSE excluded.description END,
+            poster_url=CASE WHEN movies.tmdb_enriched_at IS NOT NULL AND COALESCE(movies.poster_url, '') != ''
+                            THEN movies.poster_url ELSE excluded.poster_url END,
+            tmdb_id=COALESCE(NULLIF(excluded.tmdb_id, ''), movies.tmdb_id),
+            tmdb_enriched_at=CASE WHEN NULLIF(excluded.tmdb_id, '') IS NOT NULL
+                                       AND CAST(excluded.tmdb_id AS TEXT) != COALESCE(movies.tmdb_id, '')
+                                  THEN NULL ELSE movies.tmdb_enriched_at END,
+            cast_info=excluded.cast_info,
             trailer_key=excluded.trailer_key,
             synced_at=excluded.synced_at
     """, (

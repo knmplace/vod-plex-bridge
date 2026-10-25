@@ -375,78 +375,98 @@ async def scrape_catalog(max_movies: int = 0, category_ids: list = None, account
         pass
 
 
-async def enrich_from_tmdb(batch_size: int = 50):
+async def enrich_from_tmdb(limit: int = 5000) -> dict:
+    """Same flow as VOD Manager: each movie with a TMDB ID is enriched once (local
+    store first, TMDB on a miss), and re-applied when the store refreshes that
+    title. TMDB wins for genre/description/poster/IMDb ID; runtime only fills a
+    blank duration, since the provider's real length drives the proxy throttle."""
     global _cancel
-
+    result = {"enriched": 0, "changed": 0, "nfo_rewritten": 0, "store_refreshed": 0, "remaining": 0}
     if not tmdb_local.has_credentials():
         logger.warning("TMDB_API_KEY/TMDB_READ_TOKEN not set, skipping enrichment")
-        return 0
+        return result
 
+    import time
+    import tmdb_store
+    run_started = time.time()
     db = await get_db()
-    try:
-        remaining_row = await db.execute(
-            "SELECT COUNT(*) as cnt FROM movies WHERE tmdb_id IS NOT NULL AND tmdb_enriched = 0 AND tmdb_id != ''"
-        )
-        remaining = (await remaining_row.fetchone())["cnt"]
 
-        rows = await db.execute(
-            "SELECT id, tmdb_id FROM movies WHERE tmdb_id IS NOT NULL AND tmdb_enriched = 0 AND tmdb_id != '' LIMIT ?",
-            (batch_size,),
-        )
-        movies = await rows.fetchall()
-        if not movies:
-            await db.execute(
-                "UPDATE sync_state SET status = 'idle', message = 'TMDB enrichment complete' WHERE id = 1"
+    # Titles the store refreshed since the last pass are re-applied from the store.
+    since = float(await asyncio.to_thread(tmdb_store.get_meta, "catalog_applied_at", "0") or 0)
+    if since:
+        ids = [str(i) for i in await asyncio.to_thread(tmdb_store.list_fetched_since, "movie", since)]
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            cur = await db.execute(
+                f"UPDATE movies SET tmdb_enriched_at = NULL WHERE tmdb_enriched_at IS NOT NULL "
+                f"AND tmdb_id IN ({','.join('?' * len(chunk))})", chunk,
             )
-            await db.commit()
-            return 0
-
-        await db.execute(
-            "UPDATE sync_state SET status = 'enriching', message = ? WHERE id = 1",
-            (f"Enriching genres from TMDB... {remaining} remaining",),
-        )
+            result["store_refreshed"] += cur.rowcount
         await db.commit()
 
-        enriched = 0
-        for movie in movies:
-            if _cancel:
-                logger.info("TMDB enrichment cancelled by user")
-                break
-            try:
-                tmdb_data, local = await tmdb_local.movie_details(movie["tmdb_id"])
-                if tmdb_data is None:
-                    continue
+    pending = "tmdb_id IS NOT NULL AND tmdb_id != '' AND tmdb_enriched_at IS NULL AND name != ''"
+    rows = await db.execute(
+        f"SELECT id, tmdb_id, genre, description, imdb_id, poster_url, duration_seconds, activated "
+        f"FROM movies WHERE {pending} ORDER BY activated DESC LIMIT ?", (limit,),
+    )
+    movies = await rows.fetchall()
 
-                genres = ", ".join(g["name"] for g in tmdb_data.get("genres", []))
-                description = tmdb_data.get("overview", "")
-                imdb_id = tmdb_data.get("imdb_id")
-                poster_path = tmdb_data.get("poster_path")
-                poster_url = f"https://image.tmdb.org/t/p/w600_and_h900_bestv2{poster_path}" if poster_path else None
-                runtime_min = tmdb_data.get("runtime")
-                duration_seconds = runtime_min * 60 if runtime_min else None
+    rewrite = []
+    for movie in movies:
+        if _cancel:
+            logger.info("TMDB enrichment cancelled by user")
+            break
+        try:
+            tmdb_data, local = await tmdb_local.movie_details(movie["tmdb_id"])
+            if tmdb_data is None:
+                continue
+            poster_path = tmdb_data.get("poster_path")
+            runtime_min = tmdb_data.get("runtime")
+            new = {
+                "genre": ", ".join(g["name"] for g in tmdb_data.get("genres", [])),
+                "description": tmdb_data.get("overview") or "",
+                "imdb_id": tmdb_data.get("imdb_id") or "",
+                "poster_url": f"https://image.tmdb.org/t/p/w600_and_h900_bestv2{poster_path}" if poster_path else "",
+            }
+            changes = {k: v for k, v in new.items() if v and v != (movie[k] or "")}
+            if runtime_min and not movie["duration_seconds"]:
+                changes["duration_seconds"] = runtime_min * 60
+            sets = "".join(f"{k} = ?, " for k in changes)
+            await db.execute(
+                f"UPDATE movies SET {sets}tmdb_enriched = 1, tmdb_enriched_at = ? WHERE id = ?",
+                (*changes.values(), datetime.now(timezone.utc).isoformat(), movie["id"]),
+            )
+            result["enriched"] += 1
+            if changes:
+                result["changed"] += 1
+                if movie["activated"]:
+                    rewrite.append((movie["id"], "poster_url" in changes))
+            if not local:
+                await asyncio.sleep(0.25)
+        except Exception as e:
+            logger.error(f"TMDB enrichment failed for movie {movie['id']}: {e}")
+    await db.commit()
+    _cancel = False
 
-                await db.execute("""
-                    UPDATE movies SET
-                        genre = CASE WHEN genre = '' OR genre IS NULL THEN ? ELSE genre END,
-                        description = CASE WHEN description = '' OR description IS NULL THEN ? ELSE description END,
-                        imdb_id = CASE WHEN imdb_id IS NULL THEN ? ELSE imdb_id END,
-                        poster_url = CASE WHEN poster_url IS NULL THEN ? ELSE poster_url END,
-                        duration_seconds = CASE WHEN duration_seconds IS NULL THEN ? ELSE duration_seconds END,
-                        tmdb_enriched = 1
-                    WHERE id = ?
-                """, (genres, description, imdb_id, poster_url, duration_seconds, movie["id"]))
-                enriched += 1
-                if not local:
-                    await asyncio.sleep(0.25)
-            except Exception as e:
-                logger.error(f"TMDB enrichment failed for movie {movie['id']}: {e}")
+    from generator import write_strm_for_movie, get_folder_name, STRM_OUTPUT_DIR
+    for movie_id, poster_changed in rewrite:
+        try:
+            row = await (await db.execute("SELECT * FROM movies WHERE id = ?", (movie_id,))).fetchone()
+            movie = dict(row)
+            if poster_changed:
+                poster = os.path.join(STRM_OUTPUT_DIR, get_folder_name(movie), "poster.jpg")
+                if os.path.exists(poster):
+                    os.remove(poster)
+            if await write_strm_for_movie(movie):
+                result["nfo_rewritten"] += 1
+        except Exception as e:
+            logger.error(f"NFO rewrite failed for movie {movie_id}: {e}")
 
-        await db.commit()
-        logger.info(f"TMDB enrichment complete: {enriched} movies enriched")
-        _cancel = False
-        return enriched
-    finally:
-        pass
+    await asyncio.to_thread(tmdb_store.set_meta, "catalog_applied_at", run_started)
+    row = await db.execute(f"SELECT COUNT(*) AS cnt FROM movies WHERE {pending}")
+    result["remaining"] = (await row.fetchone())["cnt"]
+    logger.info("TMDB enrichment: %s", result)
+    return result
 
 
 def _clean_title(name: str) -> str:
