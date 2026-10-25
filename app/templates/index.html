@@ -1391,6 +1391,8 @@
                     <div class="panel-header">
                         Archived Logs
                         <div style="display:flex;gap:0.4rem;align-items:center;">
+                            <label style="font-size:0.7rem;font-weight:normal;"><input type="checkbox" id="archiveSelectAll" onchange="document.querySelectorAll('.archive-cb').forEach(cb => cb.checked = this.checked)"> All</label>
+                            <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="deleteSelectedArchives()">Delete selected</button>
                             <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="archiveNow()">Archive Now</button>
                         </div>
                     </div>
@@ -1705,7 +1707,13 @@
                     </div>
                 </div>
                 <div class="panel" style="margin-top:1rem;">
-                    <div class="panel-header" style="text-align:center;">Run Archive</div>
+                    <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+                        Run History
+                        <div style="display:flex;gap:0.4rem;align-items:center;">
+                            <label style="font-size:0.7rem;font-weight:normal;"><input type="checkbox" id="runSelectAll" onchange="document.querySelectorAll('.run-cb').forEach(cb => cb.checked = this.checked)"> All</label>
+                            <button class="btn btn-outline" style="font-size:0.7rem;padding:0.2rem 0.5rem;" onclick="deleteSelectedRuns()">Delete selected</button>
+                        </div>
+                    </div>
                     <div class="panel-body" id="archiveReportBody" style="font-size:0.85rem;color:#e6edf3;max-height:320px;overflow-y:auto;max-width:500px;margin:0 auto;">
                         <div style="color:#8b949e;text-align:center;">No archived runs</div>
                     </div>
@@ -3723,6 +3731,7 @@
                     const timeStr = d.toLocaleTimeString('en-US', {hour12: true, hour: 'numeric', minute: '2-digit'});
                     const sizeKB = (a.size / 1024).toFixed(0);
                     return `<div style="padding:0.5rem 0.6rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;transition:background 0.15s;" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background='transparent'">
+                        <input type="checkbox" class="archive-cb" value="${a.filename}" style="margin-right:0.6rem;">
                         <div onclick="viewArchive('${a.filename}')" style="cursor:pointer;flex:1;">
                             <div style="font-size:0.85rem;color:var(--text-primary);font-weight:500;">${dateStr} &middot; ${timeStr}</div>
                             <div style="font-size:0.7rem;color:var(--text-muted);">${a.entries} entries &middot; ${sizeKB} KB</div>
@@ -3746,6 +3755,21 @@
                 }
             } catch (e) {
                 alert('Archive failed: ' + e.message);
+            }
+        }
+
+        async function deleteSelectedArchives() {
+            const names = [...document.querySelectorAll('.archive-cb:checked')].map(cb => cb.value);
+            if (!names.length) { alert('No archives selected.'); return; }
+            if (!confirm(`Delete ${names.length} archive${names.length > 1 ? 's' : ''}?`)) return;
+            try {
+                await fetchJSON('/api/proxy-log/archives/delete', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({filenames: names})
+                });
+                document.getElementById('archiveSelectAll').checked = false;
+                loadArchives();
+            } catch (e) {
+                alert('Delete failed: ' + e.message);
             }
         }
 
@@ -4052,16 +4076,14 @@
             if (reports.length > 0) {
                 container.style.display = 'block';
                 latestEl.innerHTML = _renderReport(reports[0]);
-                if (reports.length > 1) {
-                    archiveEl.innerHTML = reports.slice(1).map((r, i) =>
-                        `<div style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border,#30363d);cursor:pointer;display:flex;justify-content:space-between;align-items:center;" onclick="openRunDetail(${i + 1})" onmouseover="this.style.background='rgba(88,166,255,0.08)'" onmouseout="this.style.background='transparent'">
-                            <span style="color:#58a6ff;">${r.date}</span>
-                            <span style="color:#8b949e;font-size:0.8rem;">${_formatDuration(r.elapsed)}</span>
-                        </div>`
-                    ).join('');
-                } else {
-                    archiveEl.innerHTML = '<div style="color:#8b949e;text-align:center;">No previous runs yet</div>';
-                }
+                document.getElementById('runSelectAll').checked = false;
+                archiveEl.innerHTML = reports.map((r, i) =>
+                    `<div style="padding:0.5rem 0.75rem;border-bottom:1px solid var(--border,#30363d);cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:0.6rem;" onclick="openRunDetail(${i})" onmouseover="this.style.background='rgba(88,166,255,0.08)'" onmouseout="this.style.background='transparent'">
+                        <input type="checkbox" class="run-cb" value="${i}" onclick="event.stopPropagation()">
+                        <span style="color:#58a6ff;flex:1;">${r.date}${i === 0 ? ' <span style="color:#8b949e;font-size:0.75rem;">(last run)</span>' : ''}</span>
+                        <span style="color:#8b949e;font-size:0.8rem;">${_formatDuration(r.elapsed)}</span>
+                    </div>`
+                ).join('');
             } else {
                 container.style.display = 'none';
             }
@@ -4079,6 +4101,21 @@
             document.getElementById('runDetailTitle').textContent = entry.date;
             document.getElementById('runDetailBody').innerHTML = _renderReport(entry, true);
             document.getElementById('runDetailOverlay').style.display = 'flex';
+        }
+
+        async function deleteSelectedRuns() {
+            const picked = [...document.querySelectorAll('.run-cb:checked')].map(cb => _runArchive[Number(cb.value)]).filter(Boolean);
+            if (!picked.length) { alert('No runs selected.'); return; }
+            if (!confirm(`Delete ${picked.length} run report${picked.length > 1 ? 's' : ''}?`)) return;
+            try {
+                await fetchJSON('/api/schedule/reports/delete', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({reports: picked.map(r => ({date: r.date, elapsed: r.elapsed}))})
+                });
+                loadSchedule();
+            } catch (e) {
+                alert('Delete failed: ' + e.message);
+            }
         }
 
         function closeRunDetail() {

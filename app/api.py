@@ -687,6 +687,14 @@ async def proxy_log_archive_delete(filename: str):
     return {"status": "ok"}
 
 
+@router.post("/proxy-log/archives/delete")
+async def proxy_log_archives_delete(request: Request):
+    data = await request.json()
+    names = [n for n in data.get("filenames", []) if isinstance(n, str) and "/" not in n and "\\" not in n]
+    deleted = sum(1 for n in names if delete_log_archive(n))
+    return {"status": "ok", "deleted": deleted}
+
+
 @router.post("/proxy-log/archive-now")
 async def proxy_log_archive_now():
     fname = archive_proxy_log()
@@ -2449,6 +2457,25 @@ async def set_schedule(request: Request):
         return {"status": "ok", "refresh_interval_hours": hours}
     finally:
         pass
+
+
+@router.post("/schedule/reports/delete")
+async def delete_run_reports(request: Request):
+    """Delete Daily Run reports, matched by their date and elapsed time."""
+    import json as _json
+    data = await request.json()
+    keys = {(r.get("date"), r.get("elapsed")) for r in data.get("reports", []) if isinstance(r, dict)}
+    db = await get_db()
+    row = await (await db.execute("SELECT last_refresh_report FROM sync_state WHERE id = 1")).fetchone()
+    raw = row["last_refresh_report"] if row else ""
+    try:
+        reports = _json.loads(raw) if raw and raw.startswith("[") else []
+    except Exception:
+        reports = []
+    kept = [r for r in reports if (r.get("date"), r.get("elapsed")) not in keys]
+    await db.execute("UPDATE sync_state SET last_refresh_report = ? WHERE id = 1", (_json.dumps(kept),))
+    await db.commit()
+    return {"status": "ok", "deleted": len(reports) - len(kept)}
 
 
 @router.post("/sync/refresh")
