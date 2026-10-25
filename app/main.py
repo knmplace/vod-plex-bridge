@@ -15,13 +15,14 @@ from error_screens import generate_error_screens
 from config import REDIRECT_STREAMING
 import auth
 from connection import router as connection_router
+import sources
 from tmdb_routes import router as tmdb_router
 import tmdb_local
 import tmdb_store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-APP_VERSION = "0.37.0"
+APP_VERSION = "0.38.0"
 
 
 async def _restore_strm_files():
@@ -100,6 +101,7 @@ async def _restore_series_files():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await sources.startup()
     generate_error_screens()
     await _restore_strm_files()
     await _restore_series_files()
@@ -133,6 +135,7 @@ app.include_router(proxy_router)
 app.include_router(api_router)
 app.include_router(auth.router)
 app.include_router(connection_router)
+app.include_router(sources.router)
 app.include_router(tmdb_router)
 app.mount("/static", StaticFiles(directory="/app/static"), name="static")
 

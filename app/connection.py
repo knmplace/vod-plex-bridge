@@ -1,4 +1,5 @@
-"""Settings-tab sections (Dispatcharr, Plex, TMDB, Streaming): saved values win over the compose file."""
+"""Settings-tab sections (Plex, TMDB, Streaming): saved values win over the compose file.
+Dispatcharr instances and provider accounts are lists of their own, in sources.py."""
 import os
 import re
 
@@ -11,8 +12,6 @@ import secret_box
 from database import get_db
 
 router = APIRouter(prefix="/api/settings")
-
-MODES = ("dispatcharr", "xc")
 
 
 async def _saved() -> dict:
@@ -72,16 +71,8 @@ def _effective(values: dict) -> dict:
 
 def _validate(group: str, values: dict) -> str | None:
     v = _effective(values)
-    if group == "dispatcharr":
-        if v["CONNECTION_MODE"] not in MODES:
-            return "Pick Dispatcharr or XC"
-        if v["CONNECTION_MODE"] == "dispatcharr" and not v["DISPATCHARR_URL"]:
-            return "Dispatcharr URL is required"
-        if v["CONNECTION_MODE"] == "xc" and not all(v[k] for k in ("XC_SERVER_URL", "XC_USERNAME", "XC_PASSWORD")):
-            return "Server URL, username and password are required"
-    for k, name in (("DISPATCHARR_URL", "Dispatcharr URL"), ("XC_SERVER_URL", "Server URL"), ("PLEX_URL", "Plex URL")):
-        if v.get(k) and not re.match(r"https?://", v[k]):
-            return f"{name} must start with http:// or https://"
+    if v.get("PLEX_URL") and not re.match(r"https?://", v["PLEX_URL"]):
+        return "Plex URL must start with http:// or https://"
     for k in ("PLEX_LIBRARY_ID", "PLEX_SERIES_LIBRARY_ID"):
         if v.get(k) and not v[k].isdigit():
             return "Library IDs are numbers, e.g. 7"
@@ -123,8 +114,6 @@ async def test_settings(group: str, request: Request):
     values = _effective(_merge(group, await request.json(), await _saved()))
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            if group == "dispatcharr":
-                return await _test_dispatcharr(client, values)
             if group == "plex":
                 return await _test_plex(client, values)
             if group == "tmdb":
@@ -132,22 +121,6 @@ async def test_settings(group: str, request: Request):
     except httpx.HTTPError as e:
         return {"ok": False, "message": f"Could not connect: {type(e).__name__}"}
     return JSONResponse({"error": "Nothing to test in this section"}, status_code=400)
-
-
-async def _test_dispatcharr(client: httpx.AsyncClient, v: dict) -> dict:
-    if v["CONNECTION_MODE"] == "xc":
-        # The bridge is not behind the VPN, so it never contacts a provider itself.
-        return {"ok": False, "message": "Not tested: the bridge does not contact providers directly. "
-                                        "Credentials are checked when Dispatcharr uses them."}
-    url = v["DISPATCHARR_URL"].rstrip("/")
-    headers = {"X-API-Key": v["DISPATCHARR_API_KEY"]} if v["DISPATCHARR_API_KEY"] else {}
-    resp = await client.get(f"{url}/api/vod/movies/", params={"page_size": 1}, headers=headers)
-    if resp.status_code in (401, 403):
-        return {"ok": False, "message": "Dispatcharr refused the API key"}
-    if resp.status_code != 200:
-        return {"ok": False, "message": f"Dispatcharr answered HTTP {resp.status_code}"}
-    count = resp.json().get("count")
-    return {"ok": True, "message": "Connected to Dispatcharr" + (f" — {count:,} movies" if count is not None else "")}
 
 
 async def _test_plex(client: httpx.AsyncClient, v: dict) -> dict:

@@ -188,8 +188,6 @@
 
         .settings-grid { display: grid; grid-template-columns: 3fr 2fr; gap: 1rem; max-width: 1100px; margin: 0 auto 1rem; }
         @media (max-width: 800px) { .settings-grid { grid-template-columns: 1fr; } }
-        .conn-modes { display: flex; gap: 1.25rem; flex-wrap: wrap; margin-bottom: 0.75rem; font-size: 0.85rem; font-weight: 600; }
-        .conn-modes label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
         .conn-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.6rem 1rem; }
         .conn-field { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.88rem; font-weight: 600; color: var(--text-primary); }
         .conn-field em { font-style: normal; font-weight: 400; color: var(--text-secondary); }
@@ -198,7 +196,7 @@
         .conn-note { font-size: 0.86rem; color: var(--text-secondary); margin-top: 0.75rem; line-height: 1.5; }
         .settings-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.9rem; flex-wrap: wrap; }
         .settings-msg { font-size: 0.8rem; }
-        .settings-layout { display: grid; grid-template-columns: 190px 1fr; gap: 1rem; max-width: 1100px; margin: 0 auto 1rem; align-items: start; }
+        .settings-layout { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 1.25rem; max-width: 1400px; margin: 0 0 1rem; padding: 1rem 1rem 0; align-items: start; }
         .settings-side { display: flex; flex-direction: column; gap: 0.25rem; position: sticky; top: 1rem; }
         .settings-side button { text-align: left; padding: 0.55rem 0.8rem; border-radius: 6px; border: 1px solid transparent; background: none; color: var(--text-secondary); font-size: 0.85rem; font-weight: 600; cursor: pointer; }
         .settings-side button:hover { background: var(--bg-hover); color: var(--text-primary); }
@@ -221,6 +219,21 @@
         .set-libs { margin-top: 0.75rem; border-collapse: collapse; font-size: 0.8rem; }
         .set-libs th, .set-libs td { text-align: left; padding: 0.3rem 0.9rem 0.3rem 0; border-bottom: 1px solid var(--border); }
         .set-libs th { color: var(--text-secondary); font-weight: 600; }
+        .src-wrap { overflow-x: auto; margin-bottom: 0.5rem; }
+        .src-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+        .src-table th, .src-table td { text-align: left; padding: 0.55rem 0.75rem 0.55rem 0; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        .src-table th { color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
+        .src-table td { color: var(--text-primary); }
+        .src-url { font-family: monospace; font-size: 0.82rem; word-break: break-all; }
+        .src-actions { white-space: nowrap; text-align: right; }
+        .src-actions .btn { font-size: 0.78rem; padding: 0.3rem 0.6rem; }
+        .src-pill { display: inline-block; margin-left: 0.4rem; padding: 0.08rem 0.5rem; border-radius: 999px; font-size: 0.74rem; font-weight: 600; border: 1px solid var(--border); color: var(--text-secondary); }
+        .src-pill.on { border-color: var(--success); color: var(--success); }
+        .src-pill.primary { border-color: var(--accent); color: var(--accent); }
+        .src-form { margin-top: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); }
+        .src-form-title { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.8rem; }
+        .src-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 1.25rem; }
+        .src-fields .set-field { max-width: none; }
         .acct-menu { position: relative; }
         .acct-btn { display: inline-flex; align-items: center; gap: 0.4rem; }
         .acct-drop { display: none; position: absolute; right: 0; top: calc(100% + 4px); min-width: 150px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.35); z-index: 200; overflow: hidden; }
@@ -1661,6 +1674,7 @@
         <div class="settings-layout">
             <nav class="settings-side" id="settingsSide">
                 <button data-sec="dispatcharr" onclick="showSettingsSection('dispatcharr')">Dispatcharr</button>
+                <button data-sec="providers" onclick="showSettingsSection('providers')">Providers (XC)</button>
                 <button data-sec="plex" onclick="showSettingsSection('plex')">Plex</button>
                 <button data-sec="tmdb" onclick="showSettingsSection('tmdb')">TMDB</button>
                 <button data-sec="streaming" onclick="showSettingsSection('streaming')">Streaming</button>
@@ -1670,8 +1684,8 @@
                 <div class="panel-body">
                     <p class="set-intro" id="setIntro"></p>
                     <div id="setFields"></div>
-                    <p class="conn-note">Saved values replace the ones from the compose file and are used right away. Keys, tokens and passwords are stored encrypted and are never shown again; leave one blank to keep it.</p>
-                    <div class="settings-actions">
+                    <p class="conn-note" id="setNote">Saved values are used right away. Keys, tokens and passwords are stored encrypted and are never shown again; leave one blank to keep it.</p>
+                    <div class="settings-actions" id="setActions">
                         <button class="btn btn-outline" id="setTestBtn" onclick="testSettings(this)">Test</button>
                         <button class="btn btn-primary" onclick="saveSettings(this)">Save</button>
                         <span id="setMsg" class="settings-msg"></span>
@@ -3990,21 +4004,18 @@
         let _runArchive = [];
 
         // --- Settings tab: one section per dependency ---
-        // [key, label, help, example, kind, mode]; kind: text | secret | url | number | path | mode | bool
+        // [key, label, help, example, kind]; kind: text | secret | url | number | path | bool. A section with
+        // list: instead of fields shows a table of saved entries (Dispatcharr instances, provider accounts).
         const SETTINGS_SECTIONS = {
             dispatcharr: {
                 title: 'Dispatcharr',
-                intro: 'Dispatcharr is where the movie and series catalog comes from, and every stream plays through its VOD proxy. The bridge never contacts your provider directly.',
-                fields: [
-                    ['CONNECTION_MODE', 'Connection type', 'Dispatcharr is the normal setup. Provider (XC) only stores a provider login for setups without Dispatcharr; catalog and playback still need Dispatcharr until XC-only mode is built.', '', 'mode'],
-                    ['DISPATCHARR_URL', 'Dispatcharr URL', 'The address the bridge uses to reach Dispatcharr, including the port. Use the container name if both run in the same Docker network.', 'http://dispatcharr:9191', 'url', 'dispatcharr'],
-                    ['DISPATCHARR_API_KEY', 'API key', 'Lets the bridge read the VOD catalog. Create one in Dispatcharr under Settings > API Keys (or your user profile).', 'a long string of letters and numbers', 'secret', 'dispatcharr'],
-                    ['DISPATCHARR_XC_USERNAME', 'XC username', 'Optional. A Dispatcharr user with XC access; only older XC-style stream links use it.', 'plexbridge', 'text', 'dispatcharr'],
-                    ['DISPATCHARR_XC_PASSWORD', 'XC password', 'Optional. The XC password of that Dispatcharr user.', '', 'secret', 'dispatcharr'],
-                    ['XC_SERVER_URL', 'Provider server URL', 'The XC server address your provider gave you.', 'http://provider.example:8080', 'url', 'xc'],
-                    ['XC_USERNAME', 'Provider username', 'Your provider login name.', '', 'text', 'xc'],
-                    ['XC_PASSWORD', 'Provider password', 'Your provider password.', '', 'secret', 'xc'],
-                ],
+                intro: 'Dispatcharr is where the movie and series catalog comes from, and every stream plays through its VOD proxy. You can keep several instances here; the primary one is used for catalog sync and playback. The bridge never contacts your provider directly.',
+                list: 'dispatcharr',
+            },
+            providers: {
+                title: 'Providers (XC)',
+                intro: 'The provider (XC) accounts behind your Dispatcharr instances, kept here as a record with their limits. The bridge never connects to a provider itself: every stream goes through Dispatcharr, so these logins are stored encrypted and are not tested from here.',
+                list: 'providers',
             },
             plex: {
                 title: 'Plex',
@@ -4053,16 +4064,12 @@
 
         function sourceLabel(f) {
             if (f.unreadable) return '<em class="set-src warn">saved value could not be decrypted (settings key changed), re-enter it</em>';
-            return {settings: '<em class="set-src">saved in app</em>', compose: '<em class="set-src">from compose</em>', default: '<em class="set-src">default</em>'}[f.source] || '';
+            return {settings: '<em class="set-src">saved</em>', default: '<em class="set-src">default</em>'}[f.source] || '';
         }
 
         const escAttr = v => escapeHtml(v ?? '').replace(/"/g, '&quot;');
 
         function settingsInput(key, kind, example, f) {
-            if (kind === 'mode') {
-                return `<div class="conn-modes">${[['dispatcharr', 'Dispatcharr'], ['xc', 'Provider (XC login only)']].map(([v, l]) =>
-                    `<label><input type="radio" name="set_${key}" value="${v}" ${f.value === v ? 'checked' : ''} onchange="showSettingsMode()"> ${l}</label>`).join('')}</div>`;
-            }
             if (kind === 'bool') {
                 const on = String(f.value).toLowerCase() === 'true';
                 return `<select id="set_${key}"><option value="true" ${on ? 'selected' : ''}>Redirect</option><option value="false" ${on ? '' : 'selected'}>Proxy</option></select>`
@@ -4088,21 +4095,23 @@
             document.getElementById('setTestBtn').style.display = def.test === false ? 'none' : '';
             document.getElementById('setMsg').textContent = '';
             document.getElementById('setResult').innerHTML = '';
-            document.getElementById('setFields').innerHTML = def.fields.map(([key, label, help, example, kind, mode]) => {
+            document.getElementById('setActions').style.display = def.list ? 'none' : '';
+            document.getElementById('setNote').style.display = def.list ? 'none' : '';
+            if (def.list) {
+                document.getElementById('setFields').innerHTML = '';
+                sourceEdit = null;
+                loadSources(def.list);
+                return;
+            }
+            document.getElementById('setFields').innerHTML = def.fields.map(([key, label, help, example, kind]) => {
                 const f = vals[key] || {};
-                const eg = example && kind !== 'mode' && kind !== 'bool' ? ` <span class="set-eg">Example: ${escapeHtml(example)}</span>` : '';
-                return `<div class="set-field" ${mode ? `data-mode="${mode}"` : ''}>
+                const eg = example && kind !== 'bool' ? ` <span class="set-eg">Example: ${escapeHtml(example)}</span>` : '';
+                return `<div class="set-field">
                     <label class="set-label" for="set_${key}">${label} ${sourceLabel(f)}</label>
                     ${settingsInput(key, kind, example, f)}
                     <div class="set-help">${escapeHtml(help)}${eg}</div>
                 </div>`;
             }).join('');
-            showSettingsMode();
-        }
-
-        function showSettingsMode() {
-            const mode = document.querySelector('input[name="set_CONNECTION_MODE"]:checked')?.value;
-            document.querySelectorAll('#setFields .set-field[data-mode]').forEach(el => el.style.display = !mode || el.dataset.mode === mode ? '' : 'none');
         }
 
         function clearSecret(e, key) {
@@ -4110,16 +4119,14 @@
             settingsReset.add(key);
             const input = document.getElementById('set_' + key);
             input.value = '';
-            input.placeholder = 'cleared on Save (the compose value is used, if any)';
+            input.placeholder = 'cleared on Save';
             e.target.remove();
         }
 
         function settingsForm() {
             const body = {_reset: [...settingsReset]};
-            SETTINGS_SECTIONS[settingsSection].fields.forEach(([key, , , , kind]) => {
-                body[key] = kind === 'mode'
-                    ? (document.querySelector(`input[name="set_${key}"]:checked`)?.value || 'dispatcharr')
-                    : document.getElementById('set_' + key).value.trim();
+            SETTINGS_SECTIONS[settingsSection].fields.forEach(([key]) => {
+                body[key] = document.getElementById('set_' + key).value.trim();
             });
             return body;
         }
@@ -4153,6 +4160,199 @@
             showSettingsSection(settingsSection);
             msg.style.color = 'var(--success)';
             msg.textContent = 'Saved';
+        }
+
+        // --- Settings lists: Dispatcharr instances and provider (XC) accounts ---
+        // [key, label, help, example, kind]
+        const SOURCE_FORMS = {
+            dispatcharr: {
+                noun: 'Dispatcharr instance',
+                empty: 'No Dispatcharr instance yet. Add one to load the catalog.',
+                fields: [
+                    ['label', 'Name', 'A name to tell your instances apart.', 'Home', 'text'],
+                    ['url', 'URL', 'The address the bridge uses to reach Dispatcharr, including the port. Use the container name if both run in the same Docker network.', 'http://dispatcharr:9191', 'text'],
+                    ['api_key', 'API key', 'Lets the bridge read the VOD catalog. Create one in Dispatcharr under Settings > API Keys (or your user profile).', '', 'secret'],
+                    ['xc_username', 'XC username', 'Optional. A Dispatcharr user with XC access; only older XC-style stream links use it.', 'plexbridge', 'text'],
+                    ['xc_password', 'XC password', 'Optional. The XC password of that Dispatcharr user.', '', 'secret'],
+                ],
+            },
+            providers: {
+                noun: 'provider account',
+                empty: 'No provider accounts yet.',
+                fields: [
+                    ['name', 'Name', 'A name to tell your accounts apart.', 'Main provider', 'text'],
+                    ['base_url', 'Server URL', 'The XC server address your provider gave you.', 'http://provider.example:8080', 'text'],
+                    ['username', 'Username', 'Your provider login name.', '', 'text'],
+                    ['password', 'Password', 'Your provider password.', '', 'secret'],
+                    ['max_streams', 'Max streams', 'How many streams the account allows at once.', '1', 'number'],
+                    ['priority', 'Priority', 'The order Dispatcharr prefers this account in; 1 comes first.', '1', 'number'],
+                ],
+            },
+        };
+        let sourceKind = 'dispatcharr';
+        let sourceRows = [];
+        let sourceEdit = null;   // the row being edited, {} while adding, null when the form is closed
+        const sourceReset = new Set();
+
+        // The Save/Test bar (and its message) is hidden on list sections, so messages go below the list.
+        function sourceMsg(text, ok) {
+            const msg = document.getElementById('setResult');
+            msg.style.marginTop = '0.6rem';
+            msg.style.color = ok === undefined ? 'var(--text-secondary)' : ok ? 'var(--success)' : 'var(--danger)';
+            msg.textContent = text;
+        }
+
+        // Every change answers with the whole list again, or {error}.
+        function takeSources(r) {
+            if (!Array.isArray(r)) { sourceMsg(r?.error || 'Request failed', false); return false; }
+            sourceRows = r;
+            renderSources();
+            return true;
+        }
+
+        async function loadSources(kind) {
+            sourceKind = kind;
+            takeSources(await fetchJSON(`/api/sources/${kind}`));
+        }
+
+        function sourceSecret(r, key) {
+            if ((r.unreadable || []).includes(key)) return '<span class="set-src warn">re-enter</span>';
+            return r['has_' + key] ? 'saved' : '<span style="color:var(--text-secondary)">none</span>';
+        }
+
+        function renderSources() {
+            const form = SOURCE_FORMS[sourceKind];
+            const btn = (label, call, cls = 'btn-outline') => `<button class="btn ${cls}" onclick="${call}">${label}</button>`;
+            let table;
+            if (sourceKind === 'dispatcharr') {
+                table = `<tr><th>Name</th><th>URL</th><th>API key</th><th>Status</th><th></th></tr>` + sourceRows.map(r => `<tr>
+                    <td>${escapeHtml(r.label)}${r.primary ? '<span class="src-pill primary">Primary</span>' : ''}</td>
+                    <td class="src-url">${escapeHtml(r.url)}</td>
+                    <td>${sourceSecret(r, 'api_key')}</td>
+                    <td id="srcStatus${r.id}">${r.primary ? 'Used for catalog and playback' : 'Standby'}</td>
+                    <td class="src-actions">${btn('Test', `testSource(this, ${r.id})`)}
+                        ${r.primary ? '' : btn('Make primary', `makePrimary(${r.id})`)}
+                        ${btn('Edit', `editSource(${r.id})`)} ${btn('Delete', `deleteSource(${r.id})`, 'btn-danger')}</td></tr>`).join('');
+            } else {
+                table = `<tr><th>Name</th><th>Server URL</th><th>Username</th><th>Password</th><th>Max streams</th><th>Priority</th><th></th></tr>` + sourceRows.map(r => `<tr>
+                    <td>${escapeHtml(r.name)}<span class="src-pill ${r.active ? 'on' : ''}">${r.active ? 'Active' : 'Inactive'}</span></td>
+                    <td class="src-url">${escapeHtml(r.base_url)}</td>
+                    <td>${escapeHtml(r.username) || '<span style="color:var(--text-secondary)">none</span>'}</td>
+                    <td>${sourceSecret(r, 'password')}</td>
+                    <td>${r.max_streams}</td>
+                    <td>${r.priority}</td>
+                    <td class="src-actions">${btn(r.active ? 'Deactivate' : 'Activate', `setProviderActive(${r.id}, ${!r.active})`)}
+                        ${btn('Edit', `editSource(${r.id})`)} ${btn('Delete', `deleteSource(${r.id})`, 'btn-danger')}</td></tr>`).join('');
+            }
+            document.getElementById('setFields').innerHTML = (sourceRows.length
+                ? `<div class="src-wrap"><table class="src-table">${table}</table></div>`
+                : `<p class="set-help">${form.empty}</p>`)
+                + (sourceEdit ? sourceFormHtml() : `<div class="settings-actions">${btn('Add ' + form.noun, 'editSource(null)', 'btn-primary')}</div>`);
+        }
+
+        function sourceFormHtml() {
+            const form = SOURCE_FORMS[sourceKind];
+            const r = sourceEdit;
+            const fields = form.fields.map(([key, label, help, example, kind]) => {
+                let input;
+                if (kind === 'secret') {
+                    const has = r['has_' + key] && !sourceReset.has(key);
+                    input = `<input id="src_${key}" type="password" autocomplete="new-password" placeholder="${has ? 'saved (hidden) - type to replace' : 'not set'}">`
+                        + (has ? ` <a href="#" class="set-clear" onclick="clearSourceSecret(event,'${key}')">Clear saved value</a>` : '');
+                } else {
+                    const value = r.id ? r[key] : (kind === 'number' ? example : '');
+                    input = `<input id="src_${key}" type="text" ${kind === 'number' ? 'inputmode="numeric"' : ''} autocomplete="off" value="${escapeHtml(String(value ?? ''))}" placeholder="${escapeHtml(example)}">`;
+                }
+                const eg = example && kind !== 'secret' ? ` <span class="set-eg">Example: ${escapeHtml(example)}</span>` : '';
+                return `<div class="set-field"><label class="set-label" for="src_${key}">${label}</label>${input}<div class="set-help">${escapeHtml(help)}${eg}</div></div>`;
+            }).join('');
+            return `<div class="src-form">
+                <div class="src-form-title">${r.id ? 'Edit' : 'Add'} ${form.noun}</div>
+                <div class="src-fields">${fields}</div>
+                <div class="settings-actions">
+                    ${sourceKind === 'dispatcharr' ? '<button class="btn btn-outline" onclick="testSourceForm(this)">Test</button>' : ''}
+                    <button class="btn btn-primary" onclick="saveSource(this)">Save</button>
+                    <button class="btn btn-outline" onclick="editSource(undefined)">Cancel</button>
+                </div>
+            </div>`;
+        }
+
+        // id: a row to edit, null to add one, undefined to close the form.
+        function editSource(id) {
+            sourceEdit = id === undefined ? null : id === null ? {} : sourceRows.find(r => r.id === id);
+            sourceReset.clear();
+            sourceMsg('');
+            renderSources();
+            if (sourceEdit) document.getElementById('src_' + SOURCE_FORMS[sourceKind].fields[0][0]).focus();
+        }
+
+        function clearSourceSecret(e, key) {
+            e.preventDefault();
+            sourceReset.add(key);
+            document.getElementById('src_' + key).placeholder = 'cleared on Save';
+            e.target.remove();
+        }
+
+        function sourceBody() {
+            const body = {_reset: [...sourceReset]};
+            SOURCE_FORMS[sourceKind].fields.forEach(([key]) => body[key] = document.getElementById('src_' + key).value.trim());
+            return body;
+        }
+
+        async function sourceRequest(url, method, body) {
+            return fetchJSON(url, {method, headers: {'Content-Type': 'application/json'}, body: body === undefined ? undefined : JSON.stringify(body)});
+        }
+
+        async function saveSource(btn) {
+            btn.disabled = true;
+            sourceMsg('Saving...');
+            const id = sourceEdit.id;
+            const r = await sourceRequest(`/api/sources/${sourceKind}${id ? '/' + id : ''}`, id ? 'PUT' : 'POST', sourceBody());
+            btn.disabled = false;
+            if (!Array.isArray(r)) { sourceMsg(r?.error || 'Save failed', false); return; }
+            sourceEdit = null;
+            takeSources(r);
+            sourceMsg('Saved', true);
+        }
+
+        async function testSourceForm(btn) {
+            btn.disabled = true;
+            sourceMsg('Testing...');
+            const {url, api_key} = sourceBody();
+            const r = await sourceRequest('/api/sources/dispatcharr/test', 'POST', {id: sourceEdit.id, url, api_key});
+            btn.disabled = false;
+            sourceMsg(r?.message || r?.error || 'No response', !!r?.ok);
+        }
+
+        async function testSource(btn, id) {
+            const cell = document.getElementById('srcStatus' + id);
+            btn.disabled = true;
+            cell.style.color = 'var(--text-secondary)';
+            cell.textContent = 'Testing...';
+            const r = await sourceRequest('/api/sources/dispatcharr/test', 'POST', {id});
+            btn.disabled = false;
+            cell.style.color = r?.ok ? 'var(--success)' : 'var(--danger)';
+            cell.textContent = r?.message || r?.error || 'No response';
+        }
+
+        async function makePrimary(id) {
+            const row = sourceRows.find(r => r.id === id);
+            if (!confirm(`Make "${row.label}" the primary Dispatcharr?\n\nCatalog sync and playback switch to it right away. Movie IDs differ between Dispatcharr instances, so only do this for the same Dispatcharr at a new address, or before any movies are activated: the next catalog refresh removes movies the new instance does not have, including activated ones.`)) return;
+            sourceEdit = null;
+            if (takeSources(await sourceRequest(`/api/sources/dispatcharr/${id}/primary`, 'POST'))) sourceMsg(`${row.label} is now primary`, true);
+        }
+
+        async function deleteSource(id) {
+            const row = sourceRows.find(r => r.id === id);
+            const name = row.label || row.name;
+            const more = row.primary ? '\n\nIt is the primary instance; the next one in the list becomes primary.' : '';
+            if (!confirm(`Delete ${SOURCE_FORMS[sourceKind].noun} "${name}"?${more}`)) return;
+            sourceEdit = null;
+            if (takeSources(await sourceRequest(`/api/sources/${sourceKind}/${id}`, 'DELETE'))) sourceMsg(`Deleted ${name}`, true);
+        }
+
+        async function setProviderActive(id, active) {
+            takeSources(await sourceRequest(`/api/sources/providers/${id}/active`, 'POST', {active}));
         }
 
         // --- Account menu and profile ---
