@@ -2,7 +2,7 @@
 # =============================================================================
 # VOD Plex Bridge — Dispatcharr Data Dump
 # =============================================================================
-# Extracts stream mappings, account info, and category mappings from your
+# Extracts stream mappings, account info, category mappings, and movie metadata from your
 # Dispatcharr instance. The bridge needs these files to know which movies
 # belong to which provider accounts and categories.
 #
@@ -193,5 +193,34 @@ with open('/tmp/series_category_mapping.json', 'w') as f:
 copy_out series_category_mapping.json
 SCAT_COUNT=$(python3 -c "import json; print(len(json.load(open('$BRIDGE_DATA_DIR/series_category_mapping.json'))))" 2>/dev/null || echo "?")
 echo "$SCAT_COUNT series categories"
+
+# --- 5. Movie Metadata ---
+# Every movie's metadata in the same shape as Dispatcharr's /api/vod/movies/
+# responses. The bridge syncs from this file instead of making one API call
+# per movie (one query here vs. tens of thousands of HTTP requests).
+echo -n "  Dumping movie metadata... "
+docker exec "$DISPATCHARR_CONTAINER" python3 -c "
+import os, sys, json, logging
+logging.disable(logging.CRITICAL)
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dispatcharr.settings')
+sys.path.insert(0, '/app')
+sys.stdout = open(os.devnull, 'w')
+sys.stderr = open(os.devnull, 'w')
+import django; django.setup()
+from django.apps import apps
+Movie = apps.get_model('vod', 'Movie')
+movies = []
+for m in Movie.objects.values('id', 'uuid', 'name', 'year', 'rating', 'genre', 'description',
+                              'tmdb_id', 'imdb_id', 'custom_properties', 'logo__url').iterator():
+    logo_url = m.pop('logo__url')
+    m['uuid'] = str(m['uuid'])
+    m['logo'] = {'url': logo_url} if logo_url else None
+    movies.append(m)
+with open('/tmp/movie_metadata.json', 'w') as f:
+    json.dump(movies, f, default=str)
+"
+copy_out movie_metadata.json
+MOVIE_COUNT=$(python3 -c "import json; print(len(json.load(open('$BRIDGE_DATA_DIR/movie_metadata.json'))))" 2>/dev/null || echo "?")
+echo "$MOVIE_COUNT movies"
 
 echo "$(date): Dump complete."

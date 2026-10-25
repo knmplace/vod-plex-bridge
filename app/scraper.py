@@ -92,7 +92,137 @@ async def _upsert_movie(db, movie):
     ))
 
 
-BATCH_SIZE = 50
+MOVIE_METADATA_FILE = os.environ.get("MOVIE_METADATA_FILE", "/data/movie_metadata.json")
+CATEGORY_MAPPING_FILE = os.environ.get("CATEGORY_MAPPING_FILE", "/data/category_mapping.json")
+# Dispatcharr's Postgres runs out of shared memory and returns 500s on list pages above this.
+FETCH_CONCURRENCY = 4
+# Below this many ids, individual GETs beat paging the whole list.
+PAGE_LIST_MIN_IDS = 2000
+
+
+def _load_metadata_dump():
+    """Movies from the host dump keyed by id, or None when the file is missing,
+    unreadable, or left over from an older dump run than the category mapping."""
+    try:
+        mtime = os.path.getmtime(MOVIE_METADATA_FILE)
+        if os.path.exists(CATEGORY_MAPPING_FILE) and mtime < os.path.getmtime(CATEGORY_MAPPING_FILE) - 600:
+            logger.warning("Movie metadata dump is older than the category dump, using the Dispatcharr API")
+            return None
+        with open(MOVIE_METADATA_FILE) as f:
+            return {m["id"]: m for m in json.load(f)}
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        logger.warning(f"Movie metadata dump unreadable, using the Dispatcharr API: {e}")
+        return None
+
+
+async def fetch_movies(ids, progress=None) -> tuple[dict, set, int]:
+    """Fetch movie records for `ids` from Dispatcharr.
+
+    Reads the host metadata dump when there is a current one, otherwise the
+    API. Ids the dump doesn't have are looked up individually, so "gone"
+    always means a real 404. Returns (found {id: movie}, gone ids, failed count).
+    """
+    wanted = set(ids)
+    dump = await asyncio.to_thread(_load_metadata_dump)
+    if dump is None:
+        return await _fetch_movies_api(wanted, progress)
+
+    found = {i: dump[i] for i in wanted if i in dump and (dump[i].get("name") or "").strip()}
+    missing = wanted - dump.keys()
+    logger.info(f"Read {len(found)} movies from the metadata dump, {len(missing)} not in it")
+    if not missing:
+        return found, set(), 0
+    api_found, gone, failed = await _fetch_movies_api(missing, progress)
+    found.update(api_found)
+    return found, gone, failed
+
+
+async def _fetch_movies_api(wanted: set, progress=None) -> tuple[dict, set, int]:
+    """Fetch from the Dispatcharr API. Large requests page the whole list
+    concurrently (100 per page is the API cap); anything the list didn't
+    return is then looked up individually."""
+    found = {}
+    seen = set()
+    headers = {"X-API-Key": DISPATCHARR_API_KEY} if DISPATCHARR_API_KEY else {}
+    sem = asyncio.Semaphore(FETCH_CONCURRENCY)
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        async def get_page(page):
+            for attempt in range(3):
+                try:
+                    async with sem:
+                        resp = await client.get(
+                            f"{DISPATCHARR_URL}/api/vod/movies/?page={page}&page_size={PAGE_SIZE}",
+                            headers=headers)
+                    if resp.status_code == 200:
+                        return resp.json()
+                    if resp.status_code == 404:
+                        return None
+                except Exception as e:
+                    logger.warning(f"Movie list page {page} failed (attempt {attempt + 1}): {e}")
+                await asyncio.sleep(1 + attempt)
+            return None
+
+        def keep(data):
+            for m in (data or {}).get("results", []):
+                if m["id"] in wanted:
+                    seen.add(m["id"])
+                    if m.get("name", "").strip():
+                        found[m["id"]] = m
+
+        if len(wanted) >= PAGE_LIST_MIN_IDS:
+            first = await get_page(1)
+            if not first:
+                logger.error("Dispatcharr movie list unavailable, skipping fetch")
+                return found, set(), len(wanted)
+            keep(first)
+            pages = -(-int(first.get("count") or 0) // PAGE_SIZE)
+            done = 1
+            tasks = [asyncio.create_task(get_page(p)) for p in range(2, pages + 1)]
+            try:
+                for task in asyncio.as_completed(tasks):
+                    keep(await task)
+                    done += 1
+                    if progress and done % 20 == 0:
+                        await progress(f"Reading Dispatcharr catalog: page {done}/{pages}...")
+                    if _cancel:
+                        break
+            finally:
+                for t in tasks:
+                    t.cancel()
+            if _cancel:
+                return found, set(), 0
+
+        # Anything the list didn't return (moved between pages mid-read, failed page, or truly gone).
+        gone, failed = set(), 0
+        missing = sorted(wanted - seen)
+        if missing:
+            if progress:
+                await progress(f"Checking {len(missing)} movies individually...")
+
+            async def get_one(movie_id):
+                nonlocal failed
+                for attempt in range(3):
+                    try:
+                        async with sem:
+                            resp = await client.get(f"{DISPATCHARR_URL}/api/vod/movies/{movie_id}/", headers=headers)
+                        if resp.status_code == 200:
+                            m = resp.json()
+                            if m.get("name", "").strip():
+                                found[movie_id] = m
+                            return
+                        if resp.status_code == 404:
+                            gone.add(movie_id)
+                            return
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch movie {movie_id} (attempt {attempt + 1}): {e}")
+                    await asyncio.sleep(1 + attempt)
+                failed += 1
+
+            await asyncio.gather(*(get_one(m) for m in missing))
+    return found, gone, failed
 
 
 async def scrape_catalog(max_movies: int = 0, category_ids: list = None, account_ids: list = None):
@@ -115,13 +245,11 @@ async def scrape_catalog(max_movies: int = 0, category_ids: list = None, account
                 logger.info(f"Category mapping: {len(target_movie_ids)} movies across {len(category_ids)} categories")
 
                 # Populate movie_categories table for future queries
-                for dc in dump_cats:
-                    if dc["id"] in selected_cat_set:
-                        for mid in dc.get("movie_ids", []):
-                            await db.execute(
-                                "INSERT OR IGNORE INTO movie_categories (movie_id, category_id) VALUES (?, ?)",
-                                (mid, dc["id"]),
-                            )
+                await db.executemany(
+                    "INSERT OR IGNORE INTO movie_categories (movie_id, category_id) VALUES (?, ?)",
+                    [(mid, dc["id"]) for dc in dump_cats if dc["id"] in selected_cat_set
+                     for mid in dc.get("movie_ids", [])],
+                )
                 await db.commit()
             else:
                 placeholders = ",".join("?" for _ in category_ids)
@@ -173,39 +301,20 @@ async def scrape_catalog(max_movies: int = 0, category_ids: list = None, account
                 remaining = set(list(remaining)[:max_movies])
             total_target = len(remaining)
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                id_list = sorted(remaining)
-                for i in range(0, len(id_list), BATCH_SIZE):
-                    if _cancel:
-                        break
+            async def progress(msg):
+                await db.execute("UPDATE sync_state SET message = ? WHERE id = 1", (msg,))
+                await db.commit()
 
-                    batch = id_list[i:i + BATCH_SIZE]
-                    for movie_id in batch:
-                        if _cancel:
-                            break
-                        try:
-                            url = f"{DISPATCHARR_URL}/api/vod/movies/{movie_id}/"
-                            resp = await client.get(url, headers=req_headers)
-                            if resp.status_code != 200:
-                                continue
-                            movie = resp.json()
-                            if not movie.get("name", "").strip():
-                                logger.info(f"Skipping movie {movie_id}: empty name")
-                                remaining.discard(movie_id)
-                                continue
-                            await _upsert_movie(db, movie)
-                            total_synced += 1
-                            remaining.discard(movie_id)
-                        except Exception as e:
-                            logger.warning(f"Failed to fetch movie {movie_id}: {e}")
-
+            found, _gone, _failed = await fetch_movies(remaining, progress)
+            for i, movie in enumerate(found.values()):
+                if _cancel:
+                    break
+                await _upsert_movie(db, movie)
+                total_synced += 1
+                if (i + 1) % 1000 == 0:
                     await db.commit()
-                    await db.execute(
-                        "UPDATE sync_state SET message = ? WHERE id = 1",
-                        (f"Fetched {total_synced}/{total_target} movies...",),
-                    )
-                    await db.commit()
-                    await asyncio.sleep(0.05)
+                    await progress(f"Saved {total_synced}/{total_target} movies...")
+            await db.commit()
         else:
             # Full scrape: page through all movies
             async with httpx.AsyncClient(timeout=30.0) as client:

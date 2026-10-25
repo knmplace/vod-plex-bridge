@@ -15,7 +15,7 @@ from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_U
 import plex_libraries
 import plex_presence
 from database import get_db
-from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing
+from scraper import scrape_catalog, fetch_movies, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing
 from generator import generate_strm_files, sanitize_filename, write_strm_for_movie, parse_title, get_folder_name
 from stream_mapper import apply_stream_mapping_to_db, load_stream_mapping, pick_stream_for_account
 from proxy import probe_file_size, get_proxy_log, get_all_pipes, _log_event, archive_proxy_log, cleanup_old_archives, list_log_archives, get_log_archive, delete_log_archive
@@ -3347,107 +3347,62 @@ async def _run_catalog_refresh_counted() -> tuple[int, int, int, int]:
     )
     await db.commit()
 
-    req_headers = {}
-    if DISPATCHARR_API_KEY:
-        req_headers["X-API-Key"] = DISPATCHARR_API_KEY
+    # --- Phase 2 targets: movies in selected categories/providers we don't have yet ---
+    cat_movie_ids = await _wanted_movie_ids(db)
+    new_movie_ids = (cat_movie_ids - existing_id_set) if cat_movie_ids is not None else set()
+    if cat_movie_ids is None:
+        logger.info("Catalog refresh: no selected categories, skipping new movie discovery")
+    elif new_movie_ids:
+        logger.info(f"Catalog refresh: {len(new_movie_ids)} new movies found in selected categories")
+
+    async def progress(msg):
+        await db.execute("UPDATE sync_state SET message = ? WHERE id = 1", (f"Catalog refresh: {msg}",))
+        await db.commit()
+
+    # One pass over Dispatcharr's catalog covers both the existing and the new movies.
+    found, gone, failed = await fetch_movies(existing_id_set | new_movie_ids, progress)
 
     total_updated = 0
     removed = 0
-    failed = 0
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        for i, movie_id in enumerate(existing_ids):
-            if is_cancelled():
-                break
-            movie_row = existing_movies[movie_id]
-            try:
-                resp = await client.get(
-                    f"{DISPATCHARR_URL}/api/vod/movies/{movie_id}/",
-                    headers=req_headers,
-                )
-                if resp.status_code == 200:
-                    movie = resp.json()
-                    await _upsert_movie_from_api(db, movie)
-                    if movie_row["dead"]:
-                        await db.execute(
-                            "UPDATE movies SET catalog_refresh_note = ? WHERE id = ?",
-                            ("Provider data refreshed — this may have been a temporary issue. Try restoring.", movie_id),
-                        )
-                    total_updated += 1
-                elif resp.status_code == 404:
-                    # Movie no longer exists in Dispatcharr's VOD catalog at all — remove entirely.
-                    if movie_row["activated"]:
-                        await _plex_remove_movies([movie_id])
-                        _remove_strm_folders([movie_row])
-                    await db.execute("DELETE FROM movies WHERE id = ?", (movie_id,))
-                    removed += 1
-                    logger.info(f"Catalog refresh: movie {movie_id} ({movie_row['name']}) no longer in Dispatcharr — removed from catalog")
-                else:
-                    failed += 1
-            except Exception as e:
-                failed += 1
-                logger.warning(f"Catalog refresh: failed to fetch movie {movie_id}: {e}")
-
-            if (i + 1) % 50 == 0:
-                await db.commit()
+    new_added = 0
+    for i, movie_id in enumerate(existing_ids):
+        if is_cancelled():
+            break
+        movie_row = existing_movies[movie_id]
+        if movie_id in found:
+            await _upsert_movie_from_api(db, found[movie_id])
+            if movie_row["dead"]:
                 await db.execute(
-                    "UPDATE sync_state SET message = ? WHERE id = 1",
-                    (f"Catalog refresh: updated {total_updated}/{total_target} existing movies...",),
+                    "UPDATE movies SET catalog_refresh_note = ? WHERE id = ?",
+                    ("Provider data refreshed — this may have been a temporary issue. Try restoring.", movie_id),
                 )
-                await db.commit()
-            await asyncio.sleep(0.02)
+            total_updated += 1
+        elif movie_id in gone:
+            # Movie no longer exists in Dispatcharr's VOD catalog at all — remove entirely.
+            if movie_row["activated"]:
+                await _plex_remove_movies([movie_id])
+                _remove_strm_folders([movie_row])
+            await db.execute("DELETE FROM movies WHERE id = ?", (movie_id,))
+            removed += 1
+            logger.info(f"Catalog refresh: movie {movie_id} ({movie_row['name']}) no longer in Dispatcharr — removed from catalog")
+
+        if (i + 1) % 1000 == 0:
+            await db.commit()
+            await progress(f"updated {total_updated}/{total_target} existing movies...")
+
+    if not is_cancelled():
+        for movie_id in new_movie_ids:
+            if movie_id in found:
+                await _upsert_movie_from_api(db, found[movie_id])
+                new_added += 1
+        if new_movie_ids:
+            logger.info(f"Catalog refresh: added {new_added} new movies")
 
     await db.commit()
     if removed:
         strm_count = _count_strm_folders()
         await db.execute("UPDATE sync_state SET active_strm_count = ? WHERE id = 1", (strm_count,))
         await db.commit()
-
-    # --- Phase 2: Discover new movies in selected categories/providers ---
-    new_added = 0
-    if not is_cancelled():
-        cat_movie_ids = await _wanted_movie_ids(db)
-
-        if cat_movie_ids is not None:
-            # Find movies in selected categories that aren't in our catalog yet
-            new_movie_ids = cat_movie_ids - existing_id_set
-            if new_movie_ids:
-                logger.info(f"Catalog refresh: {len(new_movie_ids)} new movies found in selected categories")
-                await db.execute(
-                    "UPDATE sync_state SET message = ? WHERE id = 1",
-                    (f"Catalog refresh: adding {len(new_movie_ids)} new movies from selected categories...",),
-                )
-                await db.commit()
-
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    for i, movie_id in enumerate(sorted(new_movie_ids)):
-                        if is_cancelled():
-                            break
-                        try:
-                            resp = await client.get(
-                                f"{DISPATCHARR_URL}/api/vod/movies/{movie_id}/",
-                                headers=req_headers,
-                            )
-                            if resp.status_code == 200:
-                                movie = resp.json()
-                                await _upsert_movie_from_api(db, movie)
-                                new_added += 1
-                        except Exception as e:
-                            logger.warning(f"Catalog refresh: failed to add new movie {movie_id}: {e}")
-
-                        if (i + 1) % 50 == 0:
-                            await db.commit()
-                            await db.execute(
-                                "UPDATE sync_state SET message = ? WHERE id = 1",
-                                (f"Catalog refresh: added {new_added}/{len(new_movie_ids)} new movies...",),
-                            )
-                            await db.commit()
-                        await asyncio.sleep(0.02)
-                await db.commit()
-                logger.info(f"Catalog refresh: added {new_added} new movies")
-            else:
-                logger.info("Catalog refresh: no new movies in selected categories")
-        else:
-            logger.info("Catalog refresh: no selected categories, skipping new movie discovery")
 
     # --- Final counts ---
     count_row = await db.execute("SELECT COUNT(*) as cnt FROM movies WHERE name != ''")
@@ -3544,19 +3499,27 @@ async def _upsert_movie_from_api(db, movie):
 # --- Series / Episode routes (Part 2) ---
 
 _series_cat_mapping_mtime = 0.0
+_series_cat_mapping_lock = asyncio.Lock()
 
 
 async def _refresh_series_provider_categories():
     """Reload provider series categories from the host dump whenever the file changes."""
-    global _series_cat_mapping_mtime
-    import json as _json
-
     try:
         mtime = os.path.getmtime(SERIES_CATEGORY_MAPPING_FILE)
     except OSError:
         return
     if mtime == _series_cat_mapping_mtime:
         return
+    # The Series tab fires several requests at once; only one may rebuild the tables.
+    async with _series_cat_mapping_lock:
+        if mtime != _series_cat_mapping_mtime:
+            await _load_series_provider_categories(mtime)
+
+
+async def _load_series_provider_categories(mtime: float):
+    global _series_cat_mapping_mtime
+    import json as _json
+
     try:
         with open(SERIES_CATEGORY_MAPPING_FILE) as f:
             categories = _json.load(f)
@@ -3621,15 +3584,6 @@ async def list_series(
     if provider_category_id:
         conditions.append("s.id IN (SELECT series_id FROM series_provider_category_map WHERE category_id = ?)")
         params.append(provider_category_id)
-
-    # Adult shows stay out of the catalog unless their category is picked; a library view shows what was activated.
-    if not category_id:
-        adult = await _adult_category_ids("series_provider_categories")
-        if provider_category_id not in adult and adult:
-            conditions.append(
-                f"s.id NOT IN (SELECT series_id FROM series_provider_category_map "
-                f"WHERE category_id IN ({','.join('?' * len(adult))}))")
-            params.extend(adult)
 
     if activated_only or activated == "1":
         conditions.append("s.id IN (SELECT series_id FROM episodes WHERE activated = 1)")
