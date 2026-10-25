@@ -332,7 +332,7 @@ What a run does, in order:
 
 A Daily Run **never connects to your provider**, and it doesn't scan for dead streams.
 
-> **About the dump script:** the mapping files (`stream_mapping.json`, `category_mapping.json` and others) are produced by `setup/dump_mappings.sh`. It runs on the **Dispatcharr host**, usually from cron (see INSTALL.md). If you see STALE dump warnings day after day, that script isn't running or is failing. Check its cron entry and run it by hand once to see any errors.
+> **About the dump script:** the mapping files (`stream_mapping.json`, `category_mapping.json` and others) are produced by `setup/dump_mappings.sh`. It runs on the **Dispatcharr host** from cron (see INSTALL.md Step 5). The Daily Run asks for a fresh dump by creating a `.dump-trigger` file in the bridge's data folder; a small trigger-check script, run every minute by cron on the Dispatcharr host, sees that file and runs the dump. This only works when the bridge's data folder is on the Dispatcharr host. If you see STALE dump warnings day after day, the trigger check or the dump script isn't running or is failing. Check both cron entries and run the dump script by hand once to see any errors.
 
 ### 6.2 Dead Movies
 
@@ -453,7 +453,7 @@ Check that day's Daily Run report. The usual causes:
 - you recently switched the primary Dispatcharr.
 
 **The Daily Run shows a red STALE dump warning.**
-The host dump script didn't produce new mapping files within 3 minutes. Check its cron job on the Dispatcharr host and run `setup/dump_mappings.sh` by hand to see any errors.
+The host dump script didn't produce new mapping files within 3 minutes. Check that the trigger-check cron job (INSTALL.md Step 5) is installed on the Dispatcharr host, that the bridge's data folder is on that host, and run `setup/dump_mappings.sh` by hand to see any errors.
 
 **Settings test says "Dispatcharr refused the API key".**
 Create a new key in Dispatcharr (**Settings > API Keys**), paste it into the instance, and save. For redirect mode, the key needs admin rights.

@@ -6,7 +6,7 @@
 
 ## For Claude: How to Use This Document
 
-You are helping a user deploy VOD Plex Bridge — a Docker application that bridges VOD movies from Dispatcharr (an M3U IPTV proxy/management tool) into Plex. Your job is to guide them interactively through the setup process, asking questions at each step to gather their specific environment details.
+You are helping a user deploy VOD Plex Bridge — a Docker application that bridges VOD movies and TV series from Dispatcharr (an M3U IPTV proxy/management tool) into Plex. Your job is to guide them interactively through the setup process, asking questions at each step to gather their specific environment details.
 
 **Your approach:**
 1. Read this entire document first to understand the architecture
@@ -16,7 +16,7 @@ You are helping a user deploy VOD Plex Bridge — a Docker application that brid
 5. Work through each phase in order, confirming success before moving on
 6. If something fails, troubleshoot before continuing
 7. Adapt commands to the user's specific IPs, paths, and container names
-8. Never hardcode IPs or credentials in code — everything goes in `.env`
+8. Never hardcode IPs or credentials in code — they go in `.env` or in the app's **Settings** tab
 9. If the user gives you SSH access to their servers, you can run commands directly. If not, provide them the exact commands to run and ask them to paste the output back to you.
 
 **Tone:** Conversational but precise. Explain WHY each step matters, not just what to type. The user knows basic networking and Docker but may not know the specifics of these applications.
@@ -29,13 +29,13 @@ You are helping a user deploy VOD Plex Bridge — a Docker application that brid
 
 These must be in place BEFORE you begin. If any are missing, help the user get them set up first:
 
-1. **Dispatcharr** — An M3U IPTV proxy tool that manages IPTV provider accounts and streams. This is what the bridge reads VOD movie catalogs from. The user must have a running Dispatcharr instance with at least one active M3U account that includes VOD content. Dispatcharr repo: https://github.com/Dispatcharr/Dispatcharr
+1. **Dispatcharr** — An M3U IPTV proxy tool that manages IPTV provider accounts and streams. This is what the bridge reads VOD movie and series catalogs from. The user must have a running Dispatcharr instance with at least one active M3U account that includes VOD content, plus a **Dispatcharr API key** (created in Dispatcharr) — the bridge sends it with every catalog and stream call. Dispatcharr repo: https://github.com/Dispatcharr/Dispatcharr
 2. **Plex Media Server** — Running and accessible on the network. The bridge creates a Plex movie library from VOD content.
 3. **Docker & Docker Compose** — Installed on the machine where the bridge will run. The bridge runs as a Docker container.
 4. **Git** — To clone the repository.
 5. **Shell access** to the machine running Dispatcharr — The dump script uses `docker exec` to extract movie/category/account data from Dispatcharr's Django database directly. The user needs to be able to run `docker exec` commands against the Dispatcharr container (typically via SSH to that host, or locally if same machine).
 
-6. **rclone** — Installed on the **Plex server host** (not the bridge host). rclone mounts the bridge's HTTP endpoint as a local directory so Plex sees virtual movie files. Install from https://rclone.org/install/ or `apt install rclone`. FUSE support is also required (`apt install fuse3`).
+6. **rclone** — Installed on the **Plex server host** (not the bridge host). rclone mounts the bridge's HTTP endpoints (`/vod/` for movies, `/vod-series/` for series) as local directories so Plex sees virtual video files. Install from https://rclone.org/install/ or `apt install rclone`. FUSE support is also required (`apt install fuse3`). rclone is installed separately for now; a future version is planned to build it in.
 
 **Nice to have (optional):**
 - **TMDB API key** — Free, gives movie posters, genres, descriptions. Get one at https://www.themoviedb.org/settings/api
@@ -58,8 +58,9 @@ These must be in place BEFORE you begin. If any are missing, help the user get t
 **Key facts:**
 - The bridge NEVER connects directly to the IPTV provider — all traffic goes through Dispatcharr
 - Dispatcharr is the M3U proxy that manages IPTV accounts and streams. It handles the upstream provider connection, VPN routing, and failover. The bridge talks to Dispatcharr's API only.
-- The bridge exposes a `/vod/` HTTP endpoint that lists activated movies as virtual `.mp4` files
-- **rclone** on the Plex server mounts this endpoint as a FUSE filesystem, so Plex sees a local directory of real movie files
+- The bridge exposes a `/vod/` HTTP endpoint that lists activated movies as virtual `.mp4` files, and a `/vod-series/` endpoint that lists activated series as `Show/Season NN/` folders of episodes
+- **rclone** on the Plex server mounts these endpoints as FUSE filesystems, so Plex sees local directories of real video files
+- Playback defaults to **pipe mode**: one shared, throttled connection per title through Dispatcharr. An optional **redirect mode** (`REDIRECT_MODE=true`) sends Plex straight to Dispatcharr with a 302 instead
 - No shared storage (NFS/CIFS) is required between bridge and Plex — rclone handles it over HTTP
 - Head/tail caching (8 MB + 256 KB) lets Plex probe movies without opening provider connections
 - Probe throttle prevents Plex library scans from burning movies via rapid connection cycling
@@ -87,8 +88,9 @@ Ask the user:
    - Note: never `docker restart` Dispatcharr if it's behind gluetun — use Portainer or docker-compose
 
 4. **"Where will you run the bridge? (same host as Dispatcharr, or a different host?)"**
-   - Same host is simplest — no shared storage setup needed
-   - Different host requires a network share between bridge and Plex
+   - Same host is simplest: the dump script can write straight into the bridge's data folder, and the Daily Run can request a fresh dump on its own
+   - A different host works too, but the mapping files must be copied over (see Phase 5)
+   - No shared storage is needed between the bridge and Plex in either case — rclone reads the bridge over HTTP
 
 5. **"Where is your Plex server running? (IP address and port, usually :32400)"**
    - Example: `192.168.1.50:32400`
@@ -97,6 +99,9 @@ Ask the user:
    - If Portainer: remind them never to `docker stop/rm/run` manually
 
 ### Credentials (gather these — user may need to look them up)
+6b. **"Do you have a Dispatcharr API key? If not, create one in Dispatcharr."**
+   - Required: the bridge sends it as the `X-API-Key` header on every catalog and stream call
+
 7. **"Do you have a Plex authentication token? If not, I can help you find it."**
    - Guide them: Open Plex Web → play any media → open browser Dev Tools → Network tab → filter for `X-Plex-Token` in any request URL
    - Or: browse to `http://PLEX_IP:32400/library/sections?X-Plex-Token=YOUR_TOKEN` and look in the URL they used to access it
@@ -126,7 +131,7 @@ Before building anything, verify the three components can talk to each other.
 
 ```bash
 # From the bridge host → Dispatcharr API
-curl -s "http://DISPATCHARR_IP:PORT/api/vod/movies/?page=1&page_size=1" | head -c 200
+curl -s -H "X-API-Key: DISPATCHARR_API_KEY" "http://DISPATCHARR_IP:PORT/api/vod/movies/?page=1&page_size=1" | head -c 200
 # Should return JSON with movie data
 
 # From the bridge host → Plex (no token needed for identity)
@@ -162,22 +167,33 @@ cp docker-compose.example.yml docker-compose.yml
 Help the user fill in each value using what you gathered in Phase 1:
 
 ```bash
-# REQUIRED — fill these in with the user's actual values
-DISPATCHARR_URL=http://___:___
-PLEX_URL=http://___:32400
-PLEX_TOKEN=___
-PLEX_LIBRARY_ID=___          # They may not know this yet — set up in Phase 6
+# REQUIRED in .env
 BRIDGE_HOST=___              # LAN IP of THIS machine (not 0.0.0.0)
 BRIDGE_PORT=8585
 
 # RECOMMENDED
+SETTINGS_KEY=___             # Any long random string; encrypts secrets saved in Settings
 TZ=___                       # e.g., America/New_York, America/Los_Angeles, Europe/London
+
+# OPTIONAL here — these can be entered in the app's Settings tab instead (Phase 8)
+DISPATCHARR_URL=http://___:___
+DISPATCHARR_API_KEY=___
+PLEX_URL=http://___:32400
+PLEX_TOKEN=___
+PLEX_LIBRARY_ID=___          # They may not know this yet — set up in Phase 7
 TMDB_API_KEY=___             # or TMDB_READ_TOKEN
 
 # PATHS — defaults are usually fine
 DATA_DIR=./data
 PLEX_VOD_DIR=./plex-vod
 ```
+
+### Explain how `.env` and Settings work together
+
+- **Plex, TMDB and streaming:** a value saved in the app's **Settings** tab overrides `.env`; clearing the field falls back to `.env`.
+- **Dispatcharr:** on first start the `DISPATCHARR_*` values become the primary instance in **Settings → Dispatcharr**. After that the instance list is used and these variables are ignored.
+- **Providers (XC):** shown in Settings as read-only, a future feature. Provider logins belong in Dispatcharr; the bridge never contacts a provider.
+- Secrets saved in Settings are encrypted with `SETTINGS_KEY`. If it is not set, the bridge generates a key file in the data folder instead. If the key is lost, saved secrets must be re-entered.
 
 ### Critical: Explain BRIDGE_HOST
 
@@ -189,9 +205,9 @@ hostname -I | awk '{print $1}'   # Linux
 ipconfig | grep "IPv4"            # Windows
 ```
 
-### Critical: Explain PLEX_VOD_DIR
+### Explain PLEX_VOD_DIR
 
-Tell the user: "This is where the bridge writes `.strm` and `.nfo` files. Plex must be able to read this same directory. If bridge and Plex are on the same host, just use a local path. If they're on different hosts, both need to mount the same network share."
+Tell the user: "This is where the bridge keeps its internal `.strm`, `.nfo` and poster files. Plex does not read this folder directly — it sees movies and series through the rclone mounts set up in Phase 6 — so a plain local path is fine. No network share is needed."
 
 ---
 
@@ -200,7 +216,7 @@ Tell the user: "This is where the bridge writes `.strm` and `.nfo` files. Plex m
 ```bash
 # Create data directories
 mkdir -p data
-mkdir -p plex-vod/Movies
+mkdir -p plex-vod/Movies plex-vod/Series
 
 # Build and start
 docker compose up -d --build
@@ -214,7 +230,7 @@ docker compose logs -f
 **Test the bridge is accessible:**
 ```bash
 curl -s http://BRIDGE_HOST:8585/version
-# Should return: {"version":"0.29.3"}
+# Should return: {"version":"x.y.z"}  (the current release number)
 ```
 
 If it doesn't work:
@@ -230,9 +246,9 @@ The bridge needs mapping files that tell it which movies belong to which provide
 - You must run this script on the same machine that hosts the Dispatcharr Docker container
 - The user running the script must have permission to run `docker exec` (usually root or docker group)
 
-**The scripts are in the repo under `setup/`.** Before running, the user needs to set two environment variables:
-- `DISPATCHARR_CONTAINER` — the Docker container name for Dispatcharr (find it with `docker ps`)
+**The scripts are in the repo under `setup/`.** The script reads two environment variables:
 - `BRIDGE_DATA_DIR` — the path to the bridge's `data/` volume on the host
+- `DISPATCHARR_CONTAINER` — optional; the Docker container name for Dispatcharr (find it with `docker ps`). Leave it unset to auto-detect
 
 The dump script is `setup/dump_mappings.sh` (the only copy — the old root-level `dump_vod_data.sh`/`dump_stream_mapping.sh` were removed). It auto-detects the Dispatcharr container when `DISPATCHARR_CONTAINER` is unset and exits non-zero with a logged error if the container is missing.
 
@@ -250,9 +266,11 @@ bash setup/dump_mappings.sh
 **If Dispatcharr is on a different host than the bridge:**
 1. Copy `setup/dump_mappings.sh` to the Dispatcharr host
 2. Run it there with `BRIDGE_DATA_DIR` set to a local temp directory (e.g., `/tmp/bridge-data`)
-3. Copy the three output JSON files back to the bridge's `data/` directory:
+3. Copy the five output JSON files back to the bridge's `data/` directory:
    - `stream_mapping.json` — maps movie IDs to stream IDs and provider accounts
-   - `category_mapping.json` — maps categories to movie IDs
+   - `category_mapping.json` — maps movie categories to movie IDs
+   - `series_category_mapping.json` — maps series categories to series IDs
+   - `movie_metadata.json` — extra movie details from Dispatcharr
    - `account_credentials.json` — maps account IDs to names only (for UI labels, no credentials)
 
 **Verify the dump worked:**
@@ -271,12 +289,17 @@ If the user doesn't have shell access to the Dispatcharr host or can't run `dock
 
 ### Set up automatic updates (recommended)
 
-The mapping files should be refreshed periodically as providers add/remove VOD content:
-```bash
-crontab -e
-# Add this line (adjust paths and container name):
-0 */6 * * * DISPATCHARR_CONTAINER=your-container BRIDGE_DATA_DIR=/path/to/data /path/to/dump_mappings.sh
-```
+The catalog changes over time, and the bridge's **Daily Run** (6am) starts by asking for a fresh dump. Two cron jobs on the Dispatcharr host keep the files current:
+
+1. **A regular dump** every 12 hours:
+   ```bash
+   crontab -e
+   # Add this line (adjust paths):
+   0 */12 * * * BRIDGE_DATA_DIR=/path/to/data bash /path/to/dump_mappings.sh >> /var/log/vod-bridge-dump.log 2>&1
+   ```
+2. **A trigger check** every minute. The bridge requests a dump by creating `.dump-trigger` in its data folder, then waits up to 3 minutes for `category_mapping.json` to change. A small script run from cron (`* * * * *`) deletes the trigger file and runs the dump. The full script is in **INSTALL.md, Step 5**.
+
+The trigger check only works when the bridge's data folder is on the same host as Dispatcharr. On different hosts, use the regular dump plus a copy job. When no fresh dump arrives, the Daily Run report shows a red **STALE dump** warning and continues with the previous files.
 
 ---
 
@@ -378,6 +401,23 @@ ls /mnt/vod-bridge/
 | `--vfs-cache-mode full` | Enables full read caching — allows Plex to seek within files |
 | `--vfs-cache-max-age 10m` | Cached data expires after 10 minutes (keeps disk usage low) |
 
+### Step 4: Add the series mount (for TV series)
+
+Series are served from a second endpoint, `/vod-series/`, and need their own remote and mount. Add a second remote to the same config file:
+
+```bash
+cat >> /root/.config/rclone/rclone.conf << 'EOF'
+
+[vodbridgeseries]
+type = http
+url = http://BRIDGE_IP:8585/vod-series/
+EOF
+```
+
+Then create a second service, `rclone-vodbridge-series.service`, identical to the one above except that it mounts `vodbridgeseries:` at `/mnt/vod-bridge-series` (both in `ExecStartPre`, `ExecStart` and `ExecStop`). Enable and start it the same way.
+
+If the mounts live somewhere other than `/mnt/vod-bridge` and `/mnt/vod-bridge-series`, set the movie and series mount roots in the bridge's **Settings → Plex** (or `PLEX_MOVIE_MOUNT_ROOT` / `PLEX_SERIES_MOUNT_ROOT`) so the bridge can match its titles to Plex.
+
 ### Troubleshooting rclone
 
 | Problem | Fix |
@@ -412,30 +452,31 @@ These features download the full movie file for analysis, which opens provider c
    - Look at the URL: `...library/sections/7/...` → the ID is `7`
    - Or: `curl -s "http://PLEX_IP:32400/library/sections?X-Plex-Token=TOKEN"` → find the `key` attribute
 
-7. Update `.env` with the library ID:
-   ```
-   PLEX_LIBRARY_ID=7
-   ```
+7. Enter the library ID in the bridge UI under **Settings → Plex** (with the Plex URL and token) and use **Test** to confirm. Saved values apply without a restart. Setting `PLEX_LIBRARY_ID` in `.env` also works.
 
-8. Restart the bridge:
-   ```bash
-   docker compose restart
-   ```
+8. **For series (optional):** add a **TV Shows** library pointed at `/mnt/vod-bridge-series` with the same "OFF" settings above. Each series category can use its own Plex TV library — the Series tab offers "+ Create new Plex library" — and `PLEX_SERIES_LIBRARY_ID` is the fallback for categories without one.
 
 ---
 
 ## Phase 8: First Sync and Test
 
 1. Open the bridge UI: `http://BRIDGE_HOST:8585`
-2. Go to the **Catalog** tab
-3. Under **Providers**, select which M3U accounts to import from
-4. Under **Categories**, select movie categories
-5. Click **Sync Selected**
-6. Watch the progress — TMDB enrichment and language detection run in the background
-7. Switch to **Browse** to see imported movies
-8. Click the ⚡ (lightning) button on a movie card to activate it
-9. In Plex, scan the VOD library — the movie should appear
-10. Try playing it in Plex
+2. **Create the account.** The first visit asks for a username and password; this becomes the sign-in for the UI (sessions last 30 days). Playback endpoints (`/vod/`, `/vod-series/`, `/stream/`) stay open so Plex and rclone work without signing in.
+3. Open **Settings** and fill in anything not set in `.env`:
+   - **Dispatcharr** — URL and API key (the first instance becomes primary); use **Test**
+   - **Plex** — URL, token, library ID; use **Test**
+   - **TMDB** — API key or read token (optional)
+4. Go to the **Catalog** tab and click **Reload Categories**
+5. Under **Providers**, select which M3U accounts to import from
+6. Under **Categories**, select movie categories
+7. Click **Sync Selected**
+8. Watch the progress — TMDB enrichment and language detection run in the background
+9. Switch to the **Movies** tab to see imported movies
+10. Click **Activate** on a movie card
+11. In Plex, scan the VOD library — the movie should appear
+12. Try playing it in Plex
+
+Series work the same way from the **Series** tab: pick a show, then activate it whole, by season, or by episode. See `docs/USER_GUIDE.md` for details.
 
 ### What to check after activation:
 - The bridge's **Proxy Log** tab should show:
@@ -451,10 +492,8 @@ These features download the full movie file for analysis, which opens provider c
 
 ## Phase 9: Post-Setup Recommendations
 
-### Scheduled Refresh
-In the bridge UI → Settings tab:
-- Set refresh interval (4h / 6h / 8h / 12h)
-- This auto-syncs the catalog, re-checks stream mappings, and runs dead scans
+### Daily Run
+The bridge runs a **Daily Run** automatically at 6am; **Maintenance → Daily Updates** shows the report and has **Run Now**. It requests a fresh dump, reloads categories, refreshes the catalog against Dispatcharr's API (removing titles Dispatcharr no longer has), updates stream mappings, enriches metadata from TMDB, and detects languages. It never contacts the provider. Dead scans are manual only.
 
 ### Activate in Small Batches
 Start with 5-10 movies. Watch the proxy logs. Confirm clean behavior before activating more. The probe throttle protects against Plex scan burns, but it's still good practice.
@@ -487,8 +526,8 @@ Bridge, Dispatcharr, and Plex all run on the same machine. Simplest setup.
 
 ### Pattern C: All on Different Hosts
 - Each component on a separate machine
-- Dump script runs on Dispatcharr host, JSON files copied to bridge host
-- rclone on the Plex host mounts the bridge's `/vod/` endpoint
+- Dump script runs on Dispatcharr host, JSON files copied to bridge host (the Daily Run's dump trigger can't be used in this layout — rely on the regular dump plus the copy job)
+- rclone on the Plex host mounts the bridge's `/vod/` and `/vod-series/` endpoints
 - `BRIDGE_HOST` = LAN IP of the bridge host
 - Bridge needs network access to both Dispatcharr (API) and Plex (API)
 - Plex host needs HTTP access to the bridge port (default 8585)
@@ -524,13 +563,14 @@ If someone actually hits **Play** (not a scan), the throttle resets — real pla
 
 | Problem | Likely Cause | Fix |
 |---------|-------------|-----|
-| Bridge can't reach Dispatcharr | Wrong IP or port, firewall, gluetun port mapping | Test with `curl` from inside the container |
+| Bridge can't reach Dispatcharr | Wrong IP or port, missing API key, firewall, gluetun port mapping | Use **Test** in Settings → Dispatcharr, or `curl` with the `X-API-Key` header from inside the container |
 | Plex can't play movies | `BRIDGE_HOST` wrong (set to 0.0.0.0 or 127.0.0.1) | Set to the machine's LAN IP |
 | 0 categories in UI | Dump script hasn't run or produced empty files | Run `setup/dump_mappings.sh`, check JSON files |
 | Movies in bridge but not Plex | Library path mismatch, Plex hasn't scanned | Verify paths match, trigger Plex library scan |
 | Stream stops after ~10 min | Old version bug or missing nginx config | Update to latest, check Dispatcharr nginx for `uwsgi_buffering off` |
-| Movie "burned" after activation | Plex scan opened too many connections | Update to v0.29.1+ (has probe throttle) |
-| "Database is locked" | Should not occur in v0.27.1+ | Restart bridge container |
+| Movie "burned" after activation | Plex scan opened too many connections, or preview/intro/credit analysis is on | Turn those Plex library options OFF; update to the latest release |
+| Daily Run shows **STALE dump** | No fresh mapping files arrived within 3 minutes | Check the trigger-check cron (INSTALL.md Step 5) and `/var/log/vod-bridge-dump.log` on the Dispatcharr host |
+| Can't sign in to the UI | Forgotten password | There is no reset in the UI; see "I forgot my password" in `docs/USER_GUIDE.md` |
 
 ---
 
@@ -538,7 +578,7 @@ If someone actually hits **Play** (not a scan), the throttle resets — real pla
 
 ### Data Flow
 ```
-Dispatcharr DB → dump_mappings.sh → JSON files → Bridge reads at startup
+Dispatcharr DB → dump_mappings.sh → JSON files → Bridge reads on sync / Daily Run
                                                      ↓
 Dispatcharr API → Bridge scraper → SQLite DB → UI shows catalog
                                                      ↓
@@ -559,25 +599,37 @@ User stops → 30s idle timeout → clean disconnect → buffer retained on disk
 | `/data/vod_bridge.db` | SQLite database (movies, settings, cache) |
 | `/data/stream_mapping.json` | Movie → provider stream ID mapping |
 | `/data/category_mapping.json` | Category → movie ID mapping |
+| `/data/series_category_mapping.json` | Series category → series ID mapping |
+| `/data/movie_metadata.json` | Extra movie details from Dispatcharr |
 | `/data/account_credentials.json` | Account IDs → names for UI labels (no credentials) |
 | `/data/buffers/` | Disk buffer files during playback |
 | `/plex-vod/Movies/` | .strm + .nfo + poster output for Plex |
 | `/plex-vod/Movies/.dead/` | Movies marked dead (moved here) |
+| `/plex-vod/Series/` | Series folders for the `/vod-series/` listing |
 
 ### Environment Variables (Full Reference)
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `DISPATCHARR_URL` | Yes | `http://localhost:9191` | Dispatcharr API endpoint |
-| `PLEX_URL` | Yes | — | Plex server URL |
-| `PLEX_TOKEN` | Yes | — | Plex auth token |
-| `PLEX_LIBRARY_ID` | Yes | `7` | Plex library section for VOD |
+| `DISPATCHARR_URL` | Yes* | `http://localhost:9191` | Dispatcharr API endpoint (copied once into Settings → Dispatcharr) |
+| `DISPATCHARR_API_KEY` | Yes* | — | Dispatcharr API key, sent with every catalog and stream call |
+| `PLEX_URL` | Yes* | — | Plex server URL |
+| `PLEX_TOKEN` | Yes* | — | Plex auth token |
+| `PLEX_LIBRARY_ID` | Yes* | `7` | Plex library section for VOD movies |
+| `PLEX_SERIES_LIBRARY_ID` | No | — | Fallback Plex TV library for series categories without their own |
+| `PLEX_MOVIE_MOUNT_ROOT` | No | `/mnt/vod-bridge` | Movie rclone mount path on the Plex host |
+| `PLEX_SERIES_MOUNT_ROOT` | No | `/mnt/vod-bridge-series` | Series rclone mount path on the Plex host |
 | `BRIDGE_HOST` | Yes | `0.0.0.0` | LAN IP for .strm URLs |
 | `BRIDGE_PORT` | No | `8585` | Bridge HTTP port |
 | `TZ` | No | `UTC` | Container timezone |
 | `TMDB_API_KEY` | No | — | TMDB metadata enrichment |
 | `TMDB_READ_TOKEN` | No | — | TMDB v4 token (alternative) |
-| `DISPATCHARR_API_KEY` | No | — | For VPN IP display |
+| `SETTINGS_KEY` | Recommended | — | Encrypts secrets saved in Settings |
+| `REDIRECT_MODE` | No | `false` | `true` = 302 to Dispatcharr instead of the pipe (restart required) |
+| `MAX_CONCURRENT_PER_TITLE` | No | `2` | Session cap per title in redirect mode |
 | `DB_PATH` | No | `/data/vod_bridge.db` | SQLite path |
 | `CATEGORY_MAPPING_FILE` | No | `/data/category_mapping.json` | Category dump path |
 | `STREAM_MAPPING_FILE` | No | `/data/stream_mapping.json` | Stream dump path |
 | `STRM_OUTPUT_DIR` | No | `/plex-vod/Movies` | Where .strm files go |
+| `STRM_SERIES_OUTPUT_DIR` | No | `/plex-vod/Series` | Where series folders go |
+
+\* Required, but can be left out of `.env` and entered in **Settings** after the first start. Plex, TMDB and streaming values saved in Settings override `.env`.
