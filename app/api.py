@@ -544,6 +544,15 @@ async def list_genres(min_count: int = 5):
     return {"genres": genres}
 
 
+_ADULT_NAME = re.compile(r"\b(adult|xxx|porn)\b|18\+", re.I)
+
+
+async def _adult_category_ids(table: str) -> list[int]:
+    db = await get_db()
+    rows = await db.execute(f"SELECT id, name FROM {table}")
+    return [r["id"] for r in await rows.fetchall() if _ADULT_NAME.search(r["name"] or "")]
+
+
 @router.get("/movies")
 async def list_movies(
     request: Request,
@@ -600,6 +609,13 @@ async def list_movies(
                 "HAVING SUM(CASE WHEN mc2.category_id IN (SELECT id FROM vod_categories WHERE hidden = 1) THEN 1 ELSE 0 END) = COUNT(*)"
                 ")"
             )
+
+        # Adult movies stay out of Browse unless an adult category is picked in the Category filter.
+        adult = await _adult_category_ids("vod_categories")
+        if adult and not set(category_ids) & set(adult):
+            ph = ",".join("?" for _ in adult)
+            conditions.append(f"m.id NOT IN (SELECT movie_id FROM movie_categories WHERE category_id IN ({ph}))")
+            params.extend(adult)
 
         if genres:
             conditions.append("(" + " OR ".join("m.genre LIKE ?" for _ in genres) + ")")
@@ -3601,10 +3617,19 @@ async def list_series(
         conditions.append("s.category_id = ?")
         params.append(category_id)
 
+    await _refresh_series_provider_categories()
     if provider_category_id:
-        await _refresh_series_provider_categories()
         conditions.append("s.id IN (SELECT series_id FROM series_provider_category_map WHERE category_id = ?)")
         params.append(provider_category_id)
+
+    # Adult shows stay out of the catalog unless their category is picked; a library view shows what was activated.
+    if not category_id:
+        adult = await _adult_category_ids("series_provider_categories")
+        if provider_category_id not in adult and adult:
+            conditions.append(
+                f"s.id NOT IN (SELECT series_id FROM series_provider_category_map "
+                f"WHERE category_id IN ({','.join('?' * len(adult))}))")
+            params.extend(adult)
 
     if activated_only or activated == "1":
         conditions.append("s.id IN (SELECT series_id FROM episodes WHERE activated = 1)")
