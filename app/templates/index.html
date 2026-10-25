@@ -1142,7 +1142,6 @@
                         <span class="count" id="selCount">0</span> selected
                         <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="activateSelected()">Activate</button>
                         <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="deactivateSelected()">Deactivate</button>
-                        <button class="btn btn-primary" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="detectLanguage()">Detect Language</button>
                         <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="clearSelection()">Clear</button>
                     </div>
                 </div>
@@ -3203,34 +3202,6 @@
         function getLangName(code) {
             if (code === 'unknown') return 'Unknown';
             return LANG_NAMES[code] || code.toUpperCase();
-        }
-
-        async function detectLanguage() {
-            if (!selectedMovies.size) return;
-            const ids = [...selectedMovies];
-            const btn = document.querySelector('#selectionBar .btn-primary');
-            const origText = btn.textContent;
-            btn.textContent = `Detecting (${ids.length})...`;
-            btn.disabled = true;
-            try {
-                const data = await fetchJSON('/api/movies/detect-language', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({movie_ids: ids})
-                });
-                const msg = `Detected: ${data.detected}, Skipped: ${data.skipped || 0}` +
-                    (data.no_tmdb_id ? `, No TMDB ID: ${data.no_tmdb_id}` : '');
-                alert(msg);
-                selectedMovies.clear();
-                updateSelectionBar();
-                loadMovies(currentPage);
-                refreshLanguageFilter();
-            } catch (e) {
-                alert('Language detection failed: ' + e.message);
-            } finally {
-                btn.textContent = origText;
-                btn.disabled = false;
-            }
         }
 
         async function refreshGenreFilter() {

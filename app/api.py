@@ -1896,67 +1896,6 @@ LANG_NAMES = {
 }
 
 
-@router.post("/movies/detect-language")
-async def detect_language(request: Request):
-    data = await request.json()
-    movie_ids = data.get("movie_ids", [])
-    if not movie_ids:
-        return JSONResponse(status_code=400, content={"error": "movie_ids required"})
-
-    if not tmdb_local.has_credentials():
-        return JSONResponse(status_code=400, content={"error": "TMDB API key not configured"})
-
-    db = await get_db()
-    try:
-        placeholders = ",".join("?" for _ in movie_ids)
-        rows = await db.execute(
-            f"SELECT id, tmdb_id FROM movies WHERE id IN ({placeholders}) AND tmdb_id IS NOT NULL AND tmdb_id != '' "
-            "AND COALESCE(tmdb_locked, 0) = 0",
-            movie_ids,
-        )
-        movies = await rows.fetchall()
-
-        if not movies:
-            return {"detected": 0, "skipped": len(movie_ids), "message": "No movies with TMDB IDs in selection"}
-
-        detected = 0
-        skipped = 0
-        results = []
-
-        for movie in movies:
-            try:
-                tmdb_data, local = await tmdb_local.movie_details(movie["tmdb_id"])
-                if tmdb_data is None:
-                    skipped += 1
-                    continue
-
-                lang = tmdb_data.get("original_language", "")
-                lang_name = LANG_NAMES.get(lang, lang)
-
-                await db.execute(
-                    "UPDATE movies SET language = ? WHERE id = ?",
-                    (lang, movie["id"]),
-                )
-                detected += 1
-                results.append({"id": movie["id"], "language": lang, "language_name": lang_name})
-                if not local:
-                    await asyncio.sleep(0.15)
-            except Exception as e:
-                logger.warning(f"TMDB language detect failed for movie {movie['id']}: {e}")
-                skipped += 1
-
-        await db.commit()
-        no_tmdb = len(movie_ids) - len(movies)
-        return {
-            "detected": detected,
-            "skipped": skipped,
-            "no_tmdb_id": no_tmdb,
-            "results": results,
-        }
-    finally:
-        pass
-
-
 @router.post("/movies/detect-language-all")
 async def detect_language_all():
     if not tmdb_local.has_credentials():

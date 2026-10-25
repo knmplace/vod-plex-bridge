@@ -702,6 +702,10 @@ def _clear_failure_by_movie(movie_id: int):
 # --- Proxy Activity Log ---
 MAX_LOG_ENTRIES = 200
 _proxy_log: deque = deque(maxlen=MAX_LOG_ENTRIES)
+# Redirect mode: Plex/rclone re-requests a title every minute or two while it
+# buffers. Log the redirect once per playback (or when the stream changes).
+REDIRECT_LOG_QUIET_SECS = 900
+_redirect_logged: dict[int, tuple[str, float]] = {}  # movie_id -> (url, last hit)
 LOG_ARCHIVE_DIR = os.environ.get("LOG_ARCHIVE_DIR", "/data/proxy_logs")
 LOG_ARCHIVE_MAX_DAYS = 30
 
@@ -983,7 +987,13 @@ async def vod_file(filename: str, request: Request):
             redirect_url, redirect_err, fresh = await get_redirect_url(movie_id)
             if redirect_url:
                 if fresh:
-                    _log_event("info", movie_id, "Redirecting to Dispatcharr proxy", movie_name=movie_name)
+                    now = time.time()
+                    last = _redirect_logged.get(movie_id)
+                    if not last or now - last[1] > REDIRECT_LOG_QUIET_SECS:
+                        _log_event("info", movie_id, "Redirecting to Dispatcharr proxy", movie_name=movie_name)
+                    elif last[0] != redirect_url:
+                        _log_event("info", movie_id, "Redirecting to Dispatcharr proxy (stream changed)", movie_name=movie_name)
+                    _redirect_logged[movie_id] = (redirect_url, now)
                 return Response(status_code=302, headers={"Location": redirect_url})
             _log_event("error", movie_id, f"Redirect resolve failed: {redirect_err}", movie_name=movie_name)
             err = _error_screen_response("busy", request)
