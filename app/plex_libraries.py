@@ -46,13 +46,25 @@ async def _get_section(section_id: int) -> dict | None:
     return None
 
 
+def describe_error(e: Exception) -> str:
+    # httpx timeouts stringify to "", so always lead with the type.
+    return f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+
+
 async def _set_locations(section: dict, locations: list[str]):
     # Plex replaces the whole location list on edit, so always send every path.
     params = [("agent", section["agent"]), ("language", section["language"]), ("name", section["title"])]
     params += [("location", p) for p in locations]
-    async with httpx.AsyncClient(timeout=15, headers=_HEADERS) as client:
-        resp = await client.put(f"{PLEX_URL}/library/sections/{section['id']}", params=params)
-        resp.raise_for_status()
+    try:
+        # Plex walks the new folders before answering, which can take well over 15s.
+        async with httpx.AsyncClient(timeout=60, headers=_HEADERS) as client:
+            resp = await client.put(f"{PLEX_URL}/library/sections/{section['id']}", params=params)
+            resp.raise_for_status()
+    except httpx.TimeoutException:
+        # Plex often finishes the edit after we stop waiting; trust what it reports now.
+        current = await _get_section(section["id"])
+        if not current or sorted(current["locations"]) != sorted(locations):
+            raise
 
 
 async def add_location(section_id: int, path: str) -> bool:
@@ -85,14 +97,19 @@ async def create_section(name: str, path: str) -> int:
         ("name", name), ("type", "show"), ("agent", SHOW_AGENT),
         ("scanner", SHOW_SCANNER), ("language", "en-US"), ("location", path),
     ]
-    async with httpx.AsyncClient(timeout=15, headers=_HEADERS) as client:
-        resp = await client.post(f"{PLEX_URL}/library/sections", params=params)
-        resp.raise_for_status()
-    dirs = resp.json().get("MediaContainer", {}).get("Directory", [])
+    dirs = []
+    try:
+        async with httpx.AsyncClient(timeout=60, headers=_HEADERS) as client:
+            resp = await client.post(f"{PLEX_URL}/library/sections", params=params)
+            resp.raise_for_status()
+        if resp.content:
+            dirs = resp.json().get("MediaContainer", {}).get("Directory", [])
+    except httpx.TimeoutException:
+        pass  # Plex may still have created it; look it up by folder below
     if dirs:
         section_id = int(dirs[0]["key"])
     else:
-        # Older servers return an empty body; find the new library by its folder.
+        # Empty body or slow reply; find the new library by its folder.
         match = [s for s in await list_show_sections() if path in s["locations"]]
         if not match:
             raise RuntimeError("Plex created the library but it could not be found")

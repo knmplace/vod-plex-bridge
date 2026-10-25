@@ -3690,8 +3690,8 @@ async def _attach_category_to_plex(name: str, strm_folder: str, section) -> tupl
         await plex_libraries.add_location(int(section), path)
         return int(section), 0, ""
     except Exception as e:
-        logger.warning("Plex library setup failed for category %s: %s", name, e)
-        return (999 if str(section) == "new" else int(section)), 0, f"Plex library not updated: {e}"
+        logger.warning("Plex library setup failed for category %s: %s", name, plex_libraries.describe_error(e))
+        return (999 if str(section) == "new" else int(section)), 0, f"Plex library not updated: {plex_libraries.describe_error(e)}"
 
 
 async def _detach_category_from_plex(cat) -> str:
@@ -3705,8 +3705,8 @@ async def _detach_category_from_plex(cat) -> str:
         )
         return ""
     except Exception as e:
-        logger.warning("Plex location removal failed for category %s: %s", cat["name"], e)
-        return f"Plex library not updated: {e}"
+        logger.warning("Plex location removal failed for category %s: %s", cat["name"], plex_libraries.describe_error(e))
+        return f"Plex library not updated: {plex_libraries.describe_error(e)}"
 
 
 @router.post("/series/categories")
@@ -3816,7 +3816,7 @@ async def sync_series_categories_to_plex():
             if await plex_libraries.add_location(cat["plex_library_section"], plex_libraries.category_location(cat["strm_folder"])):
                 added.append(cat["name"])
         except Exception as e:
-            errors.append(f"{cat['name']}: {e}")
+            errors.append(f"{cat['name']}: {plex_libraries.describe_error(e)}")
     return {"added": added, "errors": errors}
 
 
