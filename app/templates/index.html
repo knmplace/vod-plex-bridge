@@ -1236,19 +1236,20 @@
                 </div>
                 <div class="browse-toolbar">
                     <input type="text" id="seriesSearch" placeholder="Search series..." style="width:200px;" oninput="debounceSeriesSearch()">
-                    <select id="seriesFilterCategory" onchange="loadSeriesList(1)">
+                    <select id="seriesFilterCategory" onchange="showSeriesCatalog()">
                         <option value="0">All Categories</option>
                     </select>
-                    <select id="seriesFilterLibrary" onchange="loadSeriesList(1)">
-                        <option value="0">All Libraries</option>
-                    </select>
-                    <select id="seriesFilterActivated" onchange="loadSeriesList(1)">
+                    <select id="seriesFilterActivated" onchange="showSeriesCatalog()">
                         <option value="">All Series</option>
                         <option value="1">Activated</option>
                         <option value="0">Not Activated</option>
                     </select>
                     <button class="btn btn-warning" style="font-size:0.72rem;" onclick="scrapeSeriesCatalog()">Sync Series Catalog</button>
                     <span class="msg" id="seriesSyncMessage"></span>
+                </div>
+                <div id="seriesLibraryBanner" style="display:none;align-items:center;gap:0.75rem;padding:0.5rem 1rem;background:var(--bg-card-hover);border-left:3px solid var(--accent);font-size:0.82rem;">
+                    <span id="seriesLibraryBannerText"></span>
+                    <button class="btn btn-outline" style="padding:0.15rem 0.6rem;font-size:0.72rem;" onclick="showSeriesCatalog()">Back to catalog</button>
                 </div>
                 <div class="panel-body">
                     <div id="seriesGrid" class="movie-grid">
@@ -1694,13 +1695,22 @@
             document.getElementById('seriesStrmCount').textContent = (sd.strm_files || 0).toLocaleString();
         }
 
-        function showLibrarySeries(categoryId, activated) {
-            document.getElementById('seriesSearch').value = '';
-            document.getElementById('seriesFilterCategory').value = '0';
-            document.getElementById('seriesFilterLibrary').value = String(categoryId);
-            document.getElementById('seriesFilterActivated').value = activated;
+        // Clicking a series category shows only the shows active in its Plex library.
+        let seriesLibraryView = null;
+
+        function showLibrarySeries(categoryId) {
+            if (seriesLibraryView === categoryId) return showSeriesCatalog();
+            seriesLibraryView = categoryId;
+            loadSeriesCategories();
             loadSeriesList(1);
             document.getElementById('seriesGrid').scrollIntoView({behavior: 'smooth', block: 'start'});
+        }
+
+        function showSeriesCatalog() {
+            const wasLibrary = seriesLibraryView !== null;
+            seriesLibraryView = null;
+            if (wasLibrary) loadSeriesCategories();
+            loadSeriesList(1);
         }
 
         // --- Providers ---
@@ -2185,24 +2195,21 @@
                 body.innerHTML = '<tr><td colspan="6" class="empty-state">No categories yet. Add one above.</td></tr>';
             } else {
                 body.innerHTML = seriesCategories.map(c => `
-                    <tr>
+                    <tr style="cursor:pointer;${seriesLibraryView === c.id ? 'background:var(--bg-card-hover);box-shadow:inset 3px 0 0 var(--accent);' : ''}"
+                        title="Show the active shows in this library" onclick="showLibrarySeries(${c.id})">
                         <td>${(c.name||'').replace(/</g,'&lt;')}</td>
                         <td>${(c.strm_folder||'').replace(/</g,'&lt;')}</td>
                         <td>${plexLibraryLabel(c.plex_library_section)}</td>
-                        <td style="text-align:right"><a href="#" title="Show these series" onclick="showLibrarySeries(${c.id}, '');return false;">${c.series_count || 0}</a></td>
-                        <td style="text-align:right"><a href="#" title="Show active series" onclick="showLibrarySeries(${c.id}, '1');return false;">${c.active_series_count || 0}</a></td>
+                        <td style="text-align:right">${c.series_count || 0}</td>
+                        <td style="text-align:right">${c.active_series_count || 0}</td>
                         <td style="text-align:right">
-                            <button class="btn btn-danger" style="padding:0.15rem 0.5rem;font-size:0.68rem;" onclick="deleteSeriesCategory(${c.id})">Delete</button>
+                            <button class="btn btn-danger" style="padding:0.15rem 0.5rem;font-size:0.68rem;" onclick="event.stopPropagation();deleteSeriesCategory(${c.id})">Delete</button>
                         </td>
                     </tr>
                 `).join('');
             }
 
-            const libSel = document.getElementById('seriesFilterLibrary');
-            const libVal = libSel.value;
-            libSel.innerHTML = '<option value="0">All Libraries</option>' +
-                seriesCategories.map(c => `<option value="${c.id}">${(c.name||'').replace(/</g,'&lt;')}</option>`).join('');
-            libSel.value = seriesCategories.some(c => String(c.id) === libVal) ? libVal : '0';
+            if (seriesLibraryView !== null && !seriesCategories.some(c => c.id === seriesLibraryView)) showSeriesCatalog();
 
             const detailSel = document.getElementById('seriesDetailCategory');
             detailSel.innerHTML = seriesCategories.map(c => `<option value="${c.id}">${(c.name||'').replace(/</g,'&lt;')}</option>`).join('')
@@ -2275,7 +2282,7 @@
 
         function debounceSeriesSearch() {
             clearTimeout(seriesSearchTimeout);
-            seriesSearchTimeout = setTimeout(() => loadSeriesList(1), 300);
+            seriesSearchTimeout = setTimeout(showSeriesCatalog, 300);
         }
 
         async function loadSeriesList(page) {
@@ -2284,18 +2291,28 @@
             const categoryId = document.getElementById('seriesFilterCategory').value;
             const activatedOnly = document.getElementById('seriesFilterActivated').value;
             let url = `/api/series?page=${seriesCurrentPage}&page_size=60`;
-            if (search) url += `&search=${encodeURIComponent(search)}`;
-            if (categoryId && categoryId !== '0') url += `&provider_category_id=${categoryId}`;
-            const libraryId = document.getElementById('seriesFilterLibrary').value;
-            if (libraryId && libraryId !== '0') url += `&category_id=${libraryId}`;
-            if (activatedOnly) url += `&activated=${activatedOnly}`;
+            const libCat = seriesCategories.find(c => c.id === seriesLibraryView);
+            const banner = document.getElementById('seriesLibraryBanner');
+            if (libCat) {
+                url += `&category_id=${libCat.id}&activated=1`;
+                document.getElementById('seriesLibraryBannerText').innerHTML =
+                    `Showing shows active in <b>${(libCat.name||'').replace(/</g,'&lt;')}</b> (Plex: ${plexLibraryLabel(libCat.plex_library_section)})`;
+                banner.style.display = 'flex';
+            } else {
+                if (search) url += `&search=${encodeURIComponent(search)}`;
+                if (categoryId && categoryId !== '0') url += `&provider_category_id=${categoryId}`;
+                if (activatedOnly) url += `&activated=${activatedOnly}`;
+                banner.style.display = 'none';
+            }
 
             const data = await fetchJSON(url);
             const container = document.getElementById('seriesGrid');
             document.getElementById('seriesLabel').textContent = `${data.count.toLocaleString()} series`;
 
             if (!data.results.length) {
-                container.innerHTML = '<div class="empty-state">No series found. Try Sync Series Catalog.</div>';
+                container.innerHTML = libCat
+                    ? '<div class="empty-state">No active shows in this library yet.</div>'
+                    : '<div class="empty-state">No series found. Try Sync Series Catalog.</div>';
                 document.getElementById('seriesPagination').innerHTML = '';
                 return;
             }
