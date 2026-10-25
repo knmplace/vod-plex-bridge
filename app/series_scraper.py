@@ -34,17 +34,26 @@ async def _upsert_series(db, series):
     if logo and logo.get("url"):
         poster_url = logo["url"]
 
+    custom = series.get("custom_properties") or {}
+    if isinstance(custom, str):
+        try:
+            custom = json.loads(custom)
+        except (json.JSONDecodeError, TypeError):
+            custom = {}
+    trailer_key = custom.get("youtube_trailer") or custom.get("trailer") or None
+
     await db.execute("""
         INSERT INTO series (id, uuid, name, year, rating, genre, description,
-                           tmdb_id, poster_url, episode_count, synced_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           tmdb_id, poster_url, episode_count, synced_at, trailer_key)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             uuid=excluded.uuid, name=excluded.name, year=excluded.year,
             rating=excluded.rating, genre=excluded.genre,
             description = CASE WHEN series.description IS NULL OR series.description = '' THEN excluded.description ELSE series.description END,
             tmdb_id=excluded.tmdb_id,
             poster_url = CASE WHEN series.poster_url IS NULL OR series.poster_url = '' THEN excluded.poster_url ELSE series.poster_url END,
-            synced_at=excluded.synced_at
+            synced_at=excluded.synced_at,
+            trailer_key = COALESCE(excluded.trailer_key, series.trailer_key)
     """, (
         series["id"],
         series["uuid"],
@@ -57,6 +66,7 @@ async def _upsert_series(db, series):
         poster_url,
         series.get("episode_count", 0),
         datetime.now(timezone.utc).isoformat(),
+        trailer_key,
     ))
 
 

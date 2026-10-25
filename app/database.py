@@ -13,6 +13,11 @@ async def get_db() -> aiosqlite.Connection:
         _db.row_factory = aiosqlite.Row
         await _db.execute("PRAGMA journal_mode=WAL")
         await _db.execute("PRAGMA busy_timeout=30000")
+        # WAL-safe and much faster for bulk catalog writes than the default FULL.
+        await _db.execute("PRAGMA synchronous=NORMAL")
+        # Truncate the WAL back to 64MB after checkpoints — without a limit it stays
+        # at its peak size forever (was ~930MB after a full catalog clear).
+        await _db.execute("PRAGMA journal_size_limit=67108864")
     return _db
 
 
@@ -238,3 +243,12 @@ async def init_db():
         CREATE INDEX IF NOT EXISTS idx_series_category ON series(category_id);
     """)
     await db.commit()
+
+    for series_col in [
+        "ALTER TABLE series ADD COLUMN trailer_key TEXT",
+    ]:
+        try:
+            await db.execute(series_col)
+            await db.commit()
+        except Exception:
+            pass

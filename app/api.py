@@ -519,20 +519,44 @@ async def _load_categories_counted() -> dict:
     return await _load_categories()
 
 
+@router.get("/genres")
+async def list_genres(min_count: int = 5):
+    """Distinct individual genres across browsable movies (genre is a comma/slash list)."""
+    db = await get_db()
+    rows = await db.execute(
+        "SELECT genre, COUNT(*) AS cnt FROM movies "
+        "WHERE name != '' AND dead = 0 AND stream_dead = 0 AND genre != '' GROUP BY genre"
+    )
+    counts: dict[str, int] = {}
+    for r in await rows.fetchall():
+        for g in re.split(r"[,/|]", r["genre"]):
+            g = g.strip()
+            if g:
+                counts[g] = counts.get(g, 0) + r["cnt"]
+    genres = sorted(
+        ({"genre": g, "cnt": c} for g, c in counts.items() if c >= min_count),
+        key=lambda x: x["genre"].lower(),
+    )
+    return {"genres": genres}
+
+
 @router.get("/movies")
 async def list_movies(
     request: Request,
-    genre: str = "",
     page: int = 1,
     page_size: int = 20,
     sort_by: str = "rating",
     sort_order: str = "desc",
     search: str = "",
     activated_only: bool = False,
+    activated: str = "",
+    year_min: int = 0,
+    year_max: int = 0,
 ):
     account_ids = [int(x) for x in request.query_params.getlist("account_id") if x]
     category_ids = [int(x) for x in request.query_params.getlist("category_id") if x]
     languages = [x for x in request.query_params.getlist("language") if x]
+    genres = [x for x in request.query_params.getlist("genre") if x]
 
     db = await get_db()
     try:
@@ -543,8 +567,17 @@ async def list_movies(
         conditions = ["m.name != ''", "m.dead = 0", "m.stream_dead = 0"]
         params = []
 
-        if activated_only:
+        if activated_only or activated == "1":
             conditions.append("m.activated = 1")
+        elif activated == "0":
+            conditions.append("m.activated = 0")
+
+        if year_min:
+            conditions.append("m.year >= ?")
+            params.append(year_min)
+        if year_max:
+            conditions.append("m.year <= ?")
+            params.append(year_max)
 
         if account_ids:
             ph = ",".join("?" for _ in account_ids)
@@ -564,9 +597,9 @@ async def list_movies(
                 ")"
             )
 
-        if genre:
-            conditions.append("m.genre LIKE ?")
-            params.append(f"%{genre}%")
+        if genres:
+            conditions.append("(" + " OR ".join("m.genre LIKE ?" for _ in genres) + ")")
+            params.extend(f"%{g}%" for g in genres)
 
         if search:
             conditions.append("m.name LIKE ?")

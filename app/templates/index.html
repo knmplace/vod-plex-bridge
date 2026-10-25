@@ -309,58 +309,108 @@
         }
 
         .movie-card {
-            border-radius: 6px;
+            border-radius: 8px;
             overflow: hidden;
             background: var(--bg-secondary);
-            transition: transform 0.15s;
+            border: 1px solid var(--border);
+            transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
             position: relative;
             cursor: pointer;
         }
-        .movie-card:hover { transform: translateY(-2px); }
+        .movie-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(59,130,246,0.55);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.45);
+        }
+        .movie-card.card-selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+        .movie-card .poster { position: relative; }
         .movie-card img {
             width: 100%;
             aspect-ratio: 2/3;
             object-fit: cover;
             display: block;
         }
-        .movie-card .info { padding: 0.3rem 0.4rem; }
+        .movie-card .info { padding: 0.4rem 0.45rem 0.45rem; }
         .movie-card .title {
-            font-size: 0.7rem;
-            font-weight: 500;
-            line-height: 1.2;
+            font-size: 0.74rem;
+            font-weight: 600;
+            line-height: 1.25;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
         .movie-card .meta {
-            font-size: 0.62rem;
-            color: var(--text-muted);
-            margin-top: 0.1rem;
-        }
-        .movie-card .provider-tag {
-            font-size: 0.58rem;
-            color: var(--accent);
-            margin-top: 0.1rem;
+            font-size: 0.64rem;
+            color: var(--text-secondary);
+            margin-top: 0.15rem;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+        .movie-card .meta.sub { color: var(--text-muted); font-size: 0.62rem; }
 
+        /* Info chips (provider / language) */
+        .movie-card .tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 0.3rem; }
+        .movie-card .tag {
+            font-size: 0.58rem;
+            font-weight: 600;
+            line-height: 1.5;
+            padding: 0 6px;
+            border-radius: 999px;
+            border: 1px solid;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .movie-card .tag-provider { color: #93c5fd; border-color: rgba(59,130,246,0.45); background: rgba(59,130,246,0.12); }
+        .movie-card .tag-lang { color: #fcd34d; border-color: rgba(245,158,11,0.45); background: rgba(245,158,11,0.12); }
+
+        /* Poster overlays */
+        .movie-card .card-badges {
+            position: absolute;
+            top: 6px; left: 6px;
+            display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+            pointer-events: none;
+        }
+        .movie-card .activated-badge, .dead-badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            font-size: 0.58rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            padding: 2px 7px;
+            border-radius: 999px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.6);
+        }
+        .movie-card .activated-badge { background: var(--success); color: #052e14; }
+        .movie-card .activated-badge::before {
+            content: ''; width: 6px; height: 6px; border-radius: 50%; background: #052e14;
+        }
+        .movie-card .rating-chip {
+            position: absolute;
+            bottom: 6px; left: 6px;
+            font-size: 0.62rem; font-weight: 700;
+            color: #fde68a;
+            background: rgba(10,14,23,0.82);
+            border: 1px solid rgba(255,255,255,0.12);
+            padding: 1px 6px;
+            border-radius: 999px;
+            transition: opacity 0.15s;
+        }
         .movie-card .check-overlay {
             position: absolute;
-            top: 4px;
-            right: 4px;
-            width: 22px;
-            height: 22px;
-            border-radius: 50%;
-            border: 2px solid rgba(255,255,255,0.5);
-            background: rgba(0,0,0,0.4);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.7rem;
+            top: 6px; right: 6px;
+            width: 22px; height: 22px;
+            border-radius: 6px;
+            border: 2px solid rgba(255,255,255,0.75);
+            background: rgba(0,0,0,0.45);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.75rem; font-weight: 700;
             color: transparent;
+            opacity: 0;
+            transition: opacity 0.15s;
         }
+        .movie-card:hover .check-overlay, .movie-card.card-selected .check-overlay { opacity: 1; }
         .movie-card.card-selected .check-overlay {
             background: var(--accent);
             border-color: var(--accent);
@@ -370,16 +420,46 @@
             background: var(--accent);
             color: #fff;
         }
-        .movie-card .activated-badge {
+
+        /* Hover action bar */
+        .movie-card .card-actions {
             position: absolute;
-            top: 4px;
-            left: 4px;
-            background: var(--success);
-            color: #fff;
-            font-size: 0.55rem;
-            font-weight: 700;
-            padding: 0.1rem 0.3rem;
-            border-radius: 3px;
+            left: 0; right: 0; bottom: 0;
+            display: flex; gap: 4px;
+            padding: 24px 6px 6px;
+            background: linear-gradient(to bottom, transparent, rgba(5,8,15,0.94) 45%);
+            opacity: 0;
+            transform: translateY(6px);
+            transition: opacity 0.15s, transform 0.15s;
+        }
+        .movie-card:hover .card-actions { opacity: 1; transform: none; }
+        .movie-card:hover .rating-chip { opacity: 0; }
+        .card-act {
+            height: 26px; min-width: 26px;
+            padding: 0 6px;
+            display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+            border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.16);
+            background: rgba(17,24,39,0.9);
+            color: var(--text-primary);
+            font-size: 0.64rem; font-weight: 700;
+            cursor: pointer;
+            transition: background 0.12s, border-color 0.12s, color 0.12s;
+        }
+        .card-act svg { width: 13px; height: 13px; flex-shrink: 0; }
+        .card-act.act-trailer:hover { background: #dc2626; border-color: #dc2626; color: #fff; }
+        .card-act.act-lang:hover { background: var(--warning); border-color: var(--warning); color: #1a1300; }
+        .card-act.act-dead:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+        .card-act.ok { background: var(--success); border-color: var(--success); color: #052e14; }
+        .card-act.fail { background: var(--danger); border-color: var(--danger); color: #fff; }
+        .card-act.activate-btn { flex: 1; background: var(--success); border-color: transparent; color: #052e14; }
+        .card-act.activate-btn:hover { background: #16a34a; }
+        .card-act.activate-btn.active { background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.7); color: #fca5a5; }
+        .card-act.activate-btn.active:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+        .card-act.working, .card-act.detecting { animation: pulse 0.6s infinite; }
+        @media (hover: none) {
+            .movie-card .card-actions, .movie-card .check-overlay { opacity: 1; transform: none; }
+            .movie-card .rating-chip { display: none; }
         }
 
         .pagination {
@@ -431,6 +511,7 @@
             flex-direction: column;
         }
         .trailer-modal.active { display: flex; }
+        #trailerModal { z-index: 10002; }
         .trailer-modal .trailer-close {
             position: absolute;
             top: 1rem; right: 1.5rem;
@@ -447,25 +528,6 @@
             border: none;
             border-radius: 8px;
         }
-
-        .movie-card .trailer-btn {
-            position: absolute;
-            bottom: 100px;
-            right: 4px;
-            width: 26px; height: 26px;
-            border-radius: 50%;
-            background: rgba(255,0,0,0.85);
-            border: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.65rem;
-            color: #fff;
-            opacity: 0;
-            transition: opacity 0.15s;
-        }
-        .movie-card:hover .trailer-btn { opacity: 1; }
 
         .health-card {
             background: var(--bg-card);
@@ -498,84 +560,11 @@
             color: var(--text-muted);
         }
 
-        .movie-card .lang-detect-btn {
-            position: absolute;
-            bottom: 100px;
-            left: 4px;
-            width: 26px; height: 26px;
-            border-radius: 50%;
-            background: rgba(245,158,11,0.85);
-            border: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.7rem;
-            color: #fff;
-            opacity: 0;
-            transition: opacity 0.15s;
-        }
-        .movie-card:hover .lang-detect-btn { opacity: 1; }
-        .movie-card .lang-detect-btn.detecting {
-            opacity: 1;
-            animation: pulse 0.6s infinite;
-        }
-
-        .movie-card .activate-btn {
-            position: absolute;
-            bottom: 130px;
-            right: 4px;
-            width: 26px; height: 26px;
-            border-radius: 50%;
-            background: rgba(34,197,94,0.85);
-            border: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.7rem;
-            color: #fff;
-            opacity: 0;
-            transition: opacity 0.15s;
-        }
-        .movie-card:hover .activate-btn { opacity: 1; }
-        .movie-card .activate-btn.active {
-            background: rgba(239,68,68,0.85);
-        }
-        .movie-card .activate-btn.working {
-            opacity: 1;
-            animation: pulse 0.6s infinite;
-        }
-
-        .movie-card .mark-dead-btn {
-            position: absolute;
-            bottom: 130px;
-            left: 4px;
-            width: 26px; height: 26px;
-            border-radius: 50%;
-            background: rgba(239,68,68,0.85);
-            border: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.7rem;
-            color: #fff;
-            opacity: 0;
-            transition: opacity 0.15s;
-        }
-        .movie-card:hover .mark-dead-btn { opacity: 1; }
-
         .dead-badge {
             position: absolute;
-            top: 4px;
-            left: 4px;
+            top: 6px; left: 6px;
             background: var(--danger);
             color: #fff;
-            font-size: 0.55rem;
-            font-weight: 700;
-            padding: 0.1rem 0.3rem;
-            border-radius: 3px;
         }
 
         .sync-overlay {
@@ -906,7 +895,7 @@
         <div class="header-left">
             <h1><span>VOD</span> Plex Bridge <span style="color:#fff" id="appVersion"></span> <span id="streamMode" style="font-size:0.55em;padding:2px 8px;border-radius:4px;vertical-align:middle;display:none;"></span></h1>
             <div class="tab-nav">
-                <button class="tab-btn active" onclick="switchTab('browse')">Browse</button>
+                <button class="tab-btn active" onclick="switchTab('browse')">Movies</button>
                 <button class="tab-btn" onclick="switchTab('catalog')">Catalog</button>
                 <button class="tab-btn" onclick="switchTab('series')">Series</button>
                 <button class="tab-btn" onclick="switchTab('dead')">Dead Movies <span class="badge" id="deadBadge" style="display:none;background:var(--danger);margin-left:0.3rem;">0</span></button>
@@ -952,7 +941,7 @@
         <div class="browse-section">
             <div class="panel">
                 <div class="panel-header">
-                    Browse Movies
+                    Movies
                     <span style="font-size:0.75rem;color:var(--text-muted)" id="browseLabel"></span>
                 </div>
                 <div class="browse-toolbar">
@@ -977,6 +966,19 @@
                         <option value="200">200 / page</option>
                         <option value="300">300 / page</option>
                     </select>
+                    <select id="filterYear" onchange="loadMovies(1)">
+                        <option value="">Any Year</option>
+                        <option value="2020-0">2020s</option>
+                        <option value="2010-2019">2010s</option>
+                        <option value="2000-2009">2000s</option>
+                        <option value="1990-1999">1990s</option>
+                        <option value="1980-1989">1980s</option>
+                        <option value="0-1979">Before 1980</option>
+                    </select>
+                    <div class="multi-select" id="msGenre">
+                        <button class="multi-select-btn" onclick="toggleMs('msGenre')">All Genres</button>
+                        <div class="multi-select-dropdown" id="msGenreDrop"></div>
+                    </div>
                     <div class="multi-select" id="msLang">
                         <button class="multi-select-btn" onclick="toggleMs('msLang')">All Languages</button>
                         <div class="multi-select-dropdown" id="msLangDrop"></div>
@@ -989,6 +991,7 @@
                         <button class="multi-select-btn" onclick="toggleMs('msProv')">All Providers</button>
                         <div class="multi-select-dropdown" id="msProvDrop"></div>
                     </div>
+                    <button class="btn btn-outline" id="clearFiltersBtn" style="padding:0.2rem 0.6rem;font-size:0.72rem;display:none;" onclick="clearBrowseFilters()">Clear filters</button>
                     <div id="selectionBar" style="display:none;" class="selection-bar">
                         <span class="count" id="selCount">0</span> selected
                         <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.72rem;" onclick="activateSelected()">Activate</button>
@@ -1195,7 +1198,10 @@
     <div class="trailer-modal" id="seriesDetailModal" onclick="closeSeriesDetail(event)">
         <div onclick="event.stopPropagation()" style="background:var(--bg-panel);border-radius:8px;max-width:900px;width:90%;max-height:85vh;overflow-y:auto;margin:5vh auto;padding:1.25rem;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-                <h2 id="seriesDetailTitle" style="margin:0;font-size:1.1rem;"></h2>
+                <div style="display:flex;align-items:center;gap:0.6rem;min-width:0;">
+                    <h2 id="seriesDetailTitle" style="margin:0;font-size:1.1rem;"></h2>
+                    <button class="btn btn-danger" id="seriesDetailTrailer" style="display:none;padding:0.2rem 0.6rem;font-size:0.72rem;">&#9654; Trailer</button>
+                </div>
                 <span class="trailer-close" style="position:static;" onclick="closeSeriesDetail()">&times;</span>
             </div>
             <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;">
@@ -1557,12 +1563,14 @@
             } else {
                 tabs[0].classList.add('active');
                 document.getElementById('tabBrowse').classList.add('active');
+                refreshBrowseFilters();
                 loadMovies(currentPage);
             }
         }
 
         // --- Status ---
         let _langWasActive = false;
+        let _syncWasActive = false;
         async function refreshStatus() {
             const s = await fetchJSON('/api/status');
             document.getElementById('totalMovies').textContent = s.total_movies?.toLocaleString() || '0';
@@ -1596,6 +1604,13 @@
                 refreshLanguageFilter();
             }
             _langWasActive = langActive;
+            if (_syncWasActive && s.status === 'idle') {
+                refreshBrowseFilters();
+                loadMovies(currentPage);
+                loadCatalogSummary();
+                refreshActivatedCount();
+            }
+            _syncWasActive = s.status !== 'idle';
 
             if (s.status !== 'idle' || langActive) {
                 setTimeout(refreshStatus, 2000);
@@ -1614,7 +1629,7 @@
             refreshProviderFilter();
         }
 
-        const msState = { msLang: new Set(), msCat: new Set(), msProv: new Set() };
+        const msState = { msGenre: new Set(), msLang: new Set(), msCat: new Set(), msProv: new Set() };
 
         function toggleMs(id) {
             const drop = document.getElementById(id + 'Drop');
@@ -1657,7 +1672,7 @@
         function msUpdateBtn(msId) {
             const btn = document.querySelector(`#${msId} .multi-select-btn`);
             const count = msState[msId].size;
-            const labels = { msLang: 'Languages', msCat: 'Categories', msProv: 'Providers' };
+            const labels = { msGenre: 'Genres', msLang: 'Languages', msCat: 'Categories', msProv: 'Providers' };
             if (count === 0) {
                 btn.innerHTML = 'All ' + labels[msId];
             } else {
@@ -1896,12 +1911,21 @@
             const ps = parseInt(document.getElementById('pageSize').value) || 100;
             let url = `/api/movies?page=${currentPage}&page_size=${ps}&sort_by=${sortBy}&sort_order=${sortOrder}`;
             if (search) url += `&search=${encodeURIComponent(search)}`;
-            if (filterAct === '1') url += '&activated_only=true';
+            if (filterAct) url += `&activated=${filterAct}`;
+            const filterYear = document.getElementById('filterYear').value;
+            if (filterYear) {
+                const [ymin, ymax] = filterYear.split('-');
+                url += `&year_min=${ymin}&year_max=${ymax}`;
+            }
 
+            for (const g of msState.msGenre) url += `&genre=${encodeURIComponent(g)}`;
             for (const lang of msState.msLang) url += `&language=${encodeURIComponent(lang)}`;
             for (const cat of msState.msCat) url += `&category_id=${cat}`;
 
             for (const prov of msState.msProv) url += `&account_id=${prov}`;
+
+            document.getElementById('clearFiltersBtn').style.display =
+                (search || filterAct || filterYear || Object.values(msState).some(x => x.size)) ? 'inline-block' : 'none';
 
             const data = await fetchJSON(url);
             const container = document.getElementById('movieGrid');
@@ -1910,40 +1934,39 @@
                 `${data.count.toLocaleString()} movies`;
 
             if (!data.results.length) {
-                container.innerHTML = '<div class="empty-state">No movies found. Sync catalog first.</div>';
+                container.innerHTML = '<div class="empty-state">No movies match these filters.</div>';
                 document.getElementById('pagination').innerHTML = '';
                 document.getElementById('paginationBottom').innerHTML = '';
                 return;
             }
 
             container.innerHTML = data.results.map(m => `
-                <div class="movie-card ${selectedMovies.has(m.id) ? 'card-selected' : ''} ${filterAct === '0' && m.activated ? 'hidden' : ''}"
+                <div class="movie-card ${selectedMovies.has(m.id) ? 'card-selected' : ''}"
                      onclick="toggleMovie(${m.id})" data-id="${m.id}">
-                    ${m.activated ? '<div class="activated-badge">ACTIVE</div>' : ''}
-                    <div class="check-overlay">&check;</div>
-                    ${m.trailer_key ? '<button class="trailer-btn" onclick="event.stopPropagation();playTrailer(\'' + m.trailer_key + '\')">&#9654;</button>' : ''}
-                    <button class="lang-detect-btn" onclick="event.stopPropagation();detectSingleLang(${m.id},this)" title="Detect language">&#127760;</button>
-                    <button class="mark-dead-btn" onclick="event.stopPropagation();markMovieDead(${m.id})" title="Mark dead">&#9760;</button>
-                    <button class="activate-btn ${m.activated ? 'active' : ''}" onclick="event.stopPropagation();toggleActivate(${m.id},${m.activated ? 1 : 0},this)" title="${m.activated ? 'Deactivate' : 'Activate'}">&#9889;</button>
-                    <img src="${m.poster_url || ''}" alt="" loading="lazy"
-                         onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
+                    <div class="poster">
+                        <img src="${m.poster_url || ''}" alt="" loading="lazy"
+                             onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
+                        <div class="card-badges">${m.activated ? '<span class="activated-badge">ACTIVE</span>' : ''}</div>
+                        <div class="check-overlay">&check;</div>
+                        ${m.rating > 0 ? `<span class="rating-chip">&#9733; ${Number(m.rating).toFixed(1)}</span>` : ''}
+                        <div class="card-actions">
+                            ${activateBtnHTML(m.id, m.activated)}
+                            ${m.trailer_key ? `<button class="card-act act-trailer" onclick="event.stopPropagation();playTrailer('${m.trailer_key}')" title="Play trailer">${ICON.play}</button>` : ''}
+                            <button class="card-act act-lang" onclick="event.stopPropagation();detectSingleLang(${m.id},this)" title="Detect language">${ICON.globe}</button>
+                            <button class="card-act act-dead" onclick="event.stopPropagation();markMovieDead(${m.id})" title="Mark dead">${ICON.ban}</button>
+                        </div>
+                    </div>
                     <div class="info">
                         <div class="title" title="${(m.name||'').replace(/"/g,'&quot;')}">${m.name || 'Unknown'}</div>
-                        <div class="meta">${m.year || '?'} &middot; ${m.rating || '-'}${m.country ? ' &middot; ' + m.country : ''}</div>
-                        ${m.director ? '<div class="meta" style="font-size:0.65rem;opacity:0.7;margin-top:-2px">' + m.director.split(',').slice(0,2).join(', ') + '</div>' : ''}
-                        ${m.account_name ? '<div class="provider-tag">' + m.account_name + '</div>' : ''}
-                        ${m.language ? '<div class="provider-tag" style="color:var(--warning)">' + getLangName(m.language) + '</div>' : ''}
+                        <div class="meta">${[m.year, m.country].filter(Boolean).join(' &middot; ') || '&nbsp;'}</div>
+                        ${m.director ? '<div class="meta sub">' + m.director.split(',').slice(0,2).join(', ') + '</div>' : ''}
+                        <div class="tags">
+                            ${m.account_name ? '<span class="tag tag-provider">' + m.account_name + '</span>' : ''}
+                            ${m.language ? '<span class="tag tag-lang">' + getLangName(m.language) + '</span>' : ''}
+                        </div>
                     </div>
                 </div>
             `).join('');
-
-            if (filterAct === '0') {
-                container.querySelectorAll('.movie-card').forEach(card => {
-                    const id = parseInt(card.dataset.id);
-                    const movie = data.results.find(m => m.id === id);
-                    if (movie && movie.activated) card.style.display = 'none';
-                });
-            }
 
             const totalPages = Math.ceil(data.count / ps);
             let pagHTML = '';
@@ -2157,13 +2180,20 @@
             }
 
             container.innerHTML = data.results.map(s => `
-                <div class="movie-card" onclick="openSeriesDetail(${s.id})" data-id="${s.id}" data-category-id="${s.category_id || ''}">
-                    ${s.activated_episode_count > 0 ? `<div class="activated-badge">${s.activated_episode_count} ACTIVE</div>` : ''}
-                    <img src="${s.poster_url || ''}" alt="" loading="lazy"
-                         onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
+                <div class="movie-card" onclick="openSeriesDetail(${s.id})" data-id="${s.id}" data-category-id="${s.category_id || ''}" data-trailer="${s.trailer_key || ''}">
+                    <div class="poster">
+                        <img src="${s.poster_url || ''}" alt="" loading="lazy"
+                             onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
+                        <div class="card-badges">${s.activated_episode_count > 0 ? `<span class="activated-badge">${s.activated_episode_count} ACTIVE</span>` : ''}</div>
+                        ${s.rating > 0 ? `<span class="rating-chip">&#9733; ${Number(s.rating).toFixed(1)}</span>` : ''}
+                        ${s.trailer_key ? `<div class="card-actions">
+                            <button class="card-act act-trailer" style="flex:1" onclick="event.stopPropagation();playTrailer('${s.trailer_key}')" title="Play trailer">${ICON.play}<span>Trailer</span></button>
+                        </div>` : ''}
+                    </div>
                     <div class="info">
                         <div class="title" title="${(s.name||'').replace(/"/g,'&quot;')}">${s.name || 'Unknown'}</div>
-                        <div class="meta">${s.year || '?'} &middot; ${s.rating || '-'} &middot; ${s.episode_count || 0} eps</div>
+                        <div class="meta">${[s.year, (s.episode_count || 0) + ' eps'].filter(Boolean).join(' &middot; ')}</div>
+                        ${s.genre ? '<div class="meta sub">' + s.genre + '</div>' : ''}
                     </div>
                 </div>
             `).join('');
@@ -2194,6 +2224,10 @@
             const cardEl = document.querySelector(`#seriesGrid .movie-card[data-id="${seriesId}"]`);
             const row = cardEl ? cardEl.querySelector('.title') : null;
             document.getElementById('seriesDetailTitle').textContent = row ? row.textContent : `Series #${seriesId}`;
+            const trailerKey = cardEl ? cardEl.getAttribute('data-trailer') : '';
+            const trailerBtn = document.getElementById('seriesDetailTrailer');
+            trailerBtn.style.display = trailerKey ? 'inline-block' : 'none';
+            trailerBtn.onclick = () => playTrailer(trailerKey);
             const existingCatId = cardEl ? cardEl.getAttribute('data-category-id') : '';
             if (existingCatId) document.getElementById('seriesDetailCategory').value = existingCatId;
 
@@ -2452,6 +2486,31 @@
             refreshStatus();
         }
 
+        async function refreshGenreFilter() {
+            const data = await fetchJSON('/api/genres');
+            buildMsDropdown('msGenre', data.genres.map(g => ({ value: g.genre, label: `${g.genre} (${g.cnt.toLocaleString()})` })));
+        }
+
+        // Filter options depend on catalog contents, so rebuild them whenever the catalog changes.
+        function refreshBrowseFilters() {
+            refreshGenreFilter();
+            refreshLanguageFilter();
+            updateBrowseCatFilter();
+            refreshProviderFilter();
+        }
+
+        function clearBrowseFilters() {
+            for (const id of Object.keys(msState)) {
+                msState[id].clear();
+                document.querySelectorAll(`#${id}Drop input[type="checkbox"]`).forEach(cb => cb.checked = false);
+                msUpdateBtn(id);
+            }
+            document.getElementById('filterActivated').value = '';
+            document.getElementById('filterYear').value = '';
+            document.getElementById('movieSearch').value = '';
+            loadMovies(1);
+        }
+
         async function refreshLanguageFilter() {
             const data = await fetchJSON('/api/languages');
             const items = data.languages.map(l => ({ value: l.language, label: `${getLangName(l.language)} (${l.cnt})` }));
@@ -2605,6 +2664,20 @@
         }
 
         // --- Trailer ---
+        const _svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+        const ICON = {
+            play: _svg('<path d="M7 4.5v15l12-7.5z" fill="currentColor" stroke="none"/>'),
+            bolt: _svg('<path d="M13 2L4 14h7l-1 8 9-12h-7z" fill="currentColor" stroke="none"/>'),
+            globe: _svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>'),
+            ban: _svg('<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>'),
+            x: _svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+            check: _svg('<path d="M5 12l5 5 9-10"/>'),
+        };
+
+        function activateBtnHTML(movieId, isActive) {
+            return `<button class="card-act activate-btn ${isActive ? 'active' : ''}" onclick="event.stopPropagation();toggleActivate(${movieId},${isActive ? 1 : 0},this)" title="${isActive ? 'Deactivate (remove from Plex)' : 'Activate (add to Plex)'}">${isActive ? ICON.x + '<span>Remove</span>' : ICON.bolt + '<span>Activate</span>'}</button>`;
+        }
+
         function playTrailer(key) {
             document.getElementById('trailerFrame').src = 'https://www.youtube.com/embed/' + key + '?autoplay=1';
             document.getElementById('trailerModal').classList.add('active');
@@ -2631,37 +2704,27 @@
 
         async function detectSingleLang(movieId, btn) {
             btn.classList.add('detecting');
-            btn.innerHTML = '&#8987;';
+            let ok = false;
             try {
                 const data = await fetchJSON(`/api/movies/${movieId}/detect-language`, {method: 'POST'});
-                const card = btn.closest('.movie-card');
-                const info = card.querySelector('.info');
-                const existing = info.querySelector('.provider-tag[style*="warning"]');
                 if (data.language) {
-                    const langText = getLangName(data.language);
-                    if (existing) {
-                        existing.textContent = langText;
-                    } else {
-                        const tag = document.createElement('div');
-                        tag.className = 'provider-tag';
-                        tag.style.color = 'var(--warning)';
-                        tag.textContent = langText;
-                        info.appendChild(tag);
+                    ok = true;
+                    const tags = btn.closest('.movie-card').querySelector('.info .tags');
+                    let tag = tags.querySelector('.tag-lang');
+                    if (!tag) {
+                        tag = document.createElement('span');
+                        tag.className = 'tag tag-lang';
+                        tags.appendChild(tag);
                     }
-                    btn.innerHTML = '&#10003;';
-                    btn.style.background = 'rgba(34,197,94,0.85)';
-                } else {
-                    btn.innerHTML = '&#10007;';
-                    btn.style.background = 'rgba(239,68,68,0.85)';
+                    tag.textContent = getLangName(data.language);
                 }
-            } catch (e) {
-                btn.innerHTML = '&#10007;';
-                btn.style.background = 'rgba(239,68,68,0.85)';
-            }
+            } catch (e) {}
             btn.classList.remove('detecting');
+            btn.classList.add(ok ? 'ok' : 'fail');
+            btn.innerHTML = ok ? ICON.check : ICON.x;
             setTimeout(() => {
-                btn.innerHTML = '&#127760;';
-                btn.style.background = '';
+                btn.classList.remove('ok', 'fail');
+                btn.innerHTML = ICON.globe;
             }, 2000);
         }
 
@@ -2676,39 +2739,24 @@
                     body: JSON.stringify({movie_ids: [movieId]})
                 });
                 const card = btn.closest('.movie-card');
-                if (isActive) {
-                    const badge = card.querySelector('.activated-badge');
-                    if (badge) badge.remove();
-                    btn.classList.remove('active');
-                    btn.title = 'Activate';
-                    btn.setAttribute('onclick', `event.stopPropagation();toggleActivate(${movieId},0,this)`);
-                } else if (res.failed_ids && res.failed_ids.includes(movieId)) {
+                if (!isActive && res.failed_ids && res.failed_ids.includes(movieId)) {
                     card.style.transition = 'opacity 0.3s';
                     card.style.opacity = '0';
                     setTimeout(() => card.remove(), 300);
-                    btn.classList.remove('working');
                     refreshActivatedCount();
                     return;
-                } else {
-                    const badge = card.querySelector('.activated-badge');
-                    if (!badge) {
-                        const b = document.createElement('div');
-                        b.className = 'activated-badge';
-                        b.textContent = 'ACTIVE';
-                        card.prepend(b);
-                    }
-                    btn.classList.add('active');
-                    btn.title = 'Deactivate';
-                    btn.setAttribute('onclick', `event.stopPropagation();toggleActivate(${movieId},1,this)`);
                 }
+                const nowActive = !isActive;
+                card.querySelector('.card-badges').innerHTML = nowActive ? '<span class="activated-badge">ACTIVE</span>' : '';
+                btn.outerHTML = activateBtnHTML(movieId, nowActive);
                 refreshActivatedCount();
                 refreshStatus();
                 loadCatalogSummary();
             } catch (e) {
-                btn.innerHTML = '&#10007;';
-                setTimeout(() => { btn.innerHTML = '&#9889;'; }, 2000);
+                btn.classList.remove('working');
+                btn.classList.add('fail');
+                setTimeout(() => btn.classList.remove('fail'), 2000);
             }
-            btn.classList.remove('working');
         }
 
         // --- Dead Movies ---
@@ -2738,7 +2786,7 @@
                     <div class="info">
                         <div class="title" title="${(m.name||'').replace(/"/g,'&quot;')}">${m.name || 'Unknown'}</div>
                         <div class="meta">${m.year || '?'} &middot; ${m.rating || '-'}</div>
-                        ${m.account_name ? '<div class="provider-tag">' + m.account_name + '</div>' : ''}
+                        ${m.account_name ? '<div class="tags"><span class="tag tag-provider">' + m.account_name + '</span></div>' : ''}
                         ${m.dead_at ? '<div class="meta" style="color:var(--danger)">Died: ' + new Date(m.dead_at).toLocaleDateString() + '</div>' : ''}
                         ${m.catalog_refresh_note ? '<div class="meta" style="color:var(--success)">' + m.catalog_refresh_note + '</div>' : ''}
                     </div>
@@ -3602,6 +3650,7 @@
         refreshProviders();
         refreshCategories();
         refreshActivatedCount();
+        refreshGenreFilter();
         refreshLanguageFilter();
         refreshDeadBadge();
         refreshStreamBadge();
