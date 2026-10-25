@@ -413,6 +413,16 @@
             box-shadow: 0 1px 4px rgba(0,0,0,0.6);
         }
         .movie-card .activated-badge { background: var(--success); color: #052e14; }
+        .movie-card .plex-badge {
+            position: absolute;
+            left: 6px; top: 50%; transform: translateY(-50%);
+            font-size: 0.6rem; font-weight: 800; letter-spacing: 0.06em;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #a3e635; color: #1a2e05;
+            box-shadow: 0 0 0 1px rgba(0,0,0,0.35), 0 1px 6px rgba(0,0,0,0.6);
+            white-space: nowrap;
+        }
         .movie-card .trailer-chip {
             pointer-events: auto;
             display: inline-flex; align-items: center; gap: 3px;
@@ -958,6 +968,8 @@
     </div>
 
     <div class="dashboard-bar">
+        <!-- Movie numbers everywhere except the Series tab, which shows series numbers instead. -->
+        <div id="movieStats" style="display:contents;">
         <div class="stat-inline">
             <span class="value" id="totalMovies">-</span>
             <span class="label">Catalog</span>
@@ -970,19 +982,27 @@
             <span class="value" id="activeStrm">-</span>
             <span class="label">STRM</span>
         </div>
-        <div class="stat-inline" title="Series with at least one activated episode (episodes in brackets)">
-            <span class="value" id="seriesActiveCount">-</span>
-            <span class="label">Series Active</span>
-        </div>
-        <div class="stat-inline" title="Episode .strm files on disk for series">
-            <span class="value" id="seriesStrmCount">-</span>
-            <span class="label">Series STRM</span>
-        </div>
         <button class="btn btn-warning" onclick="detectAllLanguages()">Detect All Languages</button>
         <button class="btn btn-warning" onclick="tmdbSearch()">TMDB Search</button>
         <button class="btn btn-outline" disabled style="opacity:0.5;cursor:not-allowed;" title="Disabled pending redesign">Scan Dead</button>
         <button class="btn btn-danger" onclick="clearCatalog()">Clear Catalog</button>
         <button class="btn btn-danger" onclick="clearStrm()">Clear STRMs</button>
+        </div>
+        <div id="seriesStats" style="display:none;">
+        <div class="stat-inline">
+            <span class="value" id="seriesCatalogCount">-</span>
+            <span class="label">Catalog</span>
+        </div>
+        <div class="stat-inline" title="Series with at least one activated episode (episodes in brackets)">
+            <span class="value" id="seriesActiveCount">-</span>
+            <span class="label">Series Active</span>
+        </div>
+        <div class="stat-inline" title="Episode files on disk for series">
+            <span class="value" id="seriesStrmCount">-</span>
+            <span class="label">Series STRM</span>
+        </div>
+        </div>
+        <button class="btn btn-outline" onclick="scanPlexPresence(this)" title="Mark movies and shows that are already in a Plex library">Scan Plex Library</button>
         <button class="btn btn-danger" id="stopBtn" onclick="stopSync()" style="display:none;">Stop</button>
         <span class="msg" id="syncMessage"></span>
         <span class="msg" id="langMessage" style="color:var(--warning);margin-left:0.5rem;"></span>
@@ -1592,6 +1612,8 @@
             headerBtn.classList.add('active');
             document.getElementById('maintSubnav').classList.toggle('active', isMaint);
             document.querySelectorAll('.sub-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.sub === tab));
+            document.getElementById('movieStats').style.display = tab === 'series' ? 'none' : 'contents';
+            document.getElementById('seriesStats').style.display = tab === 'series' ? 'contents' : 'none';
             if (tab === 'catalog') {
                 document.getElementById('tabCatalog').classList.add('active');
                 loadCatalogSummary();
@@ -1693,6 +1715,7 @@
             document.getElementById('seriesActiveCount').textContent =
                 `${(sd.series || 0).toLocaleString()} (${(sd.episodes || 0).toLocaleString()} ep)`;
             document.getElementById('seriesStrmCount').textContent = (sd.strm_files || 0).toLocaleString();
+            document.getElementById('seriesCatalogCount').textContent = (sd.catalog || 0).toLocaleString();
         }
 
         // Clicking a series category shows only the shows active in its Plex library.
@@ -2038,6 +2061,7 @@
                         <img src="${m.poster_url || ''}" alt="" loading="lazy"
                              onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
                         <div class="card-badges">${trailerChipHTML(m.trailer_key)}${m.activated ? '<span class="activated-badge">ACTIVE</span>' : ''}</div>
+                        ${plexBadgeHTML(m.in_plex)}
                         <div class="check-overlay">&check;</div>
                         ${m.rating > 0 ? `<span class="rating-chip">&#9733; ${Number(m.rating).toFixed(1)}</span>` : ''}
                         <div class="card-actions">
@@ -2323,6 +2347,7 @@
                         <img src="${s.poster_url || ''}" alt="" loading="lazy"
                              onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
                         <div class="card-badges">${trailerChipHTML(s.trailer_key)}${s.activated_episode_count > 0 ? `<span class="activated-badge">${s.activated_episode_count} ACTIVE</span>` : ''}</div>
+                        ${plexBadgeHTML(s.in_plex)}
                         ${s.rating > 0 ? `<span class="rating-chip">&#9733; ${Number(s.rating).toFixed(1)}</span>` : ''}
                     </div>
                     <div class="info">
@@ -2415,7 +2440,7 @@
                     <td>${ep.episode_number ?? '?'}</td>
                     <td>${(ep.name||'Unknown').replace(/</g,'&lt;')}</td>
                     <td>${ep.air_date || '-'}</td>
-                    <td>${ep.activated ? '<span style="color:var(--success)">Activated</span>' : '<span style="color:var(--text-muted)">-</span>'}</td>
+                    <td>${ep.activated ? '<span style="color:var(--success)">Activated</span>' : (ep.in_plex ? '' : '<span style="color:var(--text-muted)">-</span>')}${ep.in_plex ? `<span style="color:#a3e635;margin-left:${ep.activated ? '0.4rem' : '0'};" title="Already in Plex: ${ep.in_plex.replace(/"/g,'&quot;')}">&check; in Plex</span>` : ''}</td>
                 </tr>
             `).join('');
         }
@@ -2562,6 +2587,23 @@
             refreshLanguageFilter();
             loadMovies(1);
             loadCatalogSummary();
+        }
+
+        function plexBadgeHTML(label) {
+            if (!label) return '';
+            return `<span class="plex-badge" title="Already in Plex: ${label.replace(/"/g,'&quot;').replace(/</g,'&lt;')}">IN PLEX</span>`;
+        }
+
+        async function scanPlexPresence(btn) {
+            const msg = document.getElementById('syncMessage');
+            btn.disabled = true;
+            msg.textContent = 'Scanning Plex libraries...';
+            const r = await fetchJSON('/api/plex/scan-presence', {method: 'POST'});
+            btn.disabled = false;
+            if (!r || r.error) { msg.textContent = 'Plex scan failed: ' + (r?.error || 'no response'); return; }
+            msg.textContent = `In Plex: ${r.movies_marked} movies, ${r.series_marked} series, ${r.episodes_marked} episodes`;
+            if (document.getElementById('tabSeries').classList.contains('active')) loadSeriesList(seriesCurrentPage);
+            else if (document.getElementById('tabBrowse').classList.contains('active')) loadMovies(currentPage);
         }
 
         async function clearStrm() {

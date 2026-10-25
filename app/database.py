@@ -125,6 +125,7 @@ async def init_db():
         "ALTER TABLE movies ADD COLUMN alt_streams TEXT DEFAULT '[]'",
         "ALTER TABLE movies ADD COLUMN strm_folder TEXT",
         "ALTER TABLE movies ADD COLUMN catalog_refresh_note TEXT",
+        "ALTER TABLE movies ADD COLUMN in_plex TEXT",
     ]:
         try:
             await db.execute(col)
@@ -259,6 +260,8 @@ async def init_db():
     for series_col in [
         "ALTER TABLE series ADD COLUMN trailer_key TEXT",
         "ALTER TABLE series_categories ADD COLUMN plex_library_created INTEGER DEFAULT 0",
+        "ALTER TABLE series ADD COLUMN in_plex TEXT",
+        "ALTER TABLE episodes ADD COLUMN in_plex TEXT",
     ]:
         try:
             await db.execute(series_col)

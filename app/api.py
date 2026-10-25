@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 
 from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN, STRM_SERIES_OUTPUT_DIR, PLEX_SERIES_LIBRARY_ID, PLEX_SERIES_MOUNT_ROOT
 import plex_libraries
+import plex_presence
 from database import get_db
 from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing
 from generator import generate_strm_files, sanitize_filename, write_strm_for_movie, parse_title, get_folder_name
@@ -630,7 +631,7 @@ async def list_movies(
         rows = await db.execute(
             f"SELECT m.id, m.name, m.year, m.rating, m.genre, m.tmdb_id, m.poster_url, "
             f"m.activated, m.account_id, m.account_name, m.trailer_key, m.language, "
-            f"m.director, m.country "
+            f"m.director, m.country, m.in_plex "
             f"FROM movies m WHERE {where} ORDER BY m.{sort_col} {order} LIMIT ? OFFSET ?",
             params + [page_size, offset],
         )
@@ -3169,7 +3170,16 @@ async def _run_scheduled_refresh():
         except Exception as e:
             report.append(f"Activated refresh: FAILED ({e})")
 
-        # 7. Language detection — new movies only (missing language tag), background, TMDB API only
+        # 7. Plex presence — Plex API only, marks titles already in a Plex library
+        if plex_libraries.configured():
+            try:
+                pr = await plex_presence.scan()
+                report.append(f"Plex presence: {pr['movies_marked']} movies, {pr['series_marked']} series, "
+                              f"{pr['episodes_marked']} episodes already in Plex")
+            except Exception as e:
+                report.append(f"Plex presence: FAILED ({plex_libraries.describe_error(e)})")
+
+        # 8. Language detection — new movies only (missing language tag), background, TMDB API only
         if TMDB_API_KEY or TMDB_READ_TOKEN:
             asyncio.create_task(_bulk_detect_languages())
             report.append("Language detection: started in background (new movies only)")
@@ -3657,11 +3667,22 @@ async def fetch_series_episodes_route(series_id: int, request: Request):
     return result
 
 
+@router.post("/plex/scan-presence")
+async def plex_scan_presence():
+    if not plex_libraries.configured():
+        return JSONResponse({"error": "Plex URL/token not configured"}, status_code=400)
+    try:
+        return await plex_presence.scan()
+    except Exception as e:
+        logger.warning("Plex presence scan failed: %s", plex_libraries.describe_error(e))
+        return JSONResponse({"error": plex_libraries.describe_error(e)}, status_code=502)
+
+
 def _count_series_strm_files() -> int:
     if not os.path.exists(STRM_SERIES_OUTPUT_DIR):
         return 0
     return sum(1 for _, _, files in os.walk(STRM_SERIES_OUTPUT_DIR)
-               for f in files if f.endswith(".strm"))
+               for f in files if f.endswith((".strm", ".nfo")) and f != "tvshow.nfo")
 
 
 @router.get("/series/activated-count")
@@ -3671,7 +3692,9 @@ async def series_activated_count():
         "SELECT COUNT(DISTINCT series_id) as series, COUNT(*) as episodes FROM episodes WHERE activated = 1"
     )
     r = await row.fetchone()
-    return {"series": r["series"], "episodes": r["episodes"], "strm_files": _count_series_strm_files()}
+    cat = await (await db.execute("SELECT COUNT(*) FROM series WHERE name != ''")).fetchone()
+    return {"series": r["series"], "episodes": r["episodes"], "catalog": cat[0],
+            "strm_files": _count_series_strm_files()}
 
 
 @router.get("/series/categories")

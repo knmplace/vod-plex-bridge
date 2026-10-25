@@ -19,5 +19,6 @@ STRM_SERIES_OUTPUT_DIR = os.environ.get("STRM_SERIES_OUTPUT_DIR", "/plex-vod/Ser
 PLEX_SERIES_LIBRARY_ID = os.environ.get("PLEX_SERIES_LIBRARY_ID", "")
 # Where the series folders appear on the Plex host (the rclone mount of /vod-series/).
 PLEX_SERIES_MOUNT_ROOT = os.environ.get("PLEX_SERIES_MOUNT_ROOT", "/mnt/vod-bridge-series").rstrip("/")
+PLEX_MOVIE_MOUNT_ROOT = os.environ.get("PLEX_MOVIE_MOUNT_ROOT", "/mnt/vod-bridge").rstrip("/")
 
 
