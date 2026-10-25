@@ -4106,6 +4106,10 @@ async def deactivate_episodes(request: Request):
                     nfo_path = os.path.join(season_dir, f"{base_name}.nfo")
                     if os.path.exists(nfo_path):
                         os.remove(nfo_path)
+                    # A season with no episode files left is removed; the show folder goes below once nothing is active.
+                    if os.path.isdir(season_dir) and not any(
+                            f.endswith((".nfo", ".strm")) for f in os.listdir(season_dir)):
+                        shutil.rmtree(season_dir, ignore_errors=True)
 
             deactivated.append(episode_id)
         except Exception as e:
