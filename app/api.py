@@ -6,12 +6,13 @@ import re
 import shutil
 import time
 import httpx
+import tmdb_local
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlparse
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN, STRM_SERIES_OUTPUT_DIR, PLEX_SERIES_LIBRARY_ID, PLEX_SERIES_MOUNT_ROOT
+from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, STRM_SERIES_OUTPUT_DIR, PLEX_SERIES_LIBRARY_ID, PLEX_SERIES_MOUNT_ROOT
 import plex_libraries
 import plex_presence
 from database import get_db
@@ -1894,7 +1895,7 @@ async def detect_language(request: Request):
     if not movie_ids:
         return JSONResponse(status_code=400, content={"error": "movie_ids required"})
 
-    if not TMDB_API_KEY and not TMDB_READ_TOKEN:
+    if not tmdb_local.has_credentials():
         return JSONResponse(status_code=400, content={"error": "TMDB API key not configured"})
 
     db = await get_db()
@@ -1913,35 +1914,27 @@ async def detect_language(request: Request):
         skipped = 0
         results = []
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            for movie in movies:
-                try:
-                    url = f"https://api.themoviedb.org/3/movie/{movie['tmdb_id']}"
-                    headers = {}
-                    params = {}
-                    if TMDB_READ_TOKEN:
-                        headers["Authorization"] = f"Bearer {TMDB_READ_TOKEN}"
-                    else:
-                        params["api_key"] = TMDB_API_KEY
-                    resp = await client.get(url, params=params, headers=headers)
-                    if resp.status_code != 200:
-                        skipped += 1
-                        continue
-
-                    tmdb_data = resp.json()
-                    lang = tmdb_data.get("original_language", "")
-                    lang_name = LANG_NAMES.get(lang, lang)
-
-                    await db.execute(
-                        "UPDATE movies SET language = ? WHERE id = ?",
-                        (lang, movie["id"]),
-                    )
-                    detected += 1
-                    results.append({"id": movie["id"], "language": lang, "language_name": lang_name})
-                    await asyncio.sleep(0.15)
-                except Exception as e:
-                    logger.warning(f"TMDB language detect failed for movie {movie['id']}: {e}")
+        for movie in movies:
+            try:
+                tmdb_data, local = await tmdb_local.movie_details(movie["tmdb_id"])
+                if tmdb_data is None:
                     skipped += 1
+                    continue
+
+                lang = tmdb_data.get("original_language", "")
+                lang_name = LANG_NAMES.get(lang, lang)
+
+                await db.execute(
+                    "UPDATE movies SET language = ? WHERE id = ?",
+                    (lang, movie["id"]),
+                )
+                detected += 1
+                results.append({"id": movie["id"], "language": lang, "language_name": lang_name})
+                if not local:
+                    await asyncio.sleep(0.15)
+            except Exception as e:
+                logger.warning(f"TMDB language detect failed for movie {movie['id']}: {e}")
+                skipped += 1
 
         await db.commit()
         no_tmdb = len(movie_ids) - len(movies)
@@ -1957,7 +1950,7 @@ async def detect_language(request: Request):
 
 @router.post("/movies/detect-language-all")
 async def detect_language_all():
-    if not TMDB_API_KEY and not TMDB_READ_TOKEN:
+    if not tmdb_local.has_credentials():
         return JSONResponse(status_code=400, content={"error": "TMDB API key not configured"})
     asyncio.create_task(_bulk_detect_languages())
     return {"status": "started", "message": "Bulk language detection started in background"}
@@ -2000,70 +1993,54 @@ async def _bulk_detect_languages():
         import time
         start_time = time.time()
 
-        async def fetch_lang(client, movie):
+        async def fetch_lang(movie) -> bool:
+            """Detect one movie's language; returns whether TMDB answered from the local store."""
             nonlocal detected, skipped, no_tmdb
             if is_cancelled():
-                return
+                return True
             tmdb_id = movie['tmdb_id']
             if not tmdb_id:
                 no_tmdb += 1
-                return
-            url = f"https://api.themoviedb.org/3/movie/{tmdb_id}"
-            headers = {}
-            params = {}
-            if TMDB_READ_TOKEN:
-                headers["Authorization"] = f"Bearer {TMDB_READ_TOKEN}"
-            else:
-                params["api_key"] = TMDB_API_KEY
+                return True
             for attempt in range(5):
                 try:
-                    resp = await client.get(url, params=params, headers=headers)
-                    if resp.status_code == 429:
-                        retry_after = int(resp.headers.get("Retry-After", "4"))
-                        logger.debug(f"TMDB 429 for movie {movie['id']}, retry after {retry_after}s (attempt {attempt+1})")
-                        await asyncio.sleep(retry_after + 1)
-                        continue
-                    if resp.status_code == 404:
-                        skipped += 1
-                        return
-                    if resp.status_code != 200:
-                        logger.warning(f"TMDB {resp.status_code} for tmdb_id={tmdb_id} movie={movie['id']}")
-                        skipped += 1
-                        return
-                    lang = resp.json().get("original_language", "")
-                    if lang:
-                        await db.execute("UPDATE movies SET language = ? WHERE id = ?", (lang, movie["id"]))
-                        detected += 1
-                    else:
-                        skipped += 1
-                    return
-                except Exception as e:
-                    if attempt < 4:
-                        await asyncio.sleep(2)
-                        continue
-                    logger.warning(f"TMDB error for movie {movie['id']}: {e}")
+                    data, local = await tmdb_local.fetch_title("movie", tmdb_id)
+                except tmdb_local.TmdbNotFoundError:
                     skipped += 1
-                    return
+                    return False
+                if data is None:
+                    if attempt < 4:
+                        await asyncio.sleep(5)
+                        continue
+                    skipped += 1
+                    return False
+                lang = data.get("original_language", "")
+                if lang:
+                    await db.execute("UPDATE movies SET language = ? WHERE id = ?", (lang, movie["id"]))
+                    detected += 1
+                else:
+                    skipped += 1
+                return local
             skipped += 1
+            return False
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            for i in range(total):
-                if is_cancelled():
-                    break
-                await fetch_lang(client, movies[i])
+        for i in range(total):
+            if is_cancelled():
+                break
+            if not await fetch_lang(movies[i]):
                 await asyncio.sleep(0.5)
-                processed = detected + skipped + no_tmdb
-                if processed % 25 == 0 and processed > 0:
-                    await db.commit()
-                    elapsed = time.time() - start_time
-                    rate = processed / elapsed if elapsed > 0 else 2
-                    remaining = total - processed
-                    est_min = max(1, round(remaining / rate / 60))
-                    await db.execute(
-                        "UPDATE sync_state SET lang_status = ? WHERE id = 1",
-                        (f"Detecting languages in background: {processed}/{total} ({detected} detected, ~{est_min} min remaining)...",),
-                    )
-                    await db.commit()
+            processed = detected + skipped + no_tmdb
+            if processed % 25 == 0 and processed > 0:
+                await db.commit()
+                elapsed = time.time() - start_time
+                rate = processed / elapsed if elapsed > 0 else 2
+                remaining = total - processed
+                est_min = max(1, round(remaining / rate / 60))
+                await db.execute(
+                    "UPDATE sync_state SET lang_status = ? WHERE id = 1",
+                    (f"Detecting languages in background: {processed}/{total} ({detected} detected, ~{est_min} min remaining)...",),
+                )
+                await db.commit()
 
         await db.commit()
         elapsed_min = round((time.time() - start_time) / 60, 1)
@@ -2357,7 +2334,7 @@ async def _run_catalog_sync(max_movies: int = 0, category_ids: list = None, acco
         if not is_cancelled():
             await search_tmdb_for_missing()
 
-        if not is_cancelled() and (TMDB_API_KEY or TMDB_READ_TOKEN):
+        if not is_cancelled() and tmdb_local.has_credentials():
             asyncio.create_task(_bulk_detect_languages())
     except Exception as e:
         logger.error(f"Catalog sync failed: {e}")
@@ -2523,7 +2500,7 @@ async def _run_full_sync():
 
 @router.post("/movies/{movie_id}/detect-language")
 async def detect_single_language(movie_id: int):
-    if not TMDB_API_KEY and not TMDB_READ_TOKEN:
+    if not tmdb_local.has_credentials():
         return JSONResponse(status_code=400, content={"error": "TMDB API key not configured"})
 
     db = await get_db()
@@ -2537,18 +2514,10 @@ async def detect_single_language(movie_id: int):
         if not movie["tmdb_id"]:
             return {"id": movie_id, "language": None, "message": "No TMDB ID"}
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            url = f"https://api.themoviedb.org/3/movie/{movie['tmdb_id']}"
-            headers = {}
-            params = {}
-            if TMDB_READ_TOKEN:
-                headers["Authorization"] = f"Bearer {TMDB_READ_TOKEN}"
-            else:
-                params["api_key"] = TMDB_API_KEY
-            resp = await client.get(url, params=params, headers=headers)
-            if resp.status_code != 200:
-                return {"id": movie_id, "language": None, "message": f"TMDB returned {resp.status_code}"}
-            lang = resp.json().get("original_language", "")
+        tmdb_data, _ = await tmdb_local.movie_details(movie["tmdb_id"])
+        if tmdb_data is None:
+            return {"id": movie_id, "language": None, "message": "TMDB lookup failed"}
+        lang = tmdb_data.get("original_language", "")
 
         await db.execute("UPDATE movies SET language = ? WHERE id = ?", (lang, movie_id))
         await db.commit()
@@ -2790,7 +2759,7 @@ async def mark_movies_dead(request: Request):
 @router.post("/movies/tmdb-search")
 async def trigger_tmdb_search():
     """Manually trigger TMDB title search for movies missing TMDB IDs."""
-    if not TMDB_API_KEY and not TMDB_READ_TOKEN:
+    if not tmdb_local.has_credentials():
         return JSONResponse(status_code=400, content={"error": "TMDB API key not configured"})
     asyncio.create_task(_run_tmdb_search())
     return {"status": "started", "message": "TMDB title search started in background"}
@@ -3196,7 +3165,7 @@ async def _run_scheduled_refresh():
                 report.append(f"Plex presence: FAILED ({plex_libraries.describe_error(e)})")
 
         # 8. Language detection — new movies only (missing language tag), background, TMDB API only
-        if TMDB_API_KEY or TMDB_READ_TOKEN:
+        if tmdb_local.has_credentials():
             asyncio.create_task(_bulk_detect_languages())
             report.append("Language detection: started in background (new movies only)")
 

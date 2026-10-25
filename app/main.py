@@ -15,6 +15,9 @@ from error_screens import generate_error_screens
 from config import REDIRECT_STREAMING
 import auth
 from connection import router as connection_router
+from tmdb_routes import router as tmdb_router
+import tmdb_local
+import tmdb_store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -104,6 +107,8 @@ async def lifespan(app: FastAPI):
     dead_scan_task = asyncio.create_task(start_dead_scan_scheduler())
     health_task = asyncio.create_task(health_check_scheduler())
     log_archive_task = asyncio.create_task(start_log_archive_scheduler())
+    await asyncio.to_thread(tmdb_store.init_db)
+    tmdb_task = asyncio.create_task(tmdb_local.fill_loop())
     sweep_task = None
     if REDIRECT_STREAMING:
         from redirect import session_cap_sweep_loop
@@ -112,6 +117,7 @@ async def lifespan(app: FastAPI):
     dead_scan_task.cancel()
     health_task.cancel()
     log_archive_task.cancel()
+    tmdb_task.cancel()
     if sweep_task:
         sweep_task.cancel()
 
@@ -127,6 +133,7 @@ app.include_router(proxy_router)
 app.include_router(api_router)
 app.include_router(auth.router)
 app.include_router(connection_router)
+app.include_router(tmdb_router)
 app.mount("/static", StaticFiles(directory="/app/static"), name="static")
 
 templates = Jinja2Templates(directory="/app/templates")

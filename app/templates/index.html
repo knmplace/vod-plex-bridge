@@ -969,6 +969,7 @@
                 <button class="tab-btn" data-tab="streams" onclick="switchTab('streams')">Streams <span class="badge" id="streamsBadge" style="display:none;background:var(--success);margin-left:0.3rem;">0</span></button>
                 <button class="tab-btn" data-tab="health" onclick="switchTab('health')">Health</button>
                 <button class="tab-btn" data-tab="maintenance" onclick="switchTab(lastMaintTab)">Maintenance <span class="badge" id="maintBadge" style="display:none;background:var(--danger);margin-left:0.3rem;">0</span></button>
+                <button class="tab-btn" data-tab="tmdb" onclick="switchTab('tmdb')">TMDB Local</button>
                 <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">Settings</button>
             </div>
         </div>
@@ -1524,6 +1525,68 @@
         </div>
     </div>
 
+    <div class="tab-content" id="tabTmdb">
+        <div class="browse-section" style="padding-top:1rem;max-width:1100px;margin:0 auto;">
+            <div class="panel" style="margin-bottom:1rem;">
+                <div class="panel-header">Use local TMDB library</div>
+                <div class="panel-body" style="display:flex;flex-wrap:wrap;align-items:center;gap:0.75rem;">
+                    <div style="display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;">
+                        <button class="btn" id="tmdbOn" onclick="tmdbToggle(true)" style="border-radius:0;">On</button>
+                        <button class="btn" id="tmdbOff" onclick="tmdbToggle(false)" style="border-radius:0;">Off</button>
+                    </div>
+                    <span id="tmdbToggleText" style="flex:1;min-width:16rem;font-size:0.8rem;color:var(--text-muted);"></span>
+                    <button class="btn btn-outline" id="tmdbClearBtn" style="display:none;font-size:0.75rem;" onclick="tmdbClear()"></button>
+                </div>
+            </div>
+            <div class="panel" style="margin-bottom:1rem;">
+                <div class="panel-header">TMDB Library</div>
+                <div class="panel-body" style="font-size:0.8rem;">
+                    <p style="color:var(--text-muted);margin:0 0 0.6rem;">A local copy of TMDB movie and TV details for your catalog plus the most popular TMDB titles. Bridge lookups (genre enrichment, title matching, language detection) check it first and only call TMDB on a miss. It needs a TMDB API key in the Settings tab.</p>
+                    <div id="tmdbSummary" style="display:flex;flex-wrap:wrap;gap:0.4rem 1.2rem;align-items:center;margin-bottom:0.5rem;">Loading...</div>
+                    <div id="tmdbJob" style="margin-bottom:0.5rem;"></div>
+                    <div style="overflow-x:auto;margin-bottom:0.6rem;">
+                        <table class="summary-table compact" style="width:100%;">
+                            <thead><tr><th>Type</th><th>Entries</th><th>Release date</th><th>Poster</th><th>Cast</th><th>Overview</th><th>Rating</th><th>Changed on TMDB</th><th>TMDB IDs known</th><th>Last refreshed</th></tr></thead>
+                            <tbody id="tmdbStatsBody"></tbody>
+                        </table>
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.5rem;">
+                        <button class="btn btn-outline tmdb-run" style="font-size:0.75rem;" onclick="tmdbRun('burst')">Run fill burst now</button>
+                        <button class="btn btn-outline tmdb-run" style="font-size:0.75rem;" onclick="tmdbRun('changes')">Check TMDB changes</button>
+                        <button class="btn btn-outline tmdb-run" style="font-size:0.75rem;" onclick="tmdbRun('export')">Refresh TMDB ID list</button>
+                        <button class="btn btn-outline tmdb-run" style="font-size:0.75rem;" onclick="tmdbRun('match')">Match titles without a TMDB ID</button>
+                        <button class="btn btn-outline" id="tmdbRetentionBtn" style="font-size:0.75rem;" onclick="tmdbRetention(true)">Preview retention cleanup</button>
+                    </div>
+                    <div id="tmdbRetentionText" style="color:var(--text-muted);"></div>
+                    <div id="tmdbRetentionPreview" style="display:none;margin-top:0.5rem;padding:0.6rem;border:1px solid var(--warning);border-radius:6px;"></div>
+                </div>
+            </div>
+            <div class="panel" style="margin-bottom:1rem;">
+                <div class="panel-header">Lookup</div>
+                <div class="panel-body" style="font-size:0.8rem;">
+                    <p style="color:var(--text-muted);margin:0 0 0.6rem;">Search by name or TMDB ID. The local library is checked first; on a miss TMDB is searched and the results are saved here.</p>
+                    <form onsubmit="event.preventDefault();tmdbLookup();" style="display:flex;flex-wrap:wrap;gap:0.4rem;align-items:center;" class="conn-field">
+                        <input id="tmdbQuery" placeholder="Title or TMDB ID" style="width:16rem;max-width:100%;">
+                        <select id="tmdbType" style="padding:0.45rem;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);">
+                            <option value="movie">Movie</option><option value="tv">TV Show</option>
+                        </select>
+                        <input id="tmdbYear" placeholder="Year" inputmode="numeric" maxlength="4" style="width:5rem;">
+                        <button class="btn btn-primary" type="submit" id="tmdbLookupBtn">Search</button>
+                    </form>
+                    <div id="tmdbLookupResults" style="margin-top:0.6rem;"></div>
+                </div>
+            </div>
+            <div class="panel">
+                <div class="panel-header">Catalog refresh settings</div>
+                <div class="panel-body" style="font-size:0.8rem;">
+                    <div id="tmdbSettingsFields" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:0.75rem;margin-bottom:0.6rem;"></div>
+                    <button class="btn btn-primary" onclick="tmdbSaveSettings()">Save settings</button>
+                    <span id="tmdbSettingsMsg" style="margin-left:0.6rem;color:var(--text-muted);"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="tab-content" id="tabSettings">
         <div class="browse-section" style="padding-top:1rem;">
             <div class="settings-grid">
@@ -1701,10 +1764,207 @@
         const MAINT_TABS = ['dead', 'logs'];
         let lastMaintTab = 'dead';
 
+        // --- TMDB Local tab ---
+        let tmdbTimer = null;
+        let tmdbStatus = null;
+        let tmdbSettingsLoaded = false;
+        const TMDB_FIELDS = [
+            ['burst_size', 'Titles per burst', 'Catalog title details refreshed per burst (split across movies and shows).'],
+            ['bursts_per_day', 'Bursts per day', 'How many fill bursts run each day.'],
+            ['daily_budget', 'Daily request budget', 'Fill bursts stop once this many TMDB requests were made today.'],
+            ['concurrency', 'Parallel requests', 'Concurrent requests during a burst. Keep low to stay light on bandwidth.'],
+            ['auto_match_batch', 'Titles to match per burst', 'Catalog movies without a TMDB ID matched by name and year after each burst. 0 turns it off.'],
+            ['popular_keep', 'Popular titles to keep', 'Also store this many of the most popular TMDB movies and TV shows (each). 0 = catalog only.'],
+        ];
+        const tmdbNum = v => Number(v ?? 0).toLocaleString();
+        const tmdbTime = ts => ts ? new Date(ts * 1000).toLocaleString() : '-';
+        const tmdbBytes = b => b > 1e9 ? `${(b / 1e9).toFixed(2)} GB` : `${(b / 1e6).toFixed(1)} MB`;
+        const tmdbPct = (part, whole) => whole ? `${tmdbNum(part)} (${Math.round(part / whole * 100)}%)` : '0';
+
+        function tmdbResultText(r) {
+            if (r.error) return null;
+            switch (r.job) {
+                case 'burst':
+                    if (r.skipped) return `Last fill burst: skipped (${r.skipped})`;
+                    if (!Number(r.fetched) && !Number(r.failed) && !Number(r.gone)) return 'Last fill burst: nothing to fetch, every catalog and popular title is stored and up to date';
+                    return `Last fill burst: ${tmdbNum(r.fetched)} fetched (${tmdbNum(r.popular)} popular), ${tmdbNum(r.failed)} failed, ${tmdbNum(r.gone)} no longer on TMDB`;
+                case 'changes': {
+                    const m = r.movie || {}, t = r.tv || {};
+                    return `Last change check: ${tmdbNum(m.changed_on_tmdb)} movies and ${tmdbNum(t.changed_on_tmdb)} TV shows changed on TMDB; ${tmdbNum(m.stored_marked)} + ${tmdbNum(t.stored_marked)} stored titles marked for refresh`;
+                }
+                case 'export':
+                    return `Last TMDB ID list refresh: ${r.movie == null ? 'movies unavailable' : tmdbNum(r.movie) + ' movie IDs'}, ${r.tv == null ? 'TV unavailable' : tmdbNum(r.tv) + ' TV IDs'}`;
+                case 'match':
+                    return `Last title match: ${tmdbNum(r.found)} matched, ${tmdbNum(r.not_found)} not found, ${tmdbNum(r.skipped)} skipped`;
+                default:
+                    return null;
+            }
+        }
+
+        async function tmdbFetch(url, opts) {
+            const resp = await fetch(url, opts);
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) throw new Error(data.detail || data.error || `HTTP ${resp.status}`);
+            return data;
+        }
+
+        function tmdbSchedule() {
+            clearTimeout(tmdbTimer);
+            if (!document.getElementById('tabTmdb').classList.contains('active')) return;
+            tmdbTimer = setTimeout(loadTmdbStatus, tmdbStatus && tmdbStatus.job.running ? 3000 : 30000);
+        }
+
+        async function loadTmdbStatus() {
+            try {
+                tmdbStatus = await tmdbFetch('/api/tmdb-store/status');
+                renderTmdbStatus();
+            } catch (e) {
+                document.getElementById('tmdbSummary').innerHTML = `<span style="color:var(--danger);">Could not load status: ${escapeHtml(e.message)}</span>`;
+            }
+            tmdbSchedule();
+        }
+
+        function renderTmdbStatus() {
+            const s = tmdbStatus, on = s.settings.enabled, job = s.job;
+            document.getElementById('tmdbOn').className = 'btn ' + (on ? 'btn-primary' : 'btn-outline');
+            document.getElementById('tmdbOff').className = 'btn ' + (on ? 'btn-outline' : 'btn-primary');
+            document.getElementById('tmdbToggleText').textContent = on
+                ? 'On: TMDB details are saved locally for your catalog and the most popular TMDB titles, and reused instead of calling TMDB.'
+                : 'Off: nothing is stored; every lookup goes straight to TMDB. Use this if disk space is tight.';
+            const clearBtn = document.getElementById('tmdbClearBtn');
+            clearBtn.style.display = !on && s.db_size_bytes > 0 ? '' : 'none';
+            clearBtn.textContent = `Delete stored data (${tmdbBytes(s.db_size_bytes)})`;
+            clearBtn.disabled = job.running;
+
+            const lt = s.lookups_today.local + s.lookups_today.tmdb;
+            const pill = s.active
+                ? '<span style="padding:0.15rem 0.5rem;border-radius:4px;background:var(--success);color:#fff;font-weight:600;">Active</span>'
+                : `<span style="padding:0.15rem 0.5rem;border-radius:4px;background:var(--warning);color:#000;font-weight:600;">${s.has_api_key ? 'Off' : 'Inactive - no TMDB API key'}</span>`;
+            document.getElementById('tmdbSummary').innerHTML = `${pill}
+                <span>Requests today: <b>${tmdbNum(s.requests_today)}</b> / ${tmdbNum(s.settings.daily_budget)}</span>
+                <span>Answered locally today: <b>${tmdbPct(s.lookups_today.local, lt)}</b> of ${tmdbNum(lt)} lookups</span>
+                <span>Size: <b>${tmdbBytes(s.db_size_bytes)}</b></span>
+                <span>Next burst: <b>${tmdbTime(s.next_burst_at)}</b></span>`;
+
+            let jobHtml = '';
+            if (job.running) jobHtml += `<div style="color:var(--warning);">Running: ${escapeHtml(job.phase || '')}${job.total > 0 ? ` - ${tmdbNum(job.done)} / ${tmdbNum(job.total)}` : ''}</div>`;
+            if (job.last_error) jobHtml += `<div style="color:var(--danger);">${escapeHtml(job.last_error)}</div>`;
+            const rt = job.last_result && tmdbResultText(job.last_result);
+            if (rt) jobHtml += `<div style="color:var(--text-muted);">${escapeHtml(rt)} <span style="opacity:0.7;">(${tmdbTime(job.last_result.at)})</span></div>`;
+            document.getElementById('tmdbJob').innerHTML = jobHtml;
+
+            document.getElementById('tmdbStatsBody').innerHTML = s.stats.map(t => `<tr>
+                <td><b>${t.media_type === 'movie' ? 'Movies' : 'TV Shows'}</b></td>
+                <td>${tmdbNum(t.entries)}</td><td>${tmdbPct(t.with_release_date, t.entries)}</td><td>${tmdbPct(t.with_poster, t.entries)}</td>
+                <td>${tmdbPct(t.with_cast, t.entries)}</td><td>${tmdbPct(t.with_overview, t.entries)}</td><td>${tmdbPct(t.with_rating, t.entries)}</td>
+                <td>${tmdbNum(t.stale)}</td><td>${tmdbNum(t.export_ids)}${t.export_date ? ` <span style="color:var(--text-muted);">(${escapeHtml(t.export_date)})</span>` : ''}</td>
+                <td>${tmdbTime(t.last_fetched_at)}</td></tr>`).join('');
+
+            const canRun = s.has_api_key && on && !job.running;
+            document.querySelectorAll('.tmdb-run').forEach(b => b.disabled = !canRun);
+            document.getElementById('tmdbRetentionBtn').disabled = job.running;
+            const rp = s.retention_policy;
+            document.getElementById('tmdbRetentionText').textContent =
+                `TMDB data is cached for at most ${rp.maximum_days} days and referenced titles are queued for refresh after ${rp.refresh_after_days} days. Cleanup runs daily. Last run: ${tmdbTime(rp.last_run_at)}.`;
+
+            if (!tmdbSettingsLoaded) {
+                document.getElementById('tmdbSettingsFields').innerHTML = TMDB_FIELDS.map(([k, label, hint]) => `
+                    <label class="conn-field" style="display:flex;flex-direction:column;gap:0.25rem;"><span><b>${label}</b></span>
+                        <input type="number" min="0" id="tmdbSet_${k}" value="${Number(s.settings[k])}">
+                        <span style="font-size:0.7rem;color:var(--text-muted);">${hint}</span></label>`).join('');
+                tmdbSettingsLoaded = true;
+            }
+        }
+
+        async function tmdbToggle(on) {
+            if (tmdbStatus && tmdbStatus.settings.enabled === on) return;
+            try {
+                await tmdbFetch('/api/tmdb-store/settings', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({enabled: on})});
+            } catch (e) { alert('Could not change the setting: ' + e.message); }
+            loadTmdbStatus();
+        }
+
+        async function tmdbClear() {
+            if (!confirm(`Delete all stored TMDB data (${tmdbBytes(tmdbStatus.db_size_bytes)})? It is rebuilt from TMDB if the library is turned back on.`)) return;
+            try { await tmdbFetch('/api/tmdb-store/clear', {method: 'POST'}); }
+            catch (e) { alert('Could not delete stored data: ' + e.message); }
+            loadTmdbStatus();
+        }
+
+        async function tmdbRun(job) {
+            try { await tmdbFetch(`/api/tmdb-store/run/${job}`, {method: 'POST'}); }
+            catch (e) { alert(e.message); }
+            setTimeout(loadTmdbStatus, 500);
+        }
+
+        async function tmdbRetention(dryRun) {
+            const box = document.getElementById('tmdbRetentionPreview');
+            if (!dryRun && !confirm('Apply this TMDB retention cleanup now?')) return;
+            try {
+                const r = await tmdbFetch(`/api/tmdb-store/retention?dry_run=${dryRun}`, {method: 'POST'});
+                if (!dryRun) {
+                    box.style.display = 'none';
+                    alert(`Removed ${tmdbNum(r.titles_removed)} title record(s) under the retention policy`);
+                    loadTmdbStatus();
+                    return;
+                }
+                box.style.display = '';
+                box.innerHTML = `<div style="font-weight:600;margin-bottom:0.3rem;">Retention preview - nothing has been deleted</div>
+                    <div style="margin-bottom:0.5rem;">${tmdbNum(r.referenced)} catalog TMDB IDs; ${tmdbNum(r.unreferenced_titles)} stored titles are not in the catalog and are kept until the cache limit. Cleanup would remove ${tmdbNum(r.titles_removed)} expired title record(s) (${tmdbNum(r.expired_referenced_titles)} in the catalog, refetched next burst), ${tmdbNum(r.seasons_removed)} season cache row(s), ${tmdbNum(r.searches_removed)} old search answer(s), and ${tmdbNum(r.gone_removed)} old missing-title marker(s).</div>
+                    <button class="btn btn-warning" style="font-size:0.75rem;" onclick="tmdbRetention(false)">Apply retention cleanup</button>`;
+            } catch (e) { alert('Retention failed: ' + e.message); }
+        }
+
+        async function tmdbLookup() {
+            const q = document.getElementById('tmdbQuery').value.trim();
+            if (!q) return;
+            const type = document.getElementById('tmdbType').value;
+            const year = document.getElementById('tmdbYear').value.replace(/\D/g, '');
+            const out = document.getElementById('tmdbLookupResults');
+            const btn = document.getElementById('tmdbLookupBtn');
+            btn.disabled = true;
+            out.innerHTML = '<span style="color:var(--text-muted);">Searching...</span>';
+            try {
+                const params = new URLSearchParams({q, type});
+                if (year) params.set('year', year);
+                const d = await tmdbFetch('/api/tmdb-store/search?' + params);
+                const on = tmdbStatus && tmdbStatus.settings.enabled;
+                const src = d.source === 'local' ? 'from the local library' : on ? 'from TMDB (now saved locally)' : 'from TMDB (not saved - library off)';
+                out.innerHTML = `<div style="color:var(--text-muted);margin-bottom:0.4rem;">${d.results.length} result(s) - ${src}</div>` + d.results.map(r => `
+                    <div style="display:flex;gap:0.75rem;border:1px solid var(--border);border-radius:6px;padding:0.5rem;margin-bottom:0.4rem;">
+                        ${r.poster_url ? `<img src="${escapeHtml(r.poster_url)}" alt="" loading="lazy" style="width:48px;height:72px;object-fit:cover;border-radius:4px;flex-shrink:0;">` : '<div style="width:48px;height:72px;border-radius:4px;background:var(--bg-primary);flex-shrink:0;"></div>'}
+                        <div style="min-width:0;">
+                            <div style="font-weight:600;font-size:0.9rem;">${escapeHtml(r.title || '')}${r.year ? ` <span style="color:var(--text-muted);font-weight:400;">(${r.year})</span>` : ''}</div>
+                            <div style="color:var(--text-muted);">TMDB ${r.tmdb_id}${r.content_rating ? ' · ' + escapeHtml(r.content_rating) : ''}${r.vote_average ? ' · ★ ' + Number(r.vote_average).toFixed(1) : ''}${r.genres ? ' · ' + escapeHtml(r.genres) : ''}${r.original_title && r.original_title !== r.title ? ' · ' + escapeHtml(r.original_title) : ''}</div>
+                            ${r.top_cast ? `<div style="color:var(--text-muted);">${escapeHtml(r.top_cast)}</div>` : ''}
+                            ${r.overview ? `<div style="margin-top:0.2rem;">${escapeHtml(r.overview)}</div>` : ''}
+                        </div>
+                    </div>`).join('');
+            } catch (e) {
+                out.innerHTML = `<span style="color:var(--danger);">Lookup failed: ${escapeHtml(e.message)}</span>`;
+            }
+            btn.disabled = false;
+            loadTmdbStatus();
+        }
+
+        async function tmdbSaveSettings() {
+            const body = {};
+            TMDB_FIELDS.forEach(([k]) => body[k] = Number(document.getElementById('tmdbSet_' + k).value) || 0);
+            const msg = document.getElementById('tmdbSettingsMsg');
+            try {
+                const saved = await tmdbFetch('/api/tmdb-store/settings', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+                TMDB_FIELDS.forEach(([k]) => document.getElementById('tmdbSet_' + k).value = saved[k]);
+                msg.textContent = 'Settings saved';
+            } catch (e) { msg.textContent = 'Could not save settings: ' + e.message; }
+            setTimeout(() => msg.textContent = '', 4000);
+            loadTmdbStatus();
+        }
+
         function switchTab(tab) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             if (logRefreshTimer) { clearInterval(logRefreshTimer); logRefreshTimer = null; }
+            clearTimeout(tmdbTimer);
             const isMaint = MAINT_TABS.includes(tab);
             if (isMaint) lastMaintTab = tab;
             const headerTab = isMaint ? 'maintenance' : (tab || 'browse');
@@ -1749,6 +2009,9 @@
                 logRefreshTimer = setInterval(() => {
                     if (document.getElementById('healthAutoRefresh').checked) { loadHealthStatus(); loadStreamHealth(); }
                 }, 30000);
+            } else if (tab === 'tmdb') {
+                document.getElementById('tabTmdb').classList.add('active');
+                loadTmdbStatus();
             } else if (tab === 'settings') {
                 document.getElementById('tabSettings').classList.add('active');
                 loadConnection();

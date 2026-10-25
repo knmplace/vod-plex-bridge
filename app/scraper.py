@@ -6,8 +6,9 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, TMDB_API_KEY, TMDB_READ_TOKEN
+from config import DISPATCHARR_URL, DISPATCHARR_API_KEY
 from database import get_db
+import tmdb_local
 
 logger = logging.getLogger(__name__)
 
@@ -377,7 +378,7 @@ async def scrape_catalog(max_movies: int = 0, category_ids: list = None, account
 async def enrich_from_tmdb(batch_size: int = 50):
     global _cancel
 
-    if not TMDB_API_KEY and not TMDB_READ_TOKEN:
+    if not tmdb_local.has_credentials():
         logger.warning("TMDB_API_KEY/TMDB_READ_TOKEN not set, skipping enrichment")
         return 0
 
@@ -407,46 +408,38 @@ async def enrich_from_tmdb(batch_size: int = 50):
         await db.commit()
 
         enriched = 0
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            for movie in movies:
-                if _cancel:
-                    logger.info("TMDB enrichment cancelled by user")
-                    break
-                try:
-                    url = f"https://api.themoviedb.org/3/movie/{movie['tmdb_id']}"
-                    headers = {}
-                    params = {}
-                    if TMDB_READ_TOKEN:
-                        headers["Authorization"] = f"Bearer {TMDB_READ_TOKEN}"
-                    else:
-                        params["api_key"] = TMDB_API_KEY
-                    resp = await client.get(url, params=params, headers=headers)
-                    if resp.status_code != 200:
-                        continue
+        for movie in movies:
+            if _cancel:
+                logger.info("TMDB enrichment cancelled by user")
+                break
+            try:
+                tmdb_data, local = await tmdb_local.movie_details(movie["tmdb_id"])
+                if tmdb_data is None:
+                    continue
 
-                    tmdb_data = resp.json()
-                    genres = ", ".join(g["name"] for g in tmdb_data.get("genres", []))
-                    description = tmdb_data.get("overview", "")
-                    imdb_id = tmdb_data.get("imdb_id")
-                    poster_path = tmdb_data.get("poster_path")
-                    poster_url = f"https://image.tmdb.org/t/p/w600_and_h900_bestv2{poster_path}" if poster_path else None
-                    runtime_min = tmdb_data.get("runtime")
-                    duration_seconds = runtime_min * 60 if runtime_min else None
+                genres = ", ".join(g["name"] for g in tmdb_data.get("genres", []))
+                description = tmdb_data.get("overview", "")
+                imdb_id = tmdb_data.get("imdb_id")
+                poster_path = tmdb_data.get("poster_path")
+                poster_url = f"https://image.tmdb.org/t/p/w600_and_h900_bestv2{poster_path}" if poster_path else None
+                runtime_min = tmdb_data.get("runtime")
+                duration_seconds = runtime_min * 60 if runtime_min else None
 
-                    await db.execute("""
-                        UPDATE movies SET
-                            genre = CASE WHEN genre = '' OR genre IS NULL THEN ? ELSE genre END,
-                            description = CASE WHEN description = '' OR description IS NULL THEN ? ELSE description END,
-                            imdb_id = CASE WHEN imdb_id IS NULL THEN ? ELSE imdb_id END,
-                            poster_url = CASE WHEN poster_url IS NULL THEN ? ELSE poster_url END,
-                            duration_seconds = CASE WHEN duration_seconds IS NULL THEN ? ELSE duration_seconds END,
-                            tmdb_enriched = 1
-                        WHERE id = ?
-                    """, (genres, description, imdb_id, poster_url, duration_seconds, movie["id"]))
-                    enriched += 1
+                await db.execute("""
+                    UPDATE movies SET
+                        genre = CASE WHEN genre = '' OR genre IS NULL THEN ? ELSE genre END,
+                        description = CASE WHEN description = '' OR description IS NULL THEN ? ELSE description END,
+                        imdb_id = CASE WHEN imdb_id IS NULL THEN ? ELSE imdb_id END,
+                        poster_url = CASE WHEN poster_url IS NULL THEN ? ELSE poster_url END,
+                        duration_seconds = CASE WHEN duration_seconds IS NULL THEN ? ELSE duration_seconds END,
+                        tmdb_enriched = 1
+                    WHERE id = ?
+                """, (genres, description, imdb_id, poster_url, duration_seconds, movie["id"]))
+                enriched += 1
+                if not local:
                     await asyncio.sleep(0.25)
-                except Exception as e:
-                    logger.error(f"TMDB enrichment failed for movie {movie['id']}: {e}")
+            except Exception as e:
+                logger.error(f"TMDB enrichment failed for movie {movie['id']}: {e}")
 
         await db.commit()
         logger.info(f"TMDB enrichment complete: {enriched} movies enriched")
@@ -479,7 +472,7 @@ async def search_tmdb_for_missing(batch_size: int = 50) -> dict:
     Returns {found: int, not_found: int, skipped: int}."""
     global _cancel
 
-    if not TMDB_API_KEY and not TMDB_READ_TOKEN:
+    if not tmdb_local.has_credentials():
         logger.warning("TMDB API key not set, skipping title search")
         return {"found": 0, "not_found": 0, "skipped": 0}
 
@@ -501,94 +494,65 @@ async def search_tmdb_for_missing(batch_size: int = 50) -> dict:
     not_found = 0
     skipped = 0
 
-    headers = {}
-    params_base = {}
-    if TMDB_READ_TOKEN:
-        headers["Authorization"] = f"Bearer {TMDB_READ_TOKEN}"
-    else:
-        params_base["api_key"] = TMDB_API_KEY
+    for movie in movies:
+        if _cancel:
+            break
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        for movie in movies:
-            if _cancel:
-                break
+        movie_id = movie["id"]
+        raw_name = movie["name"]
+        year = movie["year"]
 
-            movie_id = movie["id"]
-            raw_name = movie["name"]
-            year = movie["year"]
+        clean = _clean_title(raw_name)
+        if not clean or len(clean) < 2:
+            await db.execute("UPDATE movies SET tmdb_searched = 1 WHERE id = ?", (movie_id,))
+            skipped += 1
+            continue
 
-            clean = _clean_title(raw_name)
-            if not clean or len(clean) < 2:
-                await db.execute("UPDATE movies SET tmdb_searched = 1 WHERE id = ?", (movie_id,))
-                skipped += 1
-                continue
+        try:
+            search_year = int(year) if str(year or "").isdigit() else None
+            results, local = await tmdb_local.search_movie(clean, search_year)
+            best = None
+            best_score = 0.0
 
-            try:
-                search_params = {**params_base, "query": clean}
-                if year:
-                    search_params["year"] = year
+            for r in results[:5]:
+                tmdb_title = r.get("title", "")
+                tmdb_year = (r.get("release_date") or "")[:4]
+                score = _title_similarity(clean, tmdb_title)
+                if year and tmdb_year and str(year) == tmdb_year:
+                    score += 0.3
+                if score > best_score:
+                    best_score = score
+                    best = r
 
-                resp = await client.get(
-                    "https://api.themoviedb.org/3/search/movie",
-                    params=search_params,
-                    headers=headers,
+            if best and best_score >= 0.5:
+                tmdb_id = str(best["id"])
+                poster_path = best.get("poster_path")
+                poster_url = f"https://image.tmdb.org/t/p/w600_and_h900_bestv2{poster_path}" if poster_path else None
+                description = best.get("overview", "")
+                lang = best.get("original_language", "")
+
+                await db.execute(
+                    "UPDATE movies SET tmdb_id = ?, tmdb_searched = 1, "
+                    "poster_url = CASE WHEN poster_url IS NULL THEN ? ELSE poster_url END, "
+                    "description = CASE WHEN description = '' OR description IS NULL THEN ? ELSE description END, "
+                    "language = CASE WHEN language = '' OR language IS NULL THEN ? ELSE language END "
+                    "WHERE id = ?",
+                    (tmdb_id, poster_url, description, lang, movie_id),
                 )
+                found += 1
+                logger.info("TMDB search matched: %s → %s (tmdb=%s, score=%.2f)",
+                            raw_name, best.get("title"), tmdb_id, best_score)
+            else:
+                await db.execute("UPDATE movies SET tmdb_searched = 1 WHERE id = ?", (movie_id,))
+                not_found += 1
+                logger.info("TMDB search: no match for '%s' (best_score=%.2f)", raw_name, best_score)
 
-                if resp.status_code == 429:
-                    retry_after = int(resp.headers.get("Retry-After", "2"))
-                    await asyncio.sleep(retry_after)
-                    resp = await client.get(
-                        "https://api.themoviedb.org/3/search/movie",
-                        params=search_params,
-                        headers=headers,
-                    )
-
-                if resp.status_code != 200:
-                    skipped += 1
-                    continue
-
-                results = resp.json().get("results", [])
-                best = None
-                best_score = 0.0
-
-                for r in results[:5]:
-                    tmdb_title = r.get("title", "")
-                    tmdb_year = (r.get("release_date") or "")[:4]
-                    score = _title_similarity(clean, tmdb_title)
-                    if year and tmdb_year and str(year) == tmdb_year:
-                        score += 0.3
-                    if score > best_score:
-                        best_score = score
-                        best = r
-
-                if best and best_score >= 0.5:
-                    tmdb_id = str(best["id"])
-                    poster_path = best.get("poster_path")
-                    poster_url = f"https://image.tmdb.org/t/p/w600_and_h900_bestv2{poster_path}" if poster_path else None
-                    description = best.get("overview", "")
-                    lang = best.get("original_language", "")
-
-                    await db.execute(
-                        "UPDATE movies SET tmdb_id = ?, tmdb_searched = 1, "
-                        "poster_url = CASE WHEN poster_url IS NULL THEN ? ELSE poster_url END, "
-                        "description = CASE WHEN description = '' OR description IS NULL THEN ? ELSE description END, "
-                        "language = CASE WHEN language = '' OR language IS NULL THEN ? ELSE language END "
-                        "WHERE id = ?",
-                        (tmdb_id, poster_url, description, lang, movie_id),
-                    )
-                    found += 1
-                    logger.info("TMDB search matched: %s → %s (tmdb=%s, score=%.2f)",
-                                raw_name, best.get("title"), tmdb_id, best_score)
-                else:
-                    await db.execute("UPDATE movies SET tmdb_searched = 1 WHERE id = ?", (movie_id,))
-                    not_found += 1
-                    logger.info("TMDB search: no match for '%s' (best_score=%.2f)", raw_name, best_score)
-
+            if not local:
                 await asyncio.sleep(0.25)
 
-            except Exception as e:
-                logger.warning("TMDB search error for movie %d (%s): %s", movie_id, raw_name, e)
-                skipped += 1
+        except Exception as e:
+            logger.warning("TMDB search error for movie %d (%s): %s", movie_id, raw_name, e)
+            skipped += 1
 
     await db.commit()
     logger.info("TMDB title search complete: %d found, %d not found, %d skipped", found, not_found, skipped)
