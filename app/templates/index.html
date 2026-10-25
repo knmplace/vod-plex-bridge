@@ -230,6 +230,9 @@
         .src-pill { display: inline-block; margin-left: 0.4rem; padding: 0.08rem 0.5rem; border-radius: 999px; font-size: 0.74rem; font-weight: 600; border: 1px solid var(--border); color: var(--text-secondary); }
         .src-pill.on { border-color: var(--success); color: var(--success); }
         .src-pill.primary { border-color: var(--accent); color: var(--accent); }
+        .src-pill.future { border-color: var(--warning); color: var(--warning); }
+        #settingsSide .src-pill { margin-left: 0.35rem; font-size: 0.66rem; padding: 0 0.4rem; }
+        .src-disabled { opacity: 0.45; pointer-events: none; user-select: none; filter: grayscale(1); }
         .src-form { margin-top: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); }
         .src-form-title { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.8rem; }
         .src-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 1.25rem; }
@@ -1674,7 +1677,7 @@
         <div class="settings-layout">
             <nav class="settings-side" id="settingsSide">
                 <button data-sec="dispatcharr" onclick="showSettingsSection('dispatcharr')">Dispatcharr</button>
-                <button data-sec="providers" onclick="showSettingsSection('providers')">Providers (XC)</button>
+                <button data-sec="providers" onclick="showSettingsSection('providers')">Providers (XC)<span class="src-pill future">Future</span></button>
                 <button data-sec="plex" onclick="showSettingsSection('plex')">Plex</button>
                 <button data-sec="tmdb" onclick="showSettingsSection('tmdb')">TMDB</button>
                 <button data-sec="streaming" onclick="showSettingsSection('streaming')">Streaming</button>
@@ -4014,8 +4017,9 @@
             },
             providers: {
                 title: 'Providers (XC)',
-                intro: 'The provider (XC) accounts behind your Dispatcharr instances, kept here as a record with their limits. The bridge never connects to a provider itself: every stream goes through Dispatcharr, so these logins are stored encrypted and are not tested from here.',
+                intro: 'Coming in a future version. Every stream runs through Dispatcharr, so your provider (XC) accounts belong in Dispatcharr itself; the bridge never contacts a provider. This section stays read-only until there is a use for provider accounts here.',
                 list: 'providers',
+                future: true,
             },
             plex: {
                 title: 'Plex',
@@ -4090,7 +4094,8 @@
             document.querySelectorAll('#settingsSide button').forEach(b => b.classList.toggle('active', b.dataset.sec === sec));
             const def = SETTINGS_SECTIONS[sec];
             const vals = settingsData?.[sec] || {};
-            document.getElementById('setTitle').textContent = def.title;
+            document.getElementById('setTitle').innerHTML = escapeHtml(def.title)
+                + (def.future ? '<span class="src-pill future">Future — pending</span>' : '');
             document.getElementById('setIntro').textContent = def.intro;
             document.getElementById('setTestBtn').style.display = def.test === false ? 'none' : '';
             document.getElementById('setMsg').textContent = '';
@@ -4223,6 +4228,7 @@
         function renderSources() {
             const form = SOURCE_FORMS[sourceKind];
             const btn = (label, call, cls = 'btn-outline') => `<button class="btn ${cls}" onclick="${call}">${label}</button>`;
+            const future = SETTINGS_SECTIONS[sourceKind]?.future;
             let table;
             if (sourceKind === 'dispatcharr') {
                 table = `<tr><th>Name</th><th>URL</th><th>API key</th><th>Status</th><th></th></tr>` + sourceRows.map(r => `<tr>
@@ -4241,13 +4247,16 @@
                     <td>${sourceSecret(r, 'password')}</td>
                     <td>${r.max_streams}</td>
                     <td>${r.priority}</td>
-                    <td class="src-actions">${btn(r.active ? 'Deactivate' : 'Activate', `setProviderActive(${r.id}, ${!r.active})`)}
-                        ${btn('Edit', `editSource(${r.id})`)} ${btn('Delete', `deleteSource(${r.id})`, 'btn-danger')}</td></tr>`).join('');
+                    <td class="src-actions">${future ? '' : `${btn(r.active ? 'Deactivate' : 'Activate', `setProviderActive(${r.id}, ${!r.active})`)}
+                        ${btn('Edit', `editSource(${r.id})`)} ${btn('Delete', `deleteSource(${r.id})`, 'btn-danger')}`}</td></tr>`).join('');
             }
-            document.getElementById('setFields').innerHTML = (sourceRows.length
+            const add = future
+                ? `<div class="settings-actions src-disabled"><button class="btn btn-primary" disabled>Add ${form.noun}</button></div>`
+                : `<div class="settings-actions">${btn('Add ' + form.noun, 'editSource(null)', 'btn-primary')}</div>`;
+            document.getElementById('setFields').innerHTML = `<div class="${future ? 'src-disabled' : ''}">` + (sourceRows.length
                 ? `<div class="src-wrap"><table class="src-table">${table}</table></div>`
-                : `<p class="set-help">${form.empty}</p>`)
-                + (sourceEdit ? sourceFormHtml() : `<div class="settings-actions">${btn('Add ' + form.noun, 'editSource(null)', 'btn-primary')}</div>`);
+                : `<p class="set-help">${form.empty}</p>`) + '</div>'
+                + (sourceEdit && !future ? sourceFormHtml() : add);
         }
 
         function sourceFormHtml() {

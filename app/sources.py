@@ -288,6 +288,13 @@ async def test_instance(request: Request):
 
 
 # --- Provider (XC) accounts: stored only, never contacted ---
+# Read-only until providers are used for something: every stream goes through Dispatcharr, which holds
+# the provider logins itself, so accounts entered here would never be used.
+PROVIDERS_LOCKED = True
+
+
+def _providers_locked():
+    return _bad("Provider accounts are a future feature and cannot be changed yet", 403) if PROVIDERS_LOCKED else None
 
 @router.get("/providers")
 async def list_providers():
@@ -325,6 +332,8 @@ async def _save_provider(sql: str, params: tuple):
 
 @router.post("/providers")
 async def add_provider(request: Request):
+    if locked := _providers_locked():
+        return locked
     body = await request.json()
     v, error = _provider_fields(body)
     if error:
@@ -337,6 +346,8 @@ async def add_provider(request: Request):
 
 @router.put("/providers/{provider_id}")
 async def update_provider(provider_id: int, request: Request):
+    if locked := _providers_locked():
+        return locked
     current = await _row("providers", provider_id)
     if not current:
         return _bad("Account not found", 404)
@@ -354,6 +365,8 @@ async def update_provider(provider_id: int, request: Request):
 
 @router.post("/providers/{provider_id}/active")
 async def set_provider_active(provider_id: int, request: Request):
+    if locked := _providers_locked():
+        return locked
     if not await _row("providers", provider_id):
         return _bad("Account not found", 404)
     active = bool((await request.json()).get("active"))
@@ -363,6 +376,8 @@ async def set_provider_active(provider_id: int, request: Request):
 
 @router.delete("/providers/{provider_id}")
 async def delete_provider(provider_id: int):
+    if locked := _providers_locked():
+        return locked
     db = await get_db()
     await db.execute("DELETE FROM providers WHERE id=?", (provider_id,))
     await db.commit()
