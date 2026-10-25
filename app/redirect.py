@@ -48,16 +48,18 @@ async def _account_has_capacity(client: httpx.AsyncClient, account_id: int) -> b
         return True
 
 
-async def _pick_relation_with_capacity(client: httpx.AsyncClient, movie: dict) -> tuple[int, int, int] | None:
-    """Return (stream_id, account_id, uuid-index-unused) for the first relation with free capacity.
+async def _pick_relation_with_capacity(client: httpx.AsyncClient, movie: dict) -> tuple[int, int, str] | None:
+    """Return (stream_id, account_id, label) for the first relation with free capacity.
 
     Checks the movie's primary stream first, then falls back to alt_streams
-    (same JSON shape used by _switch_to_fallback in proxy.py).
+    (same JSON shape used by _switch_to_fallback in proxy.py). `label` names
+    the account and says why it was picked, for the proxy log.
     """
     primary_sid = movie.get("stream_id")
     primary_acct = movie.get("account_id")
+    primary_name = movie.get("account_name") or f"account {primary_acct}"
     if primary_sid and await _account_has_capacity(client, primary_acct):
-        return primary_sid, primary_acct
+        return primary_sid, primary_acct, f"{primary_name}, stream {primary_sid}"
 
     try:
         alts = json.loads(movie.get("alt_streams") or "[]")
@@ -68,11 +70,18 @@ async def _pick_relation_with_capacity(client: httpx.AsyncClient, movie: dict) -
         sid = alt.get("stream_id")
         acct = alt.get("account_id")
         if sid and await _account_has_capacity(client, acct):
-            return sid, acct
+            name = alt.get("account_name") or f"account {acct}"
+            return sid, acct, f"{name}, stream {sid} (fallback: {primary_name} full)"
 
     if primary_sid:
-        return primary_sid, primary_acct
+        return primary_sid, primary_acct, f"{primary_name}, stream {primary_sid} (all accounts full)"
     return None
+
+
+def get_redirect_label(movie_id: int) -> str:
+    """Describe where the last redirect for this movie went (account + stream)."""
+    cached = _resolve_cache.get(movie_id)
+    return cached.get("label", "") if cached else ""
 
 
 async def get_redirect_url(movie_id: int) -> tuple[str | None, str | None, bool]:
@@ -94,7 +103,7 @@ async def get_redirect_url(movie_id: int) -> tuple[str | None, str | None, bool]
 
         db = await get_db()
         row = await db.execute(
-            "SELECT id, uuid, stream_id, account_id, content_type, alt_streams FROM movies WHERE id = ?",
+            "SELECT id, uuid, stream_id, account_id, account_name, content_type, alt_streams FROM movies WHERE id = ?",
             (movie_id,),
         )
         movie = await row.fetchone()
@@ -111,10 +120,10 @@ async def get_redirect_url(movie_id: int) -> tuple[str | None, str | None, bool]
         if not picked:
             return None, "No provider capacity available", True
 
-        stream_id, account_id = picked
+        stream_id, account_id, label = picked
         url = f"{DISPATCHARR_URL}/proxy/vod/movie/{movie['uuid']}?stream_id={stream_id}"
 
-        _resolve_cache[movie_id] = {"url": url, "account_id": account_id, "ts": now}
+        _resolve_cache[movie_id] = {"url": url, "account_id": account_id, "label": label, "ts": now}
 
         asyncio.create_task(_enforce_max_concurrent_for_content(movie["uuid"]))
 

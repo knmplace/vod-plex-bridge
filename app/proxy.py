@@ -983,16 +983,17 @@ async def vod_file(filename: str, request: Request):
             )
 
         if REDIRECT_STREAMING:
-            from redirect import get_redirect_url
+            from redirect import get_redirect_url, get_redirect_label
             redirect_url, redirect_err, fresh = await get_redirect_url(movie_id)
             if redirect_url:
                 if fresh:
                     now = time.time()
                     last = _redirect_logged.get(movie_id)
+                    target = get_redirect_label(movie_id)
                     if not last or now - last[1] > REDIRECT_LOG_QUIET_SECS:
-                        _log_event("info", movie_id, "Redirecting to Dispatcharr proxy", movie_name=movie_name)
+                        _log_event("info", movie_id, f"Redirecting to Dispatcharr proxy via {target}", movie_name=movie_name)
                     elif last[0] != redirect_url:
-                        _log_event("info", movie_id, "Redirecting to Dispatcharr proxy (stream changed)", movie_name=movie_name)
+                        _log_event("info", movie_id, f"Redirect switched to {target}", movie_name=movie_name)
                     _redirect_logged[movie_id] = (redirect_url, now)
                 return Response(status_code=302, headers={"Location": redirect_url})
             _log_event("error", movie_id, f"Redirect resolve failed: {redirect_err}", movie_name=movie_name)
