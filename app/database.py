@@ -254,6 +254,23 @@ async def init_db():
             category_id INTEGER NOT NULL,
             PRIMARY KEY (category_id, series_id)
         );
+
+        -- The single app login, its browser sessions, and settings saved from the Settings tab.
+        CREATE TABLE IF NOT EXISTS app_user (
+            id INTEGER PRIMARY KEY,
+            username TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            expires_at REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
     """)
     await db.commit()
 

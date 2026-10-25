@@ -13,6 +13,8 @@ from api import router as api_router, start_dead_scan_scheduler, start_log_archi
 from health import health_check_scheduler
 from error_screens import generate_error_screens
 from config import REDIRECT_STREAMING
+import auth
+from connection import router as connection_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -115,6 +117,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="VOD Plex Bridge", version=APP_VERSION, lifespan=lifespan)
+app.middleware("http")(auth.gate)
 
 
 @app.get("/version")
@@ -122,6 +125,8 @@ async def version():
     return {"version": APP_VERSION}
 app.include_router(proxy_router)
 app.include_router(api_router)
+app.include_router(auth.router)
+app.include_router(connection_router)
 app.mount("/static", StaticFiles(directory="/app/static"), name="static")
 
 templates = Jinja2Templates(directory="/app/templates")

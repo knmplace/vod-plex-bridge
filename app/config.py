@@ -22,3 +22,41 @@ PLEX_SERIES_MOUNT_ROOT = os.environ.get("PLEX_SERIES_MOUNT_ROOT", "/mnt/vod-brid
 PLEX_MOVIE_MOUNT_ROOT = os.environ.get("PLEX_MOVIE_MOUNT_ROOT", "/mnt/vod-bridge").rstrip("/")
 
 
+
+# Connection settings saved from the Settings tab win over the compose environment above.
+CONNECTION_MODE = os.environ.get("CONNECTION_MODE", "dispatcharr")
+DISPATCHARR_XC_USERNAME = os.environ.get("DISPATCHARR_XC_USERNAME", "")
+DISPATCHARR_XC_PASSWORD = os.environ.get("DISPATCHARR_XC_PASSWORD", "")
+XC_SERVER_URL = os.environ.get("XC_SERVER_URL", "")
+XC_USERNAME = os.environ.get("XC_USERNAME", "")
+XC_PASSWORD = os.environ.get("XC_PASSWORD", "")
+CONNECTION_KEYS = ("CONNECTION_MODE", "DISPATCHARR_URL", "DISPATCHARR_API_KEY", "DISPATCHARR_XC_USERNAME",
+                   "DISPATCHARR_XC_PASSWORD", "XC_SERVER_URL", "XC_USERNAME", "XC_PASSWORD")
+
+
+def apply_settings(values: dict):
+    """Set saved values here and in every app module that imported them by name."""
+    import sys
+    values = {k: v for k, v in values.items() if k in CONNECTION_KEYS and v not in (None, "")}
+    if "DISPATCHARR_URL" in values:
+        values["DISPATCHARR_URL"] = values["DISPATCHARR_URL"].rstrip("/")
+    here = os.path.dirname(os.path.abspath(__file__))
+    for mod in list(sys.modules.values()):
+        if os.path.dirname(os.path.abspath(getattr(mod, "__file__", None) or "/")) != here:
+            continue
+        for k, v in values.items():
+            if hasattr(mod, k):
+                setattr(mod, k, v)
+
+
+def _load_saved():
+    import sqlite3
+    from database import DB_PATH
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            apply_settings(dict(conn.execute("SELECT key, value FROM app_settings").fetchall()))
+    except sqlite3.Error:
+        pass  # first start: the table is created by init_db
+
+
+_load_saved()
