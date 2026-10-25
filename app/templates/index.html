@@ -1208,11 +1208,14 @@
                     <div style="display:flex;gap:0.4rem;margin-bottom:0.6rem;flex-wrap:wrap;align-items:center;" onclick="event.stopPropagation()">
                         <input type="text" class="search-input" id="newCatName" placeholder="Category name" style="width:160px;margin-bottom:0;">
                         <input type="text" class="search-input" id="newCatFolder" placeholder="STRM folder (e.g. Kids)" style="width:180px;margin-bottom:0;">
-                        <input type="number" class="search-input" id="newCatPlexSection" placeholder="Plex library section id" style="width:180px;margin-bottom:0;">
+                        <select class="search-input" id="newCatPlexSection" title="Plex TV library this category's folder is added to" style="width:200px;margin-bottom:0;">
+                            <option value="new">+ Create new Plex library</option>
+                        </select>
                         <button class="btn btn-primary" style="font-size:0.72rem;padding:0.25rem 0.6rem;" onclick="createSeriesCategory()">Add Category</button>
+                        <button class="btn" style="font-size:0.72rem;padding:0.25rem 0.6rem;" title="Re-add every category folder to its Plex library" onclick="syncSeriesCategoriesToPlex()">Sync Plex Folders</button>
                     </div>
                     <table class="summary-table compact" id="seriesCategoryTable">
-                        <thead><tr><th>Name</th><th>STRM Folder</th><th>Plex Section</th><th style="text-align:right">Series</th><th></th></tr></thead>
+                        <thead><tr><th>Name</th><th>STRM Folder</th><th>Plex Library</th><th style="text-align:right">Series</th><th></th></tr></thead>
                         <tbody id="seriesCategoryBody"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
                     </table>
                 </div>
@@ -2129,8 +2132,26 @@
         let currentSeriesDetail = null;
         let selectedEpisodes = new Set();
 
+        let plexSeriesLibraries = [];
+
+        async function loadPlexSeriesLibraries() {
+            const data = await fetchJSON('/api/plex/series-libraries').catch(() => ({}));
+            plexSeriesLibraries = data.results || [];
+            const sel = document.getElementById('newCatPlexSection');
+            const esc = s => (s||'').replace(/</g,'&lt;');
+            sel.innerHTML = (data.configured === false ? '' : '<option value="new">+ Create new Plex library</option>')
+                + plexSeriesLibraries.map(l => `<option value="${l.id}">${esc(l.title)}</option>`).join('')
+                + '<option value="999">No Plex library</option>';
+        }
+
+        function plexLibraryLabel(id) {
+            if (id == null || id == 999) return '<span style="color:var(--text-muted)">none</span>';
+            const lib = plexSeriesLibraries.find(l => l.id == id);
+            return lib ? lib.title.replace(/</g,'&lt;') : `#${id} <span style="color:var(--danger)">(missing)</span>`;
+        }
+
         async function loadSeriesCategories() {
-            const data = await fetchJSON('/api/series/categories');
+            const [data] = await Promise.all([fetchJSON('/api/series/categories'), loadPlexSeriesLibraries()]);
             seriesCategories = data.results || [];
             document.getElementById('seriesCategoryCount').textContent = seriesCategories.length;
 
@@ -2142,7 +2163,7 @@
                     <tr>
                         <td>${(c.name||'').replace(/</g,'&lt;')}</td>
                         <td>${(c.strm_folder||'').replace(/</g,'&lt;')}</td>
-                        <td>${c.plex_library_section}</td>
+                        <td>${plexLibraryLabel(c.plex_library_section)}</td>
                         <td style="text-align:right">${c.series_count || 0}</td>
                         <td style="text-align:right">
                             <button class="btn btn-danger" style="padding:0.15rem 0.5rem;font-size:0.68rem;" onclick="deleteSeriesCategory(${c.id})">Delete</button>
@@ -2159,7 +2180,7 @@
         async function createSeriesCategory() {
             const name = document.getElementById('newCatName').value.trim();
             const strm_folder = document.getElementById('newCatFolder').value.trim();
-            const plex_library_section = parseInt(document.getElementById('newCatPlexSection').value) || 999;
+            const plex_library_section = document.getElementById('newCatPlexSection').value || 999;
             if (!name || !strm_folder) {
                 alert('Name and STRM folder are required.');
                 return;
@@ -2170,16 +2191,26 @@
                 body: JSON.stringify({name, strm_folder, plex_library_section})
             });
             if (res.error) { alert(res.error); return; }
+            if (res.warning) alert(res.warning);
             document.getElementById('newCatName').value = '';
             document.getElementById('newCatFolder').value = '';
-            document.getElementById('newCatPlexSection').value = '';
             loadSeriesCategories();
         }
 
         async function deleteSeriesCategory(id) {
-            if (!confirm('Delete this category?')) return;
+            if (!confirm('Delete this category? Its folder is also removed from the Plex library.')) return;
             const res = await fetchJSON(`/api/series/categories/${id}`, {method: 'DELETE'});
             if (res.error) { alert(res.error); return; }
+            if (res.warning) alert(res.warning);
+            loadSeriesCategories();
+        }
+
+        async function syncSeriesCategoriesToPlex() {
+            const res = await fetchJSON('/api/series/categories/sync-plex', {method: 'POST'});
+            if (res.error) { alert(res.error); return; }
+            const lines = [`Added to Plex: ${res.added.length ? res.added.join(', ') : 'nothing (already in sync)'}`];
+            if (res.errors.length) lines.push('Errors:\n' + res.errors.join('\n'));
+            alert(lines.join('\n\n'));
             loadSeriesCategories();
         }
 

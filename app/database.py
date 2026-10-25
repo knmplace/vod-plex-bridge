@@ -258,6 +258,7 @@ async def init_db():
 
     for series_col in [
         "ALTER TABLE series ADD COLUMN trailer_key TEXT",
+        "ALTER TABLE series_categories ADD COLUMN plex_library_created INTEGER DEFAULT 0",
     ]:
         try:
             await db.execute(series_col)

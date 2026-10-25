@@ -17,5 +17,7 @@ REDIRECT_STREAMING = os.environ.get("REDIRECT_MODE", "false").lower() in ("1", "
 
 STRM_SERIES_OUTPUT_DIR = os.environ.get("STRM_SERIES_OUTPUT_DIR", "/plex-vod/Series")
 PLEX_SERIES_LIBRARY_ID = os.environ.get("PLEX_SERIES_LIBRARY_ID", "")
+# Where the series folders appear on the Plex host (the rclone mount of /vod-series/).
+PLEX_SERIES_MOUNT_ROOT = os.environ.get("PLEX_SERIES_MOUNT_ROOT", "/mnt/vod-bridge-series").rstrip("/")
 
 

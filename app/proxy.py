@@ -1418,24 +1418,16 @@ async def vod_series_root(request: Request):
     rows = await db.execute("SELECT id, name, strm_folder FROM series_categories ORDER BY name")
     categories = await rows.fetchall()
 
+    # List every category folder, even empty ones, so the Plex library locations always resolve.
     links = []
     for cat in categories:
-        count_row = await db.execute(
-            "SELECT COUNT(*) as cnt FROM series s JOIN episodes e ON e.series_id = s.id "
-            "WHERE s.category_id = ? AND e.activated = 1",
-            (cat["id"],),
-        )
-        cnt = (await count_row.fetchone())["cnt"]
-        if cnt < 1:
-            continue
-
         cat_path = os.path.join(STRM_SERIES_OUTPUT_DIR, cat["strm_folder"])
         if not os.path.isdir(cat_path):
             continue
 
         name = cat["strm_folder"]
         mtime_str = _mod_autoindex_mtime(cat_path)
-        links.append(f'<a href="{quote(name)}">{name}</a> {mtime_str}')
+        links.append(f'<a href="{quote(name)}/">{name}/</a> {mtime_str}')
 
     html = "<html><body>\n" + "\n".join(links) + "\n</body></html>"
     return HTMLResponse(content=html)
@@ -1461,7 +1453,9 @@ async def vod_series_file(subpath: str, request: Request):
         for name in entries:
             entry_path = os.path.join(target_abs, name)
             mtime_str = _mod_autoindex_mtime(entry_path)
-            links.append(f'<a href="{quote(name)}">{name}</a> {mtime_str}')
+            # rclone's http backend only treats trailing-slash links as directories
+            slash = "/" if os.path.isdir(entry_path) else ""
+            links.append(f'<a href="{quote(name)}{slash}">{name}{slash}</a> {mtime_str}')
 
         season_match = re.match(r'Season (\d+)$', os.path.basename(target_abs.rstrip(os.sep)))
         if season_match:

@@ -11,7 +11,8 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN, STRM_SERIES_OUTPUT_DIR, PLEX_SERIES_LIBRARY_ID
+from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, TMDB_API_KEY, TMDB_READ_TOKEN, STRM_SERIES_OUTPUT_DIR, PLEX_SERIES_LIBRARY_ID, PLEX_SERIES_MOUNT_ROOT
+import plex_libraries
 from database import get_db
 from scraper import scrape_catalog, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing
 from generator import generate_strm_files, sanitize_filename, write_strm_for_movie, parse_title, get_folder_name
@@ -1762,11 +1763,9 @@ async def _plex_scan_library(library_id: str | None = None):
         logger.warning("Plex library scan skipped: no library section id configured")
         return
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(
-                f"{PLEX_URL}/library/sections/{section_id}/refresh",
-                params={"X-Plex-Token": PLEX_TOKEN},
-            )
+        # Token goes in a header so it doesn't end up in httpx's request log lines.
+        async with httpx.AsyncClient(timeout=15, headers={"X-Plex-Token": PLEX_TOKEN}) as client:
+            resp = await client.get(f"{PLEX_URL}/library/sections/{section_id}/refresh")
             if resp.status_code in (200, 204):
                 logger.info("Plex library scan triggered (section %s)", section_id)
             else:
@@ -3665,23 +3664,76 @@ async def list_series_categories():
     return {"results": [dict(r) for r in await rows.fetchall()]}
 
 
+@router.get("/plex/series-libraries")
+async def list_plex_series_libraries():
+    if not plex_libraries.configured():
+        return {"configured": False, "results": []}
+    try:
+        return {"configured": True, "mount_root": PLEX_SERIES_MOUNT_ROOT,
+                "results": await plex_libraries.list_show_sections()}
+    except Exception as e:
+        return JSONResponse(status_code=502, content={"error": f"Plex unreachable: {e}"})
+
+
+def _clean_strm_folder(value: str) -> str:
+    return sanitize_filename((value or "").strip().strip("/\\"))
+
+
+async def _attach_category_to_plex(name: str, strm_folder: str, section) -> tuple[int, int, str]:
+    """Returns (section_id, created_flag, warning). 999 means not linked to Plex."""
+    if section in (None, "", 999, "999") or not plex_libraries.configured():
+        return 999, 0, ""
+    path = plex_libraries.category_location(strm_folder)
+    try:
+        if str(section) == "new":
+            return await plex_libraries.create_section(name, path), 1, ""
+        await plex_libraries.add_location(int(section), path)
+        return int(section), 0, ""
+    except Exception as e:
+        logger.warning("Plex library setup failed for category %s: %s", name, e)
+        return (999 if str(section) == "new" else int(section)), 0, f"Plex library not updated: {e}"
+
+
+async def _detach_category_from_plex(cat) -> str:
+    section = cat["plex_library_section"]
+    if section in (None, 999) or not plex_libraries.configured():
+        return ""
+    try:
+        await plex_libraries.remove_location(
+            section, plex_libraries.category_location(cat["strm_folder"]),
+            delete_if_empty=bool(cat["plex_library_created"]),
+        )
+        return ""
+    except Exception as e:
+        logger.warning("Plex location removal failed for category %s: %s", cat["name"], e)
+        return f"Plex library not updated: {e}"
+
+
 @router.post("/series/categories")
 async def create_series_category(request: Request):
     body = await request.json()
     name = (body.get("name") or "").strip()
-    strm_folder = (body.get("strm_folder") or "").strip()
-    plex_library_section = body.get("plex_library_section", 999)
+    strm_folder = _clean_strm_folder(body.get("strm_folder"))
+    requested_section = body.get("plex_library_section", 999)
 
     if not name or not strm_folder:
         return JSONResponse(status_code=400, content={"error": "name and strm_folder are required"})
 
     db = await get_db()
+    dup = await db.execute("SELECT id FROM series_categories WHERE strm_folder = ?", (strm_folder,))
+    if await dup.fetchone():
+        return JSONResponse(status_code=400, content={"error": f"Folder '{strm_folder}' is already used by another category"})
+
+    os.makedirs(os.path.join(STRM_SERIES_OUTPUT_DIR, strm_folder), exist_ok=True)
+    section, created, warning = await _attach_category_to_plex(name, strm_folder, requested_section)
+
     cursor = await db.execute(
-        "INSERT INTO series_categories (name, strm_folder, plex_library_section) VALUES (?, ?, ?)",
-        (name, strm_folder, plex_library_section),
+        "INSERT INTO series_categories (name, strm_folder, plex_library_section, plex_library_created) VALUES (?, ?, ?, ?)",
+        (name, strm_folder, section, created),
     )
     await db.commit()
-    return {"id": cursor.lastrowid, "name": name, "strm_folder": strm_folder, "plex_library_section": plex_library_section}
+    return {"id": cursor.lastrowid, "name": name, "strm_folder": strm_folder,
+            "plex_library_section": section, "warning": warning}
 
 
 @router.put("/series/categories/{category_id}")
@@ -3695,15 +3747,30 @@ async def update_series_category(category_id: int, request: Request):
         return JSONResponse(status_code=404, content={"error": "Category not found"})
 
     name = body.get("name", existing["name"])
-    strm_folder = body.get("strm_folder", existing["strm_folder"])
-    plex_library_section = body.get("plex_library_section", existing["plex_library_section"])
+    strm_folder = _clean_strm_folder(body.get("strm_folder", existing["strm_folder"])) or existing["strm_folder"]
+    requested_section = body.get("plex_library_section", existing["plex_library_section"])
+    section, created, warning = existing["plex_library_section"], existing["plex_library_created"], ""
+
+    if strm_folder != existing["strm_folder"] or str(requested_section) != str(existing["plex_library_section"]):
+        old_dir = os.path.join(STRM_SERIES_OUTPUT_DIR, existing["strm_folder"])
+        new_dir = os.path.join(STRM_SERIES_OUTPUT_DIR, strm_folder)
+        if strm_folder != existing["strm_folder"]:
+            if os.path.exists(new_dir):
+                return JSONResponse(status_code=400, content={"error": f"Folder '{strm_folder}' already exists"})
+            if os.path.isdir(old_dir):
+                os.rename(old_dir, new_dir)
+        os.makedirs(new_dir, exist_ok=True)
+        warning = await _detach_category_from_plex(existing)
+        section, created, attach_warning = await _attach_category_to_plex(name, strm_folder, requested_section)
+        warning = warning or attach_warning
 
     await db.execute(
-        "UPDATE series_categories SET name = ?, strm_folder = ?, plex_library_section = ? WHERE id = ?",
-        (name, strm_folder, plex_library_section, category_id),
+        "UPDATE series_categories SET name = ?, strm_folder = ?, plex_library_section = ?, plex_library_created = ? WHERE id = ?",
+        (name, strm_folder, section, created, category_id),
     )
     await db.commit()
-    return {"id": category_id, "name": name, "strm_folder": strm_folder, "plex_library_section": plex_library_section}
+    return {"id": category_id, "name": name, "strm_folder": strm_folder,
+            "plex_library_section": section, "warning": warning}
 
 
 @router.delete("/series/categories/{category_id}")
@@ -3716,9 +3783,41 @@ async def delete_series_category(category_id: int):
             status_code=400,
             content={"error": f"Cannot delete category: {in_use} series are assigned to it"},
         )
+    row = await db.execute("SELECT * FROM series_categories WHERE id = ?", (category_id,))
+    cat = await row.fetchone()
+    if not cat:
+        return JSONResponse(status_code=404, content={"error": "Category not found"})
+
+    warning = await _detach_category_from_plex(cat)
+    cat_dir = os.path.join(STRM_SERIES_OUTPUT_DIR, cat["strm_folder"])
+    try:
+        os.rmdir(cat_dir)  # only removes it when empty
+    except OSError:
+        pass
+
     await db.execute("DELETE FROM series_categories WHERE id = ?", (category_id,))
     await db.commit()
-    return {"deleted": category_id}
+    return {"deleted": category_id, "warning": warning}
+
+
+@router.post("/series/categories/sync-plex")
+async def sync_series_categories_to_plex():
+    """Make sure every linked category's folder is a location on its Plex library."""
+    if not plex_libraries.configured():
+        return JSONResponse(status_code=400, content={"error": "Plex is not configured"})
+    db = await get_db()
+    rows = await (await db.execute("SELECT * FROM series_categories")).fetchall()
+    added, errors = [], []
+    for cat in rows:
+        os.makedirs(os.path.join(STRM_SERIES_OUTPUT_DIR, cat["strm_folder"]), exist_ok=True)
+        if cat["plex_library_section"] in (None, 999):
+            continue
+        try:
+            if await plex_libraries.add_location(cat["plex_library_section"], plex_libraries.category_location(cat["strm_folder"])):
+                added.append(cat["name"])
+        except Exception as e:
+            errors.append(f"{cat['name']}: {e}")
+    return {"added": added, "errors": errors}
 
 
 @router.post("/series/scrape")
