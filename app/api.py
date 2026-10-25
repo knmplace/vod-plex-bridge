@@ -1608,9 +1608,9 @@ async def deactivate_movies(request: Request):
         )
         await db.commit()
 
-        plex_removed = await _plex_remove_movies(movie_ids)
-
         removed = _remove_strm_folders(movies)
+
+        plex_removed = await _plex_remove_movies(movie_ids)
 
         strm_count = _count_strm_folders()
         await db.execute("UPDATE sync_state SET active_strm_count = ? WHERE id = 1", (strm_count,))
@@ -1651,7 +1651,21 @@ async def deactivate_all():
         pass
 
 
+# Plex refuses DELETE /library/metadata/{key} (HTTP 400) while the media file
+# still exists. Plex reads the bridge through an rclone mount with a ~1 min
+# directory cache, so the file stays visible for a while after its STRM folder
+# is removed — retry on this schedule (~3 min total) until it is gone.
+_PLEX_DELETE_RETRY_DELAYS = [3, 5, 10, 15, 20, 30, 30, 30, 30]
+_plex_delete_tasks: set[asyncio.Task] = set()
+
+
 async def _plex_remove_movies(movie_ids: list[int]):
+    """Look up the Plex items for movie_ids and delete them in the background.
+
+    Returns the number of Plex items found and queued for deletion. The delete
+    itself runs as a background task so callers can remove the STRM folders
+    (which is what lets Plex accept the delete) without waiting on it.
+    """
     if not PLEX_URL or not PLEX_TOKEN:
         logger.info("Plex URL/token not configured, skipping removal")
         return 0
@@ -1659,45 +1673,56 @@ async def _plex_remove_movies(movie_ids: list[int]):
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
                 f"{PLEX_URL}/library/sections/{PLEX_LIBRARY_ID}/all",
-                params={"X-Plex-Token": PLEX_TOKEN},
-                headers={"Accept": "application/json"},
+                headers={"X-Plex-Token": PLEX_TOKEN, "Accept": "application/json"},
             )
-            if resp.status_code != 200:
-                logger.warning("Plex library query failed: %d", resp.status_code)
-                return 0
+        if resp.status_code != 200:
+            logger.warning("Plex library query failed: %d", resp.status_code)
+            return 0
 
-            items = resp.json().get("MediaContainer", {}).get("Metadata", [])
-            id_set = set(movie_ids)
-            removed = 0
-
-            for item in items:
-                parts = item.get("Media", [{}])[0].get("Part", [])
-                for part in parts:
-                    filename = part.get("file", "")
-                    m = re.search(r'\[(\d+)\]\.mp4$', filename)
-                    if m and int(m.group(1)) in id_set:
-                        rating_key = item["ratingKey"]
-                        title = item.get("title", "?")
-                        for attempt in range(3):
-                            del_resp = await client.delete(
-                                f"{PLEX_URL}/library/metadata/{rating_key}",
-                                params={"X-Plex-Token": PLEX_TOKEN},
-                            )
-                            if del_resp.status_code in (200, 204):
-                                removed += 1
-                                logger.info("Plex: deleted %s (key %s)", title, rating_key)
-                                break
-                            logger.warning("Plex delete %s (key %s) returned %d (attempt %d/3)",
-                                           title, rating_key, del_resp.status_code, attempt + 1)
-                            if attempt < 2:
-                                await asyncio.sleep(2)
-                        break
-
-            logger.info("Plex cleanup: removed %d items", removed)
-            return removed
+        items = resp.json().get("MediaContainer", {}).get("Metadata", [])
+        id_set = {int(mid) for mid in movie_ids}
+        to_delete = []
+        for item in items:
+            for part in item.get("Media", [{}])[0].get("Part", []):
+                m = re.search(r'\[(\d+)\]\.(?:mp4|mkv)$', part.get("file", ""))
+                if m and int(m.group(1)) in id_set:
+                    to_delete.append((item["ratingKey"], item.get("title", "?")))
+                    break
     except Exception as e:
-        logger.warning("Plex removal failed: %s", e)
+        logger.warning("Plex removal lookup failed: %s", e)
         return 0
+
+    if to_delete:
+        task = asyncio.create_task(_plex_delete_items(to_delete))
+        _plex_delete_tasks.add(task)
+        task.add_done_callback(_plex_delete_tasks.discard)
+    logger.info("Plex cleanup: %d items queued for removal", len(to_delete))
+    return len(to_delete)
+
+
+async def _plex_delete_items(items: list[tuple[str, str]]):
+    pending = list(items)
+    async with httpx.AsyncClient(timeout=10, headers={"X-Plex-Token": PLEX_TOKEN}) as client:
+        for delay in [0] + _PLEX_DELETE_RETRY_DELAYS:
+            if delay:
+                await asyncio.sleep(delay)
+            still_pending = []
+            for rating_key, title in pending:
+                try:
+                    resp = await client.delete(f"{PLEX_URL}/library/metadata/{rating_key}")
+                    # 404 means Plex already dropped it on its own.
+                    if resp.status_code in (200, 204, 404):
+                        logger.info("Plex: deleted %s (key %s)", title, rating_key)
+                        continue
+                except Exception as e:
+                    logger.debug("Plex delete %s (key %s) failed: %s", title, rating_key, e)
+                still_pending.append((rating_key, title))
+            pending = still_pending
+            if not pending:
+                return
+    for rating_key, title in pending:
+        logger.warning("Plex: gave up deleting %s (key %s) — file still visible to Plex", title, rating_key)
+        _log_event("warning", None, f"Plex removal gave up for {title} — remove it manually or rescan the library")
 
 
 async def _plex_scan_library(library_id: str | None = None):

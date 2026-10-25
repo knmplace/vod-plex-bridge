@@ -383,6 +383,22 @@
             box-shadow: 0 1px 4px rgba(0,0,0,0.6);
         }
         .movie-card .activated-badge { background: var(--success); color: #052e14; }
+        .movie-card .trailer-chip {
+            pointer-events: auto;
+            display: inline-flex; align-items: center; gap: 3px;
+            height: 20px; padding: 0 7px 0 5px;
+            font-size: 0.58rem; font-weight: 800; letter-spacing: 0.04em;
+            color: #fff;
+            background: rgba(10,14,23,0.78);
+            border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 999px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.6);
+            cursor: pointer;
+            transition: background 0.12s, border-color 0.12s;
+        }
+        .movie-card .trailer-chip svg { width: 10px; height: 10px; color: #f87171; }
+        .movie-card .trailer-chip:hover { background: #dc2626; border-color: #dc2626; }
+        .movie-card .trailer-chip:hover svg { color: #fff; }
         .movie-card .activated-badge::before {
             content: ''; width: 6px; height: 6px; border-radius: 50%; background: #052e14;
         }
@@ -447,7 +463,6 @@
             transition: background 0.12s, border-color 0.12s, color 0.12s;
         }
         .card-act svg { width: 13px; height: 13px; flex-shrink: 0; }
-        .card-act.act-trailer:hover { background: #dc2626; border-color: #dc2626; color: #fff; }
         .card-act.act-lang:hover { background: var(--warning); border-color: var(--warning); color: #1a1300; }
         .card-act.act-dead:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
         .card-act.ok { background: var(--success); border-color: var(--success); color: #052e14; }
@@ -1946,12 +1961,11 @@
                     <div class="poster">
                         <img src="${m.poster_url || ''}" alt="" loading="lazy"
                              onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
-                        <div class="card-badges">${m.activated ? '<span class="activated-badge">ACTIVE</span>' : ''}</div>
+                        <div class="card-badges">${trailerChipHTML(m.trailer_key)}${m.activated ? '<span class="activated-badge">ACTIVE</span>' : ''}</div>
                         <div class="check-overlay">&check;</div>
                         ${m.rating > 0 ? `<span class="rating-chip">&#9733; ${Number(m.rating).toFixed(1)}</span>` : ''}
                         <div class="card-actions">
                             ${activateBtnHTML(m.id, m.activated)}
-                            ${m.trailer_key ? `<button class="card-act act-trailer" onclick="event.stopPropagation();playTrailer('${m.trailer_key}')" title="Play trailer">${ICON.play}</button>` : ''}
                             <button class="card-act act-lang" onclick="event.stopPropagation();detectSingleLang(${m.id},this)" title="Detect language">${ICON.globe}</button>
                             <button class="card-act act-dead" onclick="event.stopPropagation();markMovieDead(${m.id})" title="Mark dead">${ICON.ban}</button>
                         </div>
@@ -2184,11 +2198,8 @@
                     <div class="poster">
                         <img src="${s.poster_url || ''}" alt="" loading="lazy"
                              onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
-                        <div class="card-badges">${s.activated_episode_count > 0 ? `<span class="activated-badge">${s.activated_episode_count} ACTIVE</span>` : ''}</div>
+                        <div class="card-badges">${trailerChipHTML(s.trailer_key)}${s.activated_episode_count > 0 ? `<span class="activated-badge">${s.activated_episode_count} ACTIVE</span>` : ''}</div>
                         ${s.rating > 0 ? `<span class="rating-chip">&#9733; ${Number(s.rating).toFixed(1)}</span>` : ''}
-                        ${s.trailer_key ? `<div class="card-actions">
-                            <button class="card-act act-trailer" style="flex:1" onclick="event.stopPropagation();playTrailer('${s.trailer_key}')" title="Play trailer">${ICON.play}<span>Trailer</span></button>
-                        </div>` : ''}
                     </div>
                     <div class="info">
                         <div class="title" title="${(s.name||'').replace(/"/g,'&quot;')}">${s.name || 'Unknown'}</div>
@@ -2674,6 +2685,10 @@
             check: _svg('<path d="M5 12l5 5 9-10"/>'),
         };
 
+        function trailerChipHTML(key) {
+            return key ? `<button class="trailer-chip" onclick="event.stopPropagation();playTrailer('${key}')" title="Play trailer">${ICON.play}<span>Trailer</span></button>` : '';
+        }
+
         function activateBtnHTML(movieId, isActive) {
             return `<button class="card-act activate-btn ${isActive ? 'active' : ''}" onclick="event.stopPropagation();toggleActivate(${movieId},${isActive ? 1 : 0},this)" title="${isActive ? 'Deactivate (remove from Plex)' : 'Activate (add to Plex)'}">${isActive ? ICON.x + '<span>Remove</span>' : ICON.bolt + '<span>Activate</span>'}</button>`;
         }
@@ -2747,7 +2762,9 @@
                     return;
                 }
                 const nowActive = !isActive;
-                card.querySelector('.card-badges').innerHTML = nowActive ? '<span class="activated-badge">ACTIVE</span>' : '';
+                const badges = card.querySelector('.card-badges');
+                badges.querySelector('.activated-badge')?.remove();
+                if (nowActive) badges.insertAdjacentHTML('beforeend', '<span class="activated-badge">ACTIVE</span>');
                 btn.outerHTML = activateBtnHTML(movieId, nowActive);
                 refreshActivatedCount();
                 refreshStatus();
