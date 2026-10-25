@@ -16,7 +16,7 @@ from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_U
 import plex_libraries
 import plex_presence
 from database import get_db
-from scraper import scrape_catalog, fetch_movies, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing, save_dispatcharr_movie
+from scraper import scrape_catalog, fetch_movies, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing, _upsert_movie
 from generator import generate_strm_files, sanitize_filename, write_strm_for_movie, parse_title, get_folder_name
 from stream_mapper import apply_stream_mapping_to_db, load_stream_mapping, pick_stream_for_account
 from proxy import probe_file_size, get_proxy_log, get_all_pipes, _log_event, archive_proxy_log, cleanup_old_archives, list_log_archives, get_log_archive, delete_log_archive
@@ -3450,26 +3450,7 @@ async def _run_catalog_refresh_counted() -> tuple[int, int, int, int]:
 
 async def _upsert_movie_from_api(db, movie):
     """Insert or update a movie from Dispatcharr API response."""
-    import json
-    custom = movie.get("custom_properties") or {}
-    if isinstance(custom, str):
-        try:
-            custom = json.loads(custom)
-        except (json.JSONDecodeError, TypeError):
-            custom = {}
-
-    poster_url = None
-    logo = movie.get("logo")
-    if logo and logo.get("url"):
-        poster_url = logo["url"]
-
-    trailer_key = custom.get("youtube_trailer") or custom.get("trailer") or None
-
-    if await save_dispatcharr_movie(db, movie, poster_url, custom.get("cast", ""), {
-        "rating": float(movie.get("rating") or 0),
-        "trailer_key": trailer_key,
-        "synced_at": datetime.now(timezone.utc).isoformat(),
-    }):
+    if await _upsert_movie(db, movie):
         global _uuid_change_counter
         _uuid_change_counter += 1
 

@@ -27,7 +27,7 @@ def is_cancelled():
     return _cancel
 
 
-async def _upsert_movie(db, movie):
+async def _upsert_movie(db, movie) -> bool:
     custom = movie.get("custom_properties") or {}
     if isinstance(custom, str):
         try:
@@ -46,7 +46,7 @@ async def _upsert_movie(db, movie):
     backdrop_paths = custom.get("backdrop_path") or []
     backdrop_url = backdrop_paths[0] if isinstance(backdrop_paths, list) and backdrop_paths else ""
 
-    await save_dispatcharr_movie(db, movie, poster_url, cast_info, {
+    return await save_dispatcharr_movie(db, movie, poster_url, cast_info, {
         "rating": float(movie.get("rating") or 0),
         "trailer_key": trailer_key,
         "synced_at": datetime.now(timezone.utc).isoformat(),
