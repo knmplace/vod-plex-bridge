@@ -153,7 +153,9 @@ Before you start, you'll need:
 
 ## Quick Start
 
-See **[INSTALL.md](INSTALL.md)** for the full step-by-step guide with explanations.
+See **[INSTALL.md](INSTALL.md)** for the full step-by-step guide with explanations. Once it's running, the **[User Guide](docs/USER_GUIDE.md)** covers every tab and setting. Release history is in **[CHANGELOG.md](CHANGELOG.md)**.
+
+> **rclone is required.** Plex sees the bridge's movies and series only through an rclone mount on the Plex host, which you install and set up separately (Step 4 below). A future version will have rclone built in.
 
 ```bash
 # 1. Clone and configure
