@@ -16,7 +16,7 @@ from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_U
 import plex_libraries
 import plex_presence
 from database import get_db
-from scraper import scrape_catalog, fetch_movies, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing
+from scraper import scrape_catalog, fetch_movies, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing, save_dispatcharr_movie
 from generator import generate_strm_files, sanitize_filename, write_strm_for_movie, parse_title, get_folder_name
 from stream_mapper import apply_stream_mapping_to_db, load_stream_mapping, pick_stream_for_account
 from proxy import probe_file_size, get_proxy_log, get_all_pipes, _log_event, archive_proxy_log, cleanup_old_archives, list_log_archives, get_log_archive, delete_log_archive
@@ -3434,57 +3434,13 @@ async def _upsert_movie_from_api(db, movie):
 
     trailer_key = custom.get("youtube_trailer") or custom.get("trailer") or None
 
-    new_uuid = movie["uuid"]
-    movie_id = movie["id"]
-
-    row = await db.execute("SELECT uuid FROM movies WHERE id = ?", (movie_id,))
-    existing = await row.fetchone()
-    if existing and existing["uuid"] and existing["uuid"] != new_uuid:
+    if await save_dispatcharr_movie(db, movie, poster_url, custom.get("cast", ""), {
+        "rating": float(movie.get("rating") or 0),
+        "trailer_key": trailer_key,
+        "synced_at": datetime.now(timezone.utc).isoformat(),
+    }):
         global _uuid_change_counter
-        await db.execute(
-            "UPDATE movies SET header_data = NULL, header_size = 0, "
-            "tail_data = NULL, tail_size = 0, tail_offset = 0, file_size = NULL "
-            "WHERE id = ?",
-            (movie_id,),
-        )
         _uuid_change_counter += 1
-        logger.info("UUID changed for movie %d (%s -> %s), cleared caches", movie_id, existing["uuid"], new_uuid)
-
-    await db.execute("""
-        INSERT INTO movies (id, uuid, name, year, rating, genre, description,
-                           tmdb_id, imdb_id, poster_url, cast_info, trailer_key, synced_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            uuid=excluded.uuid, name=excluded.name, year=excluded.year,
-            rating=excluded.rating,
-            genre=CASE WHEN movies.tmdb_enriched_at IS NOT NULL AND COALESCE(movies.genre, '') != ''
-                       THEN movies.genre ELSE excluded.genre END,
-            description=CASE WHEN movies.tmdb_enriched_at IS NOT NULL AND COALESCE(movies.description, '') != ''
-                             THEN movies.description ELSE excluded.description END,
-            poster_url=CASE WHEN movies.tmdb_enriched_at IS NOT NULL AND COALESCE(movies.poster_url, '') != ''
-                            THEN movies.poster_url ELSE excluded.poster_url END,
-            tmdb_id=COALESCE(NULLIF(excluded.tmdb_id, ''), movies.tmdb_id),
-            tmdb_enriched_at=CASE WHEN NULLIF(excluded.tmdb_id, '') IS NOT NULL
-                                       AND CAST(excluded.tmdb_id AS TEXT) != COALESCE(movies.tmdb_id, '')
-                                  THEN NULL ELSE movies.tmdb_enriched_at END,
-            cast_info=excluded.cast_info,
-            trailer_key=excluded.trailer_key,
-            synced_at=excluded.synced_at
-    """, (
-        movie_id,
-        new_uuid,
-        movie.get("name", ""),
-        movie.get("year"),
-        float(movie.get("rating") or 0),
-        movie.get("genre", ""),
-        movie.get("description", ""),
-        movie.get("tmdb_id"),
-        movie.get("imdb_id"),
-        poster_url,
-        custom.get("cast", ""),
-        trailer_key,
-        datetime.now(timezone.utc).isoformat(),
-    ))
 
 
 # --- Series / Episode routes (Part 2) ---

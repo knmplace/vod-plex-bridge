@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import re
 import httpx
@@ -45,12 +46,40 @@ async def _upsert_movie(db, movie):
     backdrop_paths = custom.get("backdrop_path") or []
     backdrop_url = backdrop_paths[0] if isinstance(backdrop_paths, list) and backdrop_paths else ""
 
-    new_uuid = movie["uuid"]
-    movie_id = movie["id"]
+    await save_dispatcharr_movie(db, movie, poster_url, cast_info, {
+        "rating": float(movie.get("rating") or 0),
+        "trailer_key": trailer_key,
+        "synced_at": datetime.now(timezone.utc).isoformat(),
+    }, fill_blank={"director": director, "backdrop_url": backdrop_url})
 
-    row = await db.execute("SELECT uuid FROM movies WHERE id = ?", (movie_id,))
-    existing = await row.fetchone()
-    if existing and existing["uuid"] and existing["uuid"] != new_uuid:
+
+_DISPATCHARR_META = ("name", "year", "genre", "description", "tmdb_id", "imdb_id", "poster_url", "cast_info")
+
+
+async def save_dispatcharr_movie(db, movie, poster_url, cast_info, extra, fill_blank=None) -> bool:
+    """Dispatcharr is true at import. Its metadata is written on insert, and later only
+    when it differs from the last sync, which also flags the movie for a local/TMDB
+    check (TMDB wins there). Returns True when the uuid changed."""
+    fill_blank = fill_blank or {}
+    movie_id, new_uuid = movie["id"], movie["uuid"]
+    meta = {
+        "name": movie.get("name", ""), "year": movie.get("year"),
+        "genre": movie.get("genre", ""), "description": movie.get("description", ""),
+        "tmdb_id": movie.get("tmdb_id"), "imdb_id": movie.get("imdb_id"),
+        "poster_url": poster_url, "cast_info": cast_info,
+    }
+    fingerprint = hashlib.sha1(json.dumps([str(meta[k] or "") for k in _DISPATCHARR_META]).encode()).hexdigest()
+
+    existing = await (await db.execute(
+        "SELECT uuid, dispatcharr_hash FROM movies WHERE id = ?", (movie_id,))).fetchone()
+    if existing is None:
+        cols = {"id": movie_id, "uuid": new_uuid, **meta, **extra, **fill_blank, "dispatcharr_hash": fingerprint}
+        await db.execute(
+            f"INSERT INTO movies ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", tuple(cols.values()))
+        return False
+
+    uuid_changed = bool(existing["uuid"]) and existing["uuid"] != new_uuid
+    if uuid_changed:
         await db.execute(
             "UPDATE movies SET header_data = NULL, header_size = 0, "
             "tail_data = NULL, tail_size = 0, tail_offset = 0, file_size = NULL "
@@ -59,38 +88,16 @@ async def _upsert_movie(db, movie):
         )
         logger.info("UUID changed for movie %d (%s -> %s), cleared caches", movie_id, existing["uuid"], new_uuid)
 
-    await db.execute("""
-        INSERT INTO movies (id, uuid, name, year, rating, genre, description,
-                           tmdb_id, imdb_id, poster_url, cast_info, trailer_key,
-                           director, backdrop_url, synced_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-            uuid=excluded.uuid, name=excluded.name, year=excluded.year,
-            rating=excluded.rating, genre=excluded.genre,
-            description=excluded.description, tmdb_id=excluded.tmdb_id,
-            poster_url=excluded.poster_url,
-            cast_info = CASE WHEN movies.cast_info IS NULL OR movies.cast_info = '' THEN excluded.cast_info ELSE movies.cast_info END,
-            trailer_key=excluded.trailer_key,
-            director = CASE WHEN movies.director IS NULL OR movies.director = '' THEN excluded.director ELSE movies.director END,
-            backdrop_url = CASE WHEN movies.backdrop_url IS NULL OR movies.backdrop_url = '' THEN excluded.backdrop_url ELSE movies.backdrop_url END,
-            synced_at=excluded.synced_at
-    """, (
-        movie_id,
-        new_uuid,
-        movie.get("name", ""),
-        movie.get("year"),
-        float(movie.get("rating") or 0),
-        movie.get("genre", ""),
-        movie.get("description", ""),
-        movie.get("tmdb_id"),
-        movie.get("imdb_id"),
-        poster_url,
-        cast_info,
-        trailer_key,
-        director,
-        backdrop_url,
-        datetime.now(timezone.utc).isoformat(),
-    ))
+    sets = {"uuid": new_uuid, **extra}
+    if existing["dispatcharr_hash"] is None:
+        sets["dispatcharr_hash"] = fingerprint  # baseline for rows from before fingerprinting
+    elif existing["dispatcharr_hash"] != fingerprint:
+        sets.update({k: v for k, v in meta.items() if k != "tmdb_id" or v})
+        sets.update(dispatcharr_hash=fingerprint, tmdb_check=1)
+    sql = [f"{k} = ?" for k in sets] + [f"{k} = CASE WHEN COALESCE({k}, '') = '' THEN ? ELSE {k} END" for k in fill_blank]
+    await db.execute(
+        f"UPDATE movies SET {', '.join(sql)} WHERE id = ?", (*sets.values(), *fill_blank.values(), movie_id))
+    return uuid_changed
 
 
 MOVIE_METADATA_FILE = os.environ.get("MOVIE_METADATA_FILE", "/data/movie_metadata.json")
@@ -376,10 +383,10 @@ async def scrape_catalog(max_movies: int = 0, category_ids: list = None, account
 
 
 async def enrich_from_tmdb(limit: int = 5000) -> dict:
-    """Same flow as VOD Manager: each movie with a TMDB ID is enriched once (local
-    store first, TMDB on a miss), and re-applied when the store refreshes that
-    title. TMDB wins for genre/description/poster/IMDb ID; runtime only fills a
-    blank duration, since the provider's real length drives the proxy throttle."""
+    """Checks movies flagged by a Dispatcharr data change (or a store refresh of a title
+    already applied): local store first, TMDB on a miss. TMDB wins for genre,
+    description, poster, IMDb ID, cast and year; runtime only fills a blank duration,
+    since the provider's real length drives the proxy throttle."""
     global _cancel
     result = {"enriched": 0, "changed": 0, "nfo_rewritten": 0, "store_refreshed": 0, "remaining": 0}
     if not tmdb_local.has_credentials():
@@ -398,15 +405,15 @@ async def enrich_from_tmdb(limit: int = 5000) -> dict:
         for i in range(0, len(ids), 500):
             chunk = ids[i:i + 500]
             cur = await db.execute(
-                f"UPDATE movies SET tmdb_enriched_at = NULL WHERE tmdb_enriched_at IS NOT NULL "
+                f"UPDATE movies SET tmdb_check = 1 WHERE tmdb_enriched_at IS NOT NULL "
                 f"AND tmdb_id IN ({','.join('?' * len(chunk))})", chunk,
             )
             result["store_refreshed"] += cur.rowcount
         await db.commit()
 
-    pending = "tmdb_id IS NOT NULL AND tmdb_id != '' AND tmdb_enriched_at IS NULL AND name != ''"
+    pending = "tmdb_check = 1 AND tmdb_id IS NOT NULL AND tmdb_id != '' AND name != ''"
     rows = await db.execute(
-        f"SELECT id, tmdb_id, genre, description, imdb_id, poster_url, duration_seconds, activated "
+        f"SELECT id, tmdb_id, genre, description, imdb_id, poster_url, cast_info, year, duration_seconds, activated "
         f"FROM movies WHERE {pending} ORDER BY activated DESC LIMIT ?", (limit,),
     )
     movies = await rows.fetchall()
@@ -419,6 +426,7 @@ async def enrich_from_tmdb(limit: int = 5000) -> dict:
         try:
             tmdb_data, local = await tmdb_local.movie_details(movie["tmdb_id"])
             if tmdb_data is None:
+                await db.execute("UPDATE movies SET tmdb_check = 0 WHERE id = ?", (movie["id"],))
                 continue
             poster_path = tmdb_data.get("poster_path")
             runtime_min = tmdb_data.get("runtime")
@@ -427,13 +435,17 @@ async def enrich_from_tmdb(limit: int = 5000) -> dict:
                 "description": tmdb_data.get("overview") or "",
                 "imdb_id": tmdb_data.get("imdb_id") or "",
                 "poster_url": f"https://image.tmdb.org/t/p/w600_and_h900_bestv2{poster_path}" if poster_path else "",
+                "cast_info": ", ".join(c["name"] for c in (tmdb_data.get("credits") or {}).get("cast", [])[:10]),
             }
             changes = {k: v for k, v in new.items() if v and v != (movie[k] or "")}
+            year = (tmdb_data.get("release_date") or "")[:4]
+            if year.isdigit() and str(movie["year"] or "") != year:
+                changes["year"] = int(year)
             if runtime_min and not movie["duration_seconds"]:
                 changes["duration_seconds"] = runtime_min * 60
             sets = "".join(f"{k} = ?, " for k in changes)
             await db.execute(
-                f"UPDATE movies SET {sets}tmdb_enriched = 1, tmdb_enriched_at = ? WHERE id = ?",
+                f"UPDATE movies SET {sets}tmdb_enriched = 1, tmdb_check = 0, tmdb_enriched_at = ? WHERE id = ?",
                 (*changes.values(), datetime.now(timezone.utc).isoformat(), movie["id"]),
             )
             result["enriched"] += 1

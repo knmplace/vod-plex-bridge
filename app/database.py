@@ -127,6 +127,8 @@ async def init_db():
         "ALTER TABLE movies ADD COLUMN catalog_refresh_note TEXT",
         "ALTER TABLE movies ADD COLUMN in_plex TEXT",
         "ALTER TABLE movies ADD COLUMN tmdb_enriched_at TEXT",
+        "ALTER TABLE movies ADD COLUMN dispatcharr_hash TEXT",
+        "ALTER TABLE movies ADD COLUMN tmdb_check INTEGER DEFAULT 0",
     ]:
         try:
             await db.execute(col)
