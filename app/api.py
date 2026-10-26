@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, STRM_SERIES_OUTPUT_DIR, PLEX_SERIES_LIBRARY_ID, PLEX_SERIES_MOUNT_ROOT
+from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, STRM_SERIES_OUTPUT_DIR, PLEX_SERIES_LIBRARY_ID, PLEX_SERIES_MOUNT_ROOT, PLEX_MOVIE_CATEGORY_MOUNT_ROOT
 import media_servers
 import plex_libraries
 import plex_presence
@@ -649,7 +649,7 @@ async def list_movies(
         rows = await db.execute(
             f"SELECT m.id, m.name, m.year, m.rating, m.genre, m.tmdb_id, m.poster_url, "
             f"m.activated, m.account_id, m.account_name, m.trailer_key, m.language, "
-            f"m.director, m.country, m.in_plex "
+            f"m.director, m.country, m.in_plex, m.category_id "
             f"FROM movies m WHERE {where} ORDER BY m.{sort_col} {order} LIMIT ? OFFSET ?",
             params + [page_size, offset],
         )
@@ -900,6 +900,14 @@ async def activate_movies(request: Request):
         if updated_ids > 0:
             await db.commit()
             logger.info(f"Refreshed stream_ids for {updated_ids} movies before activation")
+
+        # Already-active movies keep their category; moving them is /movie-categories/assign.
+        if "category" in data:
+            err = await _set_movie_category(db, movie_ids, data.get("category"), "activated = 0")
+            if err:
+                return JSONResponse(status_code=400, content={"error": err})
+        else:
+            await _set_movie_category(db, movie_ids, "auto", "activated = 0 AND category_id IS NULL")
 
         placeholders = ",".join("?" for _ in movie_ids)
         needs_header = await db.execute(
@@ -1520,7 +1528,7 @@ async def _fetch_headers_validated(movies: list[dict]) -> tuple[list[int], list[
             failed_ids.append(movie_id)
 
     if activated_ids:
-        await _plex_scan_library()
+        await _plex_scan_movie_sections(activated_ids)
 
     return activated_ids, failed_ids
 
@@ -1719,9 +1727,38 @@ _PLEX_DELETE_GIVE_UP_SECS = 180
 _plex_delete_tasks: set[asyncio.Task] = set()
 
 
+async def _plex_movie_sections() -> list[str]:
+    """The default movie library plus every library a movie category is linked to."""
+    db = await get_db()
+    rows = await db.execute(
+        "SELECT DISTINCT plex_library_section FROM user_movie_categories "
+        "WHERE plex_library_section IS NOT NULL AND plex_library_section != 999"
+    )
+    sections = ([str(PLEX_LIBRARY_ID)] if PLEX_LIBRARY_ID else []) + [str(r[0]) for r in await rows.fetchall()]
+    return list(dict.fromkeys(sections))
+
+
 async def _plex_remove_movies(movie_ids: list[int]):
-    """Queue background Plex deletion for movie_ids. Returns the number queued."""
-    return await _plex_remove_items(PLEX_LIBRARY_ID, movie_ids)
+    """Queue background Plex deletion for movie_ids. Returns the number queued.
+    Every movie library is searched, so it works even after the movie's row or category is gone."""
+    queued = 0
+    for section in await _plex_movie_sections():
+        queued += await _plex_remove_items(section, movie_ids)
+    return queued
+
+
+async def _plex_scan_movie_sections(movie_ids: list[int]):
+    """Scan the library of each category these movies are in (Default = PLEX_LIBRARY_ID)."""
+    db = await get_db()
+    placeholders = ",".join("?" for _ in movie_ids)
+    rows = await db.execute(
+        f"SELECT DISTINCT c.plex_library_section FROM movies m "
+        f"LEFT JOIN user_movie_categories c ON m.category_id = c.id WHERE m.id IN ({placeholders})",
+        movie_ids,
+    )
+    sections = {None if r[0] is None else str(r[0]) for r in await rows.fetchall()}
+    for section in sections - {"999"}:
+        await _plex_scan_library(section)
 
 
 async def _plex_remove_episodes(episode_ids: list[int], section_id: str | None):
@@ -3624,6 +3661,199 @@ async def series_activated_count():
             "strm_files": _count_series_strm_files()}
 
 
+@router.get("/movie-categories")
+async def list_movie_categories():
+    db = await get_db()
+    rows = await db.execute(
+        "SELECT c.*, (SELECT COUNT(*) FROM movies m WHERE m.category_id = c.id AND m.activated = 1) as active_count, "
+        "(SELECT GROUP_CONCAT(vod_category_id) FROM user_movie_category_sources s WHERE s.user_category_id = c.id) as sources "
+        "FROM user_movie_categories c ORDER BY c.name"
+    )
+    results = []
+    for r in await rows.fetchall():
+        d = dict(r)
+        d["sources"] = [int(x) for x in (d["sources"] or "").split(",") if x]
+        results.append(d)
+    default_row = await db.execute(
+        "SELECT COUNT(*) FROM movies WHERE activated = 1 AND (category_id IS NULL OR "
+        "category_id NOT IN (SELECT id FROM user_movie_categories))"
+    )
+    return {"results": results, "mount_root": PLEX_MOVIE_CATEGORY_MOUNT_ROOT,
+            "default": {"active_count": (await default_row.fetchone())[0], "plex_library_section": PLEX_LIBRARY_ID}}
+
+
+@router.get("/plex/movie-libraries")
+async def list_plex_movie_libraries():
+    if not plex_libraries.configured():
+        return {"configured": False, "results": []}
+    try:
+        return {"configured": True, "mount_root": PLEX_MOVIE_CATEGORY_MOUNT_ROOT,
+                "results": await plex_libraries.list_sections("movie")}
+    except Exception as e:
+        return JSONResponse(status_code=502, content={"error": f"Plex unreachable: {e}"})
+
+
+async def _set_movie_sources(db, category_id: int, sources):
+    await db.execute("DELETE FROM user_movie_category_sources WHERE user_category_id = ?", (category_id,))
+    for vod_id in {int(s) for s in sources or []}:
+        # A provider category feeds one user category at most.
+        await db.execute("DELETE FROM user_movie_category_sources WHERE vod_category_id = ?", (vod_id,))
+        await db.execute("INSERT INTO user_movie_category_sources (user_category_id, vod_category_id) VALUES (?, ?)",
+                         (category_id, vod_id))
+
+
+async def _set_movie_category(db, movie_ids: list[int], choice, where: str) -> str:
+    """Point movie_ids (those matching `where`) at a category. choice: "auto" (from their
+    provider categories, else Default), a category id, or empty/0 for Default. Returns an error or ""."""
+    if not movie_ids:
+        return ""
+    placeholders = ",".join("?" for _ in movie_ids)
+    where = f"id IN ({placeholders}) AND {where}"
+    if choice == "auto":
+        await db.execute(
+            "UPDATE movies SET category_id = (SELECT s.user_category_id FROM movie_categories mc "
+            "JOIN user_movie_category_sources s ON s.vod_category_id = mc.category_id "
+            "WHERE mc.movie_id = movies.id ORDER BY s.user_category_id LIMIT 1) WHERE " + where,
+            movie_ids,
+        )
+    else:
+        category_id = None if choice in (None, "", 0, "0", "default") else int(choice)
+        if category_id is not None:
+            row = await db.execute("SELECT id FROM user_movie_categories WHERE id = ?", (category_id,))
+            if not await row.fetchone():
+                return "Category not found"
+        await db.execute("UPDATE movies SET category_id = ? WHERE " + where, [category_id] + movie_ids)
+    await db.commit()
+    return ""
+
+
+@router.post("/movie-categories")
+async def create_movie_category(request: Request):
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    strm_folder = _clean_strm_folder(body.get("strm_folder") or name)
+    if not name or not strm_folder:
+        return JSONResponse(status_code=400, content={"error": "name is required"})
+
+    db = await get_db()
+    dup = await db.execute("SELECT id FROM user_movie_categories WHERE strm_folder = ?", (strm_folder,))
+    if await dup.fetchone():
+        return JSONResponse(status_code=400, content={"error": f"Folder '{strm_folder}' is already used by another category"})
+
+    section, created, warning = await _attach_category_to_plex(
+        name, strm_folder, body.get("plex_library_section", 999), kind="movie")
+    cursor = await db.execute(
+        "INSERT INTO user_movie_categories (name, strm_folder, plex_library_section, plex_library_created) VALUES (?, ?, ?, ?)",
+        (name, strm_folder, section, created),
+    )
+    await _set_movie_sources(db, cursor.lastrowid, body.get("sources"))
+    await db.commit()
+    return {"id": cursor.lastrowid, "name": name, "strm_folder": strm_folder,
+            "plex_library_section": section, "warning": warning}
+
+
+@router.put("/movie-categories/{category_id}")
+async def update_movie_category(category_id: int, request: Request):
+    body = await request.json()
+    db = await get_db()
+    row = await db.execute("SELECT * FROM user_movie_categories WHERE id = ?", (category_id,))
+    existing = await row.fetchone()
+    if not existing:
+        return JSONResponse(status_code=404, content={"error": "Category not found"})
+
+    name = (body.get("name") or existing["name"]).strip()
+    strm_folder = _clean_strm_folder(body.get("strm_folder", existing["strm_folder"])) or existing["strm_folder"]
+    requested_section = body.get("plex_library_section", existing["plex_library_section"])
+    section, created, warning = existing["plex_library_section"], existing["plex_library_created"], ""
+
+    if strm_folder != existing["strm_folder"]:
+        dup = await db.execute("SELECT id FROM user_movie_categories WHERE strm_folder = ? AND id != ?",
+                               (strm_folder, category_id))
+        if await dup.fetchone():
+            return JSONResponse(status_code=400, content={"error": f"Folder '{strm_folder}' is already used by another category"})
+    if strm_folder != existing["strm_folder"] or str(requested_section) != str(existing["plex_library_section"]):
+        warning = await _detach_category_from_plex(existing, kind="movie")
+        section, created, attach_warning = await _attach_category_to_plex(name, strm_folder, requested_section, kind="movie")
+        warning = warning or attach_warning
+
+    await db.execute(
+        "UPDATE user_movie_categories SET name = ?, strm_folder = ?, plex_library_section = ?, plex_library_created = ? WHERE id = ?",
+        (name, strm_folder, section, created, category_id),
+    )
+    if "sources" in body:
+        await _set_movie_sources(db, category_id, body["sources"])
+    await db.commit()
+    return {"id": category_id, "name": name, "strm_folder": strm_folder,
+            "plex_library_section": section, "warning": warning}
+
+
+@router.delete("/movie-categories/{category_id}")
+async def delete_movie_category(category_id: int):
+    db = await get_db()
+    count_row = await db.execute("SELECT COUNT(*) FROM movies WHERE category_id = ? AND activated = 1", (category_id,))
+    in_use = (await count_row.fetchone())[0]
+    if in_use > 0:
+        return JSONResponse(status_code=400, content={
+            "error": f"Cannot delete category: {in_use} active movies are in it. Move or deactivate them first."})
+    row = await db.execute("SELECT * FROM user_movie_categories WHERE id = ?", (category_id,))
+    cat = await row.fetchone()
+    if not cat:
+        return JSONResponse(status_code=404, content={"error": "Category not found"})
+
+    warning = await _detach_category_from_plex(cat, kind="movie")
+    # Inactive movies that were in it go back to Default.
+    await db.execute("UPDATE movies SET category_id = NULL WHERE category_id = ?", (category_id,))
+    await db.execute("DELETE FROM user_movie_category_sources WHERE user_category_id = ?", (category_id,))
+    await db.execute("DELETE FROM user_movie_categories WHERE id = ?", (category_id,))
+    await db.commit()
+    return {"deleted": category_id, "warning": warning}
+
+
+@router.post("/movie-categories/assign")
+async def assign_movie_category(request: Request):
+    """Move movies to another category. Active ones leave their old Plex library and the new one is scanned."""
+    body = await request.json()
+    movie_ids = [int(i) for i in body.get("movie_ids", [])]
+    if not movie_ids:
+        return JSONResponse(status_code=400, content={"error": "movie_ids required"})
+    db = await get_db()
+    placeholders = ",".join("?" for _ in movie_ids)
+    before = {r[0]: r[1] for r in await (await db.execute(
+        f"SELECT id, category_id FROM movies WHERE id IN ({placeholders}) AND activated = 1", movie_ids)).fetchall()}
+
+    err = await _set_movie_category(db, movie_ids, body.get("category"), "1 = 1")
+    if err:
+        return JSONResponse(status_code=400, content={"error": err})
+
+    after = {r[0]: r[1] for r in await (await db.execute(
+        f"SELECT id, category_id FROM movies WHERE id IN ({placeholders}) AND activated = 1", movie_ids)).fetchall()}
+    moved = [mid for mid in after if after[mid] != before.get(mid)]
+    if moved:
+        await _plex_remove_movies(moved)
+        await _plex_scan_movie_sections(moved)
+    return {"status": "ok", "updated": len(movie_ids), "moved": len(moved)}
+
+
+@router.post("/movie-categories/sync-plex")
+async def sync_movie_categories_to_plex():
+    """Make sure every linked movie category's folder is a location on its Plex library."""
+    if not plex_libraries.configured():
+        return JSONResponse(status_code=400, content={"error": "Plex is not configured"})
+    db = await get_db()
+    rows = await (await db.execute("SELECT * FROM user_movie_categories")).fetchall()
+    added, errors = [], []
+    for cat in rows:
+        if cat["plex_library_section"] in (None, 999):
+            continue
+        try:
+            if await plex_libraries.add_location(cat["plex_library_section"],
+                                                 plex_libraries.category_location(cat["strm_folder"], "movie")):
+                added.append(cat["name"])
+        except Exception as e:
+            errors.append(f"{cat['name']}: {plex_libraries.describe_error(e)}")
+    return {"added": added, "errors": errors}
+
+
 @router.get("/series/categories")
 async def list_series_categories():
     db = await get_db()
@@ -3653,14 +3883,15 @@ def _clean_strm_folder(value: str) -> str:
     return sanitize_filename((value or "").strip().strip("/\\"))
 
 
-async def _attach_category_to_plex(name: str, strm_folder: str, section) -> tuple[int, int, str]:
+async def _attach_category_to_plex(name: str, strm_folder: str, section, kind: str = "show") -> tuple[int, int, str]:
     """Returns (section_id, created_flag, warning). 999 means not linked to Plex."""
     if section in (None, "", 999, "999") or not plex_libraries.configured():
         return 999, 0, ""
-    path = plex_libraries.category_location(strm_folder)
+    path = plex_libraries.category_location(strm_folder, kind)
     try:
         if str(section) == "new":
-            return await plex_libraries.create_section(name, path), 1, ""
+            prefs = plex_libraries.MOVIE_PREFS if kind == "movie" else None
+            return await plex_libraries.create_section(name, path, kind=kind, prefs=prefs), 1, ""
         await plex_libraries.add_location(int(section), path)
         return int(section), 0, ""
     except Exception as e:
@@ -3668,13 +3899,13 @@ async def _attach_category_to_plex(name: str, strm_folder: str, section) -> tupl
         return (999 if str(section) == "new" else int(section)), 0, f"Plex library not updated: {plex_libraries.describe_error(e)}"
 
 
-async def _detach_category_from_plex(cat) -> str:
+async def _detach_category_from_plex(cat, kind: str = "show") -> str:
     section = cat["plex_library_section"]
     if section in (None, 999) or not plex_libraries.configured():
         return ""
     try:
         await plex_libraries.remove_location(
-            section, plex_libraries.category_location(cat["strm_folder"]),
+            section, plex_libraries.category_location(cat["strm_folder"], kind),
             delete_if_empty=bool(cat["plex_library_created"]),
         )
         return ""

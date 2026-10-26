@@ -865,6 +865,9 @@ def extract_movie_id(filename: str) -> int | None:
 
 FALLBACK_FILE_SIZE = 8_000_000_000
 
+# Movies in no user category (or one since deleted) belong to the Default category at /vod/.
+DEFAULT_CATEGORY_SQL = "(category_id IS NULL OR category_id NOT IN (SELECT id FROM user_movie_categories))"
+
 
 @router.api_route("/vod/", methods=["GET", "HEAD"])
 async def vod_root(request: Request):
@@ -872,8 +875,8 @@ async def vod_root(request: Request):
     try:
         rows = await db.execute(
             "SELECT id, name, year FROM movies "
-            "WHERE name != '' AND stream_id IS NOT NULL AND activated = 1 "
-            "ORDER BY name"
+            "WHERE name != '' AND stream_id IS NOT NULL AND activated = 1 AND " + DEFAULT_CATEGORY_SQL +
+            " ORDER BY name"
         )
         movies = await rows.fetchall()
 
@@ -1421,6 +1424,36 @@ def _series_episode_content_type(container_extension: str) -> str:
     if ext == "mp4":
         return "video/mp4"
     return "video/x-matroska"
+
+
+@router.api_route("/vod-movies/", methods=["GET", "HEAD"])
+async def vod_movies_root(request: Request):
+    db = await get_db()
+    rows = await db.execute("SELECT strm_folder FROM user_movie_categories ORDER BY strm_folder")
+    # Every category folder is listed, even empty ones, so the Plex library locations always resolve.
+    links = [f'<a href="{quote(r["strm_folder"])}/">{r["strm_folder"]}/</a>' for r in await rows.fetchall()]
+    return HTMLResponse(content="<html><body>\n" + "\n".join(links) + "\n</body></html>")
+
+
+@router.api_route("/vod-movies/{folder}/", methods=["GET", "HEAD"])
+async def vod_movies_category(folder: str, request: Request):
+    db = await get_db()
+    rows = await db.execute(
+        "SELECT m.id, m.name, m.year FROM movies m JOIN user_movie_categories c ON m.category_id = c.id "
+        "WHERE c.strm_folder = ? AND m.name != '' AND m.stream_id IS NOT NULL AND m.activated = 1 "
+        "ORDER BY m.name",
+        (folder,),
+    )
+    links = []
+    for m in await rows.fetchall():
+        fname = make_filename(m)
+        links.append(f'<a href="{quote(fname)}">{fname}</a>')
+    return HTMLResponse(content="<html><body>\n" + "\n".join(links) + "\n</body></html>")
+
+
+@router.api_route("/vod-movies/{folder}/{filename}", methods=["GET", "HEAD"])
+async def vod_movies_file(folder: str, filename: str, request: Request):
+    return await vod_file(filename, request)
 
 
 @router.api_route("/vod-series/", methods=["GET", "HEAD"])

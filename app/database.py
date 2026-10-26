@@ -275,6 +275,23 @@ async def init_db():
             key TEXT PRIMARY KEY,
             value TEXT
         );
+
+        -- The user's movie categories (Plex destinations), like series_categories.
+        -- movies.category_id NULL means the Default category: the /vod/ folder and PLEX_LIBRARY_ID.
+        CREATE TABLE IF NOT EXISTS user_movie_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            strm_folder TEXT NOT NULL,
+            plex_library_section INTEGER DEFAULT 999,
+            plex_library_created INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        -- Provider categories whose movies are suggested into a user category on activation.
+        CREATE TABLE IF NOT EXISTS user_movie_category_sources (
+            user_category_id INTEGER NOT NULL,
+            vod_category_id INTEGER NOT NULL,
+            PRIMARY KEY (user_category_id, vod_category_id)
+        );
     """)
     await db.commit()
 
@@ -284,6 +301,7 @@ async def init_db():
         "ALTER TABLE series ADD COLUMN in_plex TEXT",
         "ALTER TABLE series ADD COLUMN tmdb_locked INTEGER DEFAULT 0",
         "ALTER TABLE episodes ADD COLUMN in_plex TEXT",
+        "ALTER TABLE movies ADD COLUMN category_id INTEGER",
     ]:
         try:
             await db.execute(series_col)

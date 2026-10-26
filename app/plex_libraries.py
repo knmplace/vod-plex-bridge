@@ -1,9 +1,9 @@
-"""Keep Plex TV libraries in step with the bridge's series categories."""
+"""Keep Plex libraries in step with the bridge's series and movie categories."""
 import logging
 
 import httpx
 
-from config import PLEX_URL, PLEX_TOKEN, PLEX_SERIES_MOUNT_ROOT
+from config import PLEX_URL, PLEX_TOKEN, PLEX_SERIES_MOUNT_ROOT, PLEX_MOVIE_CATEGORY_MOUNT_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,8 @@ SHOW_SCANNER = "Plex TV Series"
 MOVIE_AGENT = "tv.plex.agents.movie"
 MOVIE_SCANNER = "Plex Movie"
 _KINDS = {"show": (SHOW_AGENT, SHOW_SCANNER), "movie": (MOVIE_AGENT, MOVIE_SCANNER)}
+# Every thumbnail or marker pass opens the stream, so a big catalog would hit the provider.
+MOVIE_PREFS = {"enableBIFGeneration": "0", "enableCreditsMarkerGeneration": "0"}
 
 
 def configured() -> bool:
@@ -31,8 +33,9 @@ def join_mount(root: str, name: str) -> str:
     return f"{root.rstrip(sep)}{sep}{name}"
 
 
-def category_location(strm_folder: str) -> str:
-    return join_mount(PLEX_SERIES_MOUNT_ROOT, strm_folder)
+def category_location(strm_folder: str, kind: str = "show") -> str:
+    root = PLEX_MOVIE_CATEGORY_MOUNT_ROOT if kind == "movie" else PLEX_SERIES_MOUNT_ROOT
+    return join_mount(root, strm_folder)
 
 
 async def list_show_sections() -> list[dict]:
@@ -60,7 +63,7 @@ async def list_sections(kind: str) -> list[dict]:
 
 
 async def _get_section(section_id: int) -> dict | None:
-    for s in await list_show_sections():
+    for s in await list_sections("show") + await list_sections("movie"):
         if s["id"] == int(section_id):
             return s
     return None

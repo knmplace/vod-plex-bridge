@@ -7,7 +7,7 @@ from collections import defaultdict
 
 import httpx
 
-from config import PLEX_URL, PLEX_TOKEN, PLEX_MOVIE_MOUNT_ROOT, PLEX_SERIES_MOUNT_ROOT
+from config import PLEX_URL, PLEX_TOKEN, PLEX_MOVIE_MOUNT_ROOT, PLEX_SERIES_MOUNT_ROOT, PLEX_MOVIE_CATEGORY_MOUNT_ROOT
 from database import get_db
 from generator import parse_title
 from plex_libraries import join_mount
@@ -20,7 +20,8 @@ def _headers() -> dict:
 _PAGE = 1000
 def _bridge_roots() -> tuple:
     """Folders the bridge itself serves to Plex; those titles already show as ACTIVE."""
-    return tuple(join_mount(r, "") for r in (PLEX_MOVIE_MOUNT_ROOT, PLEX_SERIES_MOUNT_ROOT) if r)
+    return tuple(join_mount(r, "") for r in (PLEX_MOVIE_MOUNT_ROOT, PLEX_SERIES_MOUNT_ROOT,
+                                              PLEX_MOVIE_CATEGORY_MOUNT_ROOT) if r)
 
 
 _lock = asyncio.Lock()

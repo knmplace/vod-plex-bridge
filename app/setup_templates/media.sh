@@ -12,8 +12,9 @@ SETUP_URL="$BRIDGE_URL/setup/$SETUP_TOKEN"
 UNIT_DIR=/etc/systemd/system
 REMOTES=()   # "remote|mount path|bridge folder|unit"
 [ "$WANT_MOVIES" = 1 ] && REMOTES+=("vodbridge-movies|$MOVIE_MOUNT|vod|rclone-vod-bridge-movies.service")
+[ "$WANT_MOVIES" = 1 ] && REMOTES+=("vodbridge-movies-cat|$MOVIE_CAT_MOUNT|vod-movies|rclone-vod-bridge-movies-cat.service")
 [ "$WANT_SERIES" = 1 ] && REMOTES+=("vodbridge-series|$SERIES_MOUNT|vod-series|rclone-vod-bridge-series.service")
-ALL_UNITS="rclone-vod-bridge-movies.service rclone-vod-bridge-series.service"
+ALL_UNITS="rclone-vod-bridge-movies.service rclone-vod-bridge-movies-cat.service rclone-vod-bridge-series.service"
 
 say()  { printf '\033[1m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m!!\033[0m  %s\n' "$*" >&2; }
@@ -51,9 +52,9 @@ rclone_conf() {
     rclone config file 2>/dev/null | tail -n 1
 }
 
-# Drop our two sections from rclone.conf; other remotes are left exactly as they are.
+# Drop our sections from rclone.conf; other remotes are left exactly as they are.
 strip_remotes() {
-    awk '/^\[/{ skip = ($0 == "[vodbridge-movies]" || $0 == "[vodbridge-series]") } !skip' "$1"
+    awk '/^\[/{ skip = ($0 == "[vodbridge-movies]" || $0 == "[vodbridge-movies-cat]" || $0 == "[vodbridge-series]") } !skip' "$1"
 }
 
 if [ "$UNINSTALL" = 1 ]; then
@@ -265,8 +266,9 @@ if [ "$MEDIA_DOCKER" = 1 ]; then
         docker_ok=true
         for entry in "${REMOTES[@]}"; do
             IFS='|' read -r remote path folder unit <<< "$entry"
-            if docker exec "$MEDIA_CONTAINER" ls "$path" >/dev/null 2>&1 \
-                    && [ "$(docker exec "$MEDIA_CONTAINER" ls -1 "$path" 2>/dev/null | wc -l)" -gt 0 ]; then
+            # The category folder stays empty until the first movie category exists.
+            if docker exec "$MEDIA_CONTAINER" ls "$path" >/dev/null 2>&1 && { [ "$folder" = vod-movies ] \
+                    || [ "$(docker exec "$MEDIA_CONTAINER" ls -1 "$path" 2>/dev/null | wc -l)" -gt 0 ]; }; then
                 say "$MEDIA_CONTAINER can see $path"
             else
                 docker_ok=false

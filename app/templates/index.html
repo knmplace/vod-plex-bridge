@@ -1175,7 +1175,11 @@
                     <button class="btn btn-outline" id="clearFiltersBtn" style="padding:0.2rem 0.6rem;font-size:0.78rem;display:none;" onclick="clearBrowseFilters()">Clear filters</button>
                     <div id="selectionBar" style="display:none;" class="selection-bar">
                         <span class="count" id="selCount">0</span> selected
+                        <select id="selMovieCategory" class="search-input" title="Plex library the selected movies go to" style="width:auto;margin-bottom:0;padding:0.15rem 0.4rem;font-size:0.78rem;">
+                            <option value="auto">Auto category</option>
+                        </select>
                         <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="activateSelected()">Activate</button>
+                        <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" title="Move the selected active movies to the chosen category" onclick="moveSelectedMovies()">Move</button>
                         <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="deactivateSelected()">Deactivate</button>
                         <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="clearSelection()">Clear</button>
                     </div>
@@ -1280,6 +1284,32 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="panel" style="margin-bottom:1rem;" id="movieCategoryPanel">
+                <div class="panel-header collapsible" onclick="togglePanel('movieCategoryPanel')">
+                    <span><span class="collapse-arrow">&#9660;</span>Movie Categories</span>
+                    <span class="badge" id="movieCategoryCount">0</span>
+                </div>
+                <div class="panel-body">
+                    <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.5rem;">
+                        Each category is its own Plex library. Movies from a category's provider categories go there when activated with "Auto category"; everything else goes to the Default library.
+                    </div>
+                    <div style="display:flex;gap:0.4rem;margin-bottom:0.6rem;flex-wrap:wrap;align-items:flex-start;" onclick="event.stopPropagation()">
+                        <input type="text" class="search-input" id="newMovieCatName" placeholder="Category name" style="width:160px;margin-bottom:0;">
+                        <input type="text" class="search-input" id="newMovieCatFolder" placeholder="Folder (defaults to name)" style="width:180px;margin-bottom:0;">
+                        <select class="search-input" id="newMovieCatPlexSection" title="Plex movie library this category's folder is added to" style="width:200px;margin-bottom:0;">
+                            <option value="new">+ Create new Plex library</option>
+                        </select>
+                        <select class="search-input" id="newMovieCatSources" multiple size="4" title="Provider categories whose movies go here (Ctrl/Cmd-click for several)" style="width:240px;margin-bottom:0;"></select>
+                        <button class="btn btn-primary" style="font-size:0.78rem;padding:0.25rem 0.6rem;" onclick="createMovieCategory()">Add Category</button>
+                        <button class="btn" style="font-size:0.78rem;padding:0.25rem 0.6rem;" title="Re-add every category folder to its Plex library" onclick="syncMovieCategoriesToPlex()">Sync Plex Folders</button>
+                    </div>
+                    <table class="summary-table compact" id="movieCategoryTable">
+                        <thead><tr><th>Name</th><th>Folder</th><th>Plex Library</th><th style="text-align:right">Active</th><th>Provider Categories</th><th></th></tr></thead>
+                        <tbody id="movieCategoryBody"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+                    </table>
                 </div>
             </div>
 
@@ -2378,6 +2408,7 @@
             if (tab === 'catalog') {
                 document.getElementById('tabCatalog').classList.add('active');
                 loadCatalogSummary();
+                loadMovieCategories();
                 if (!allProviders.length) refreshProviders();
                 if (!allCategories.length) refreshCategories();
             } else if (tab === 'series') {
@@ -2473,7 +2504,7 @@
                     ${ours ? '<p class="conn-note">First sign-in is <b>admin</b> / <b>ChangeMeNow!</b>. Change that password if you have not yet.</p>' : ''}</div>`;
             }).join('');
         }
-        const SETUP_LINUX_MOUNTS = ['/mnt/vod-bridge', '/mnt/vod-bridge-series'];
+        const SETUP_LINUX_MOUNTS = ['/mnt/vod-bridge', '/mnt/vod-bridge-series', '/mnt/vod-bridge-movies'];
         const RCLONE_FLAGS = '--read-only --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m';
         const SETUP_SERVERS = ['plex', 'jellyfin', 'emby'];
         const SETUP_SERVER_NAMES = { plex: 'Plex', jellyfin: 'Jellyfin', emby: 'Emby' };
@@ -2547,6 +2578,7 @@
                 </div>
                 <div class="conn-fields" style="margin-top:0.6rem;">
                     <label class="conn-field" data-show="want_movies"><span>Movies folder on that machine</span><input data-f="movie_mount" value="${v(m.movie_mount)}" ${changed}></label>
+                    <label class="conn-field" data-show="want_movies"><span>Movie categories folder on that machine</span><input data-f="movie_cat_mount" value="${v(m.movie_cat_mount)}" ${changed}></label>
                     <label class="conn-field" data-show="want_series"><span>Series folder on that machine</span><input data-f="series_mount" value="${v(m.series_mount)}" ${changed}></label>
                 </div>
                 <div class="conn-fields" style="margin-top:0.6rem;" data-show="rcm">
@@ -2594,7 +2626,7 @@
                 docker: f('docker').checked, container: f('container').value.trim(),
                 want_movies: f('want_movies').checked, want_series: f('want_series').checked,
                 movie_mount: f('movie_mount').value.trim(), series_mount: f('series_mount').value.trim(),
-                rclone_manager: f('rclone_manager').checked,
+                movie_cat_mount: f('movie_cat_mount').value.trim(), rclone_manager: f('rclone_manager').checked,
             };
         }
 
@@ -2604,10 +2636,10 @@
             let n = 1;
             while (used.has('m' + n)) n++;
             const hasPlex = setupFormAnswers().machines.some(m => m.servers.includes('plex'));
-            const [movie, series] = setupMountDefaults('linux');
+            const [movie, series, movieCat] = setupMountDefaults('linux');
             document.getElementById('setupMachines').insertAdjacentHTML('beforeend', setupMachineCard({
                 id: 'm' + n, label: '', servers: [hasPlex ? 'jellyfin' : 'plex'], os: 'linux', docker: false, container: '',
-                want_movies: true, want_series: true, movie_mount: movie, series_mount: series, rclone_manager: false,
+                want_movies: true, want_series: true, movie_mount: movie, series_mount: series, movie_cat_mount: movieCat, rclone_manager: false,
             }));
             setupDirty();
             renderSetupFormHints();
@@ -2676,10 +2708,12 @@
             const os = select.value;
             const movie = card.querySelector('[data-f="movie_mount"]');
             const series = card.querySelector('[data-f="series_mount"]');
+            const movieCat = card.querySelector('[data-f="movie_cat_mount"]');
             // Swap in the new system's default folders unless the user typed their own.
             const defaults = Object.values(setupState ? setupState.default_mounts : {}).concat([SETUP_LINUX_MOUNTS]);
             if (!movie.value || defaults.some(d => d[0] === movie.value)) movie.value = setupMountDefaults(os)[0];
             if (!series.value || defaults.some(d => d[1] === series.value)) series.value = setupMountDefaults(os)[1];
+            if (!movieCat.value || defaults.some(d => d[2] === movieCat.value)) movieCat.value = setupMountDefaults(os)[2];
             setupDirty();
             renderSetupFormHints();
         }
@@ -2785,6 +2819,7 @@
         function setupMounts(a) {
             const out = [];
             if (a.want_movies) out.push(['movies', a.movie_mount, a.bridge_url + '/vod/']);
+            if (a.want_movies && a.movie_cat_mount) out.push(['movie-categories', a.movie_cat_mount, a.bridge_url + '/vod-movies/']);
             if (a.want_series) out.push(['series', a.series_mount, a.bridge_url + '/vod-series/']);
             return out;
         }
@@ -3326,6 +3361,7 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             const browseCats = await fetchJSON('/api/categories?browse=true');
             const items = browseCats.map(c => ({ value: String(c.id), label: `${c.name} (${c.movie_count.toLocaleString()})` }));
             buildMsDropdown('msCat', items);
+            loadMovieCategories();
         }
 
         function browseByCat(catId, catName) {
@@ -3418,7 +3454,7 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                     <div class="poster">
                         <img src="${m.poster_url || ''}" alt="" loading="lazy"
                              onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
-                        <div class="card-badges">${trailerChipHTML(m.trailer_key)}${m.activated ? '<span class="activated-badge">ACTIVE</span>' : ''}</div>
+                        <div class="card-badges">${trailerChipHTML(m.trailer_key)}${m.activated ? '<span class="activated-badge">ACTIVE</span>' : ''}${movieCategoryName(m.category_id) ? '<span class="activated-badge" style="background:var(--accent);">' + movieCategoryName(m.category_id).replace(/</g,'&lt;') + '</span>' : ''}</div>
                         ${plexBadgeHTML(m.in_plex)}
                         <div class="check-overlay">&check;</div>
                         ${m.rating > 0 ? `<span class="rating-chip">&#9733; ${Number(m.rating).toFixed(1)}</span>` : ''}
@@ -3486,7 +3522,7 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                 const res = await fetchJSON('/api/movies/activate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({movie_ids: ids})
+                    body: JSON.stringify({movie_ids: ids, category: document.getElementById('selMovieCategory').value})
                 });
                 if (res.failed_ids && res.failed_ids.length > 0) {
                     res.failed_ids.forEach(id => {
@@ -3501,6 +3537,21 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             loadMovies(currentPage);
             refreshActivatedCount();
             refreshStatus();
+        }
+
+        async function moveSelectedMovies() {
+            if (!selectedMovies.size) return;
+            const res = await fetchJSON('/api/movie-categories/assign', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({movie_ids: [...selectedMovies], category: document.getElementById('selMovieCategory').value})
+            });
+            if (res.error) { alert(res.error); return; }
+            alert(`Moved ${res.moved} active movie${res.moved === 1 ? '' : 's'}. Inactive ones go there when activated.`);
+            selectedMovies.clear();
+            updateSelectionBar();
+            loadMovies(currentPage);
+            loadMovieCategories();
         }
 
         async function deactivateSelected() {
@@ -3633,6 +3684,107 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             if (res.errors.length) lines.push('Errors:\n' + res.errors.join('\n'));
             alert(lines.join('\n\n'));
             loadSeriesCategories();
+        }
+
+        let movieCategories = [];
+        let plexMovieLibraries = [];
+        let movieProviderCategories = [];
+
+        function movieCategoryName(id) {
+            const c = id != null && movieCategories.find(c => c.id === id);
+            return c ? c.name : '';
+        }
+
+        async function loadMovieCategories() {
+            const esc = s => String(s ?? '').replace(/</g,'&lt;');
+            const [data, libs, provs] = await Promise.all([
+                fetchJSON('/api/movie-categories'),
+                fetchJSON('/api/plex/movie-libraries').catch(() => ({})),
+                movieProviderCategories.length ? null : fetchJSON('/api/categories?browse=true').catch(() => ({})),
+            ]);
+            movieCategories = data.results || [];
+            plexMovieLibraries = libs.results || [];
+            if (provs) movieProviderCategories = Array.isArray(provs) ? provs : [];
+            document.getElementById('movieCategoryCount').textContent = movieCategories.length;
+
+            const libLabel = id => {
+                if (id == null || id == 999) return '<span style="color:var(--text-muted)">none</span>';
+                const lib = plexMovieLibraries.find(l => l.id == id);
+                return lib ? esc(lib.title) : `#${esc(id)}${libs.configured === false ? '' : ' <span style="color:var(--danger)">(missing)</span>'}`;
+            };
+            const provName = id => (movieProviderCategories.find(c => c.id == id) || {}).name || `#${id}`;
+            const def = data.default || {};
+            const rows = [`<tr>
+                    <td><em>Default</em></td>
+                    <td><span style="color:var(--text-muted)">/vod/</span></td>
+                    <td>${def.plex_library_section ? libLabel(def.plex_library_section) : '<span style="color:var(--text-muted)">Settings &rarr; Plex library ID</span>'}</td>
+                    <td style="text-align:right">${(def.active_count || 0).toLocaleString()}</td>
+                    <td><span style="color:var(--text-muted)">everything else</span></td>
+                    <td></td>
+                </tr>`].concat(movieCategories.map(c => `<tr>
+                    <td>${esc(c.name)}</td>
+                    <td>${esc(c.strm_folder)}</td>
+                    <td>${libLabel(c.plex_library_section)}</td>
+                    <td style="text-align:right">${(c.active_count || 0).toLocaleString()}</td>
+                    <td style="font-size:0.78rem;">${c.sources.length ? c.sources.map(s => esc(provName(s))).join(', ') : '<span style="color:var(--text-muted)">manual only</span>'}</td>
+                    <td style="text-align:right">
+                        <button class="btn btn-danger" style="padding:0.15rem 0.5rem;font-size:0.74rem;" onclick="deleteMovieCategory(${c.id})">Delete</button>
+                    </td>
+                </tr>`));
+            document.getElementById('movieCategoryBody').innerHTML = rows.join('');
+
+            document.getElementById('newMovieCatPlexSection').innerHTML =
+                (libs.configured === false ? '' : '<option value="new">+ Create new Plex library</option>')
+                + plexMovieLibraries.map(l => `<option value="${l.id}">${esc(l.title)}</option>`).join('')
+                + '<option value="999">No Plex library</option>';
+            const srcSel = document.getElementById('newMovieCatSources');
+            const picked = new Set([...srcSel.selectedOptions].map(o => o.value));
+            srcSel.innerHTML = movieProviderCategories.map(c =>
+                `<option value="${c.id}"${picked.has(String(c.id)) ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+
+            const sel = document.getElementById('selMovieCategory');
+            const cur = sel.value;
+            sel.innerHTML = '<option value="auto">Auto category</option><option value="default">Default library</option>'
+                + movieCategories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+            if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+        }
+
+        async function createMovieCategory() {
+            const name = document.getElementById('newMovieCatName').value.trim();
+            if (!name) { alert('Category name is required.'); return; }
+            const res = await fetchJSON('/api/movie-categories', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    name,
+                    strm_folder: document.getElementById('newMovieCatFolder').value.trim(),
+                    plex_library_section: document.getElementById('newMovieCatPlexSection').value || 999,
+                    sources: [...document.getElementById('newMovieCatSources').selectedOptions].map(o => parseInt(o.value)),
+                })
+            });
+            if (res.error) { alert(res.error); return; }
+            if (res.warning) alert(res.warning);
+            document.getElementById('newMovieCatName').value = '';
+            document.getElementById('newMovieCatFolder').value = '';
+            [...document.getElementById('newMovieCatSources').options].forEach(o => o.selected = false);
+            loadMovieCategories();
+        }
+
+        async function deleteMovieCategory(id) {
+            if (!confirm('Delete this category? Its folder is also removed from the Plex library.')) return;
+            const res = await fetchJSON(`/api/movie-categories/${id}`, {method: 'DELETE'});
+            if (res.error) { alert(res.error); return; }
+            if (res.warning) alert(res.warning);
+            loadMovieCategories();
+        }
+
+        async function syncMovieCategoriesToPlex() {
+            const res = await fetchJSON('/api/movie-categories/sync-plex', {method: 'POST'});
+            if (res.error) { alert(res.error); return; }
+            const lines = [`Added to Plex: ${res.added.length ? res.added.join(', ') : 'nothing (already in sync)'}`];
+            if (res.errors.length) lines.push('Errors:\n' + res.errors.join('\n'));
+            alert(lines.join('\n\n'));
+            loadMovieCategories();
         }
 
         async function scrapeSeriesCatalog() {
@@ -4792,6 +4944,7 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                     ['PLEX_LIBRARY_ID', 'Movie library ID', 'The number of the Plex library that holds bridge movies. All movie categories currently go into this one library. Test shows each library with its ID.', '7', 'number'],
                     ['PLEX_SERIES_LIBRARY_ID', 'Fallback series library ID', 'Series go into the library set on their category (Series > Categories, where each category can create or pick its own Plex library). This ID is only used for a category that has no library of its own. Leave blank if every category has one. Test lists which library each category uses.', '12', 'number'],
                     ['PLEX_MOVIE_MOUNT_ROOT', 'Movie folder as Plex sees it', 'Where the bridge movie folder appears on the Plex machine (usually an rclone mount of http://bridge:8585/vod/). Used to match titles to Plex and to scan only the changed folder.', '/mnt/vod-bridge', 'path'],
+                    ['PLEX_MOVIE_CATEGORY_MOUNT_ROOT', 'Movie category folder as Plex sees it', 'Where the bridge movie-category folder appears on the Plex machine (an rclone mount of http://bridge:8585/vod-movies/). Each movie category is a subfolder here with its own Plex library.', '/mnt/vod-bridge-movies', 'path'],
                     ['PLEX_SERIES_MOUNT_ROOT', 'Series folder as Plex sees it', 'Where the bridge series folder (/vod-series/) appears on the Plex machine.', '/mnt/vod-bridge-series', 'path'],
                 ],
             },

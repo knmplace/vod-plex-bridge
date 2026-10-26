@@ -26,6 +26,8 @@ PLEX_SERIES_LIBRARY_ID = os.environ.get("PLEX_SERIES_LIBRARY_ID", "")
 # Where the series folders appear on the Plex host (the rclone mount of /vod-series/).
 PLEX_SERIES_MOUNT_ROOT = os.environ.get("PLEX_SERIES_MOUNT_ROOT", "/mnt/vod-bridge-series").rstrip("/")
 PLEX_MOVIE_MOUNT_ROOT = os.environ.get("PLEX_MOVIE_MOUNT_ROOT", "/mnt/vod-bridge").rstrip("/")
+# Where the movie category folders appear on the Plex host (the rclone mount of /vod-movies/).
+PLEX_MOVIE_CATEGORY_MOUNT_ROOT = os.environ.get("PLEX_MOVIE_CATEGORY_MOUNT_ROOT", "/mnt/vod-bridge-movies").rstrip("/")
 
 DISPATCHARR_XC_USERNAME = os.environ.get("DISPATCHARR_XC_USERNAME", "")
 DISPATCHARR_XC_PASSWORD = os.environ.get("DISPATCHARR_XC_PASSWORD", "")
@@ -39,7 +41,7 @@ INSTANCE_ENV["DISPATCHARR_URL"] = os.environ.get("DISPATCHARR_URL", "http://loca
 # Values saved from the Settings tab win over the compose environment above.
 SETTINGS_GROUPS = {
     "plex": ("PLEX_URL", "PLEX_TOKEN", "PLEX_LIBRARY_ID", "PLEX_SERIES_LIBRARY_ID",
-             "PLEX_MOVIE_MOUNT_ROOT", "PLEX_SERIES_MOUNT_ROOT"),
+             "PLEX_MOVIE_MOUNT_ROOT", "PLEX_SERIES_MOUNT_ROOT", "PLEX_MOVIE_CATEGORY_MOUNT_ROOT"),
     "media": ("JELLYFIN_URL", "JELLYFIN_API_KEY", "EMBY_URL", "EMBY_API_KEY"),
     "tmdb": ("TMDB_API_KEY", "TMDB_READ_TOKEN"),
     "streaming": ("MAX_CONCURRENT_PER_TITLE", "REDIRECT_MODE"),
@@ -51,6 +53,7 @@ SECRET_KEYS = ("PLEX_TOKEN", "TMDB_API_KEY", "TMDB_READ_TOKEN", "JELLYFIN_API_KE
 RESTART_KEYS = ("REDIRECT_MODE",)
 DEFAULTS = {"PLEX_LIBRARY_ID": "7",
             "PLEX_MOVIE_MOUNT_ROOT": "/mnt/vod-bridge", "PLEX_SERIES_MOUNT_ROOT": "/mnt/vod-bridge-series",
+            "PLEX_MOVIE_CATEGORY_MOUNT_ROOT": "/mnt/vod-bridge-movies",
             "MAX_CONCURRENT_PER_TITLE": "2", "REDIRECT_MODE": "false"}
 # What the compose file (or the built-in default) says, as text, for the Settings form.
 ENV_VALUES = {k: os.environ.get(k, DEFAULTS.get(k, "")) for k in SETTINGS_KEYS}
@@ -60,7 +63,8 @@ UNREADABLE = set()
 
 def _converted(key: str, value: str):
     """Setting text -> (module attribute name, typed value)."""
-    if key in ("DISPATCHARR_URL", "PLEX_URL", "JELLYFIN_URL", "EMBY_URL", "PLEX_MOVIE_MOUNT_ROOT", "PLEX_SERIES_MOUNT_ROOT"):
+    if key in ("DISPATCHARR_URL", "PLEX_URL", "JELLYFIN_URL", "EMBY_URL",
+               "PLEX_MOVIE_MOUNT_ROOT", "PLEX_SERIES_MOUNT_ROOT", "PLEX_MOVIE_CATEGORY_MOUNT_ROOT"):
         return key, value.rstrip("/")
     if key == "MAX_CONCURRENT_PER_TITLE":
         return key, int(value)

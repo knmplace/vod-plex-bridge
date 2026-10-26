@@ -80,7 +80,7 @@ def _validate(group: str, values: dict) -> str | None:
     for k in ("PLEX_LIBRARY_ID", "PLEX_SERIES_LIBRARY_ID"):
         if v.get(k) and not v[k].isdigit():
             return "Library IDs are numbers, e.g. 7"
-    for k in ("PLEX_MOVIE_MOUNT_ROOT", "PLEX_SERIES_MOUNT_ROOT"):
+    for k in ("PLEX_MOVIE_MOUNT_ROOT", "PLEX_SERIES_MOUNT_ROOT", "PLEX_MOVIE_CATEGORY_MOUNT_ROOT"):
         if v.get(k) and not re.match(r"/|[A-Za-z]:\\", v[k]):
             return "Mount paths start with /, e.g. /mnt/vod-bridge (or a drive, e.g. V:\\ on Windows)"
     if group == "streaming":

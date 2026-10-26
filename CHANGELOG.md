@@ -29,6 +29,25 @@ The three minor bumps each mark a major feature:
 
 ---
 
+## [0.41.0] — 2026-10-26
+
+### Added
+- **Movie categories.** Movies can now be split into categories the way series are. Each category has its own folder under `/vod-movies/<folder>/` and its own Plex Movies library, which the bridge can create for you. Set them up in the new **Movie Categories** panel on the Catalog tab. A category can list provider categories, so **Auto category** activation sends matching movies to it. Everything else stays in the **Default** library at `/vod/`, as before. A movie is only ever in one place, so it never shows up twice in Plex.
+- **Category picker and Move in the Movies selection bar.** Activate into Auto, Default or a named category. **Move** sends already-active movies to another category. Cards show which category a movie is in.
+- **Settings → Plex movie category mount root** (default `/mnt/vod-bridge-movies`), plus a matching folder field on each machine card in the Setup tab.
+- **Jellyfin and Emby in Now Playing and Health.** Add their URL and API key under **Settings → Media servers**. Their sessions appear in **Streams → Now Playing**, tagged by server, and each server gets a Health card.
+- **Every section and panel can be collapsed.** Panels start closed, and the browser remembers which ones you opened.
+
+### Changed
+- The series category table shows **Active Shows** and **Active Episodes** instead of the total series count.
+
+### Upgrade notes
+- **Run Command B again** on each Plex/Jellyfin machine (Setup tab). It adds the third rclone mount, `/mnt/vod-bridge-movies`, that category libraries point at. Existing mounts are left as they are.
+- Movies that were active before the upgrade stay in the Default library. Nothing moves until you use **Move**.
+- Jellyfin libraries for movie categories are still added by hand. Point a Movies library at the category's sub-folder of `/mnt/vod-bridge-movies`.
+
+---
+
 ## [0.40.1] — 2026-10-26
 
 ### Added

@@ -184,7 +184,7 @@ Fill in the card:
 | **Servers** | Tick Plex, Jellyfin and/or Emby, whichever run on this machine |
 | **It runs in Docker** | Tick it if the media server is a container, and type the container name |
 | **Movies / Series** | What this machine should mount |
-| **Movies folder / Series folder** | Defaults are `/mnt/vod-bridge` and `/mnt/vod-bridge-series` |
+| **Movies folder / Movie categories folder / Series folder** | Defaults are `/mnt/vod-bridge`, `/mnt/vod-bridge-movies` and `/mnt/vod-bridge-series` |
 | **Also install Rclone Manager** | Optional web page for checking and restarting the mounts. See the note below. |
 
 > **Decide on Rclone Manager before you run Command B.**
@@ -210,10 +210,13 @@ curl -fsSL http://192.168.1.20:8585/setup/<your-private-link>/media/m1.sh | sudo
      `--features nesting=1,fuse=1`), then restart the container and run Command B again.
 2. **Installs** rclone (official installer, skipped if present) and FUSE, and turns on
    `user_allow_other` in `/etc/fuse.conf` so the `plex` / `jellyfin` user can read the mount.
-3. **Adds two remotes**, `vodbridge-movies` and `vodbridge-series`, to your normal
-   `rclone.conf`. It backs the file up first and never touches other remotes.
-4. **Creates and starts two services**, `rclone-vod-bridge-movies.service` and
-   `rclone-vod-bridge-series.service`. They start on boot and restart if they fail.
+3. **Adds three remotes**, `vodbridge-movies`, `vodbridge-movies-cat` (movie categories) and
+   `vodbridge-series`, to your normal `rclone.conf`. It backs the file up first and never
+   touches other remotes.
+4. **Creates and starts three services**, `rclone-vod-bridge-movies.service`,
+   `rclone-vod-bridge-movies-cat.service` and `rclone-vod-bridge-series.service`. They start on
+   boot and restart if they fail. The movie-categories mount is empty until you add a movie
+   category.
 5. **Respects older mounts** from a hand-made setup (for example `rclone-vod.service` or
    `rclone-vodbridge.service`). If one already mounts the same folder and works, it is left
    as it is. If it's there but broken, the script shows it and asks **y/N** before replacing
@@ -234,6 +237,7 @@ container's volumes (the card shows the exact lines for your folders):
 ```yaml
     volumes:
       - /mnt/vod-bridge:/mnt/vod-bridge:ro,rslave
+      - /mnt/vod-bridge-movies:/mnt/vod-bridge-movies:ro,rslave
       - /mnt/vod-bridge-series:/mnt/vod-bridge-series:ro,rslave
 ```
 
@@ -258,6 +262,9 @@ Open **Setup → 4. Libraries**.
    for it.
 2. **Series** need no step here. When you activate episodes on the Series tab, the bridge
    creates one Plex TV library per series category, under the series folder.
+   **Movie categories** work the same way: each one you add on the Catalog tab gets its own
+   Plex Movies library under the movie categories folder. Movies not in a category go to the
+   library you just made.
 3. In Plex, open **Settings → Library** and set these to **never**:
    - Generate video preview thumbnails
    - Generate intro video markers
@@ -280,6 +287,8 @@ Jellyfin libraries are made in Jellyfin itself.
 1. **Dashboard → Libraries → Add Media Library.**
 2. **Movies:** content type **Movies**, folder `/mnt/vod-bridge`.
 3. **Shows:** content type **Shows**, folder `/mnt/vod-bridge-series`.
+   For each **movie category**, add another Movies library at
+   `/mnt/vod-bridge-movies/<category folder>`.
 4. On both libraries, untick **"Enable trickplay image extraction"** and **"Extract chapter
    images"**. They read the whole file, the same as Plex's thumbnails.
 5. Make sure the **Nfo** metadata reader is ticked, so Jellyfin uses the bridge's titles and
@@ -378,7 +387,7 @@ After setup you don't run anything by hand:
 - **Rclone Manager**, if you installed it, is at `http://<media-machine>:5573`, linked from the
   Health tab and Maintenance → Rclone. Without it, check the mounts with
   `systemctl status rclone-vod-bridge-movies` and restart them with
-  `systemctl restart rclone-vod-bridge-movies rclone-vod-bridge-series`.
+  `systemctl restart rclone-vod-bridge-movies rclone-vod-bridge-movies-cat rclone-vod-bridge-series`.
 - **Regenerate** on the Setup tab makes a new private link. Commands you already copied stop
   working, so run Command A on the Dispatcharr machine again afterwards (and Command B, if you
   want to re-run it later).
@@ -492,6 +501,10 @@ cat >> ~/.config/rclone/rclone.conf << 'EOF'
 type = http
 url = http://BRIDGE_IP:8585/vod/
 
+[vodbridge-movies-cat]
+type = http
+url = http://BRIDGE_IP:8585/vod-movies/
+
 [vodbridge-series]
 type = http
 url = http://BRIDGE_IP:8585/vod-series/
@@ -518,10 +531,11 @@ RestartSec=10
 WantedBy=multi-user.target
 ```
 
-Make the series unit the same way, with `vodbridge-series:` and `/mnt/vod-bridge-series`. Then
-`systemctl daemon-reload && systemctl enable --now rclone-vod-bridge-movies rclone-vod-bridge-series`.
+Make the movie-category and series units the same way, with `vodbridge-movies-cat:` and
+`/mnt/vod-bridge-movies`, and `vodbridge-series:` and `/mnt/vod-bridge-series`. Then
+`systemctl daemon-reload && systemctl enable --now rclone-vod-bridge-movies rclone-vod-bridge-movies-cat rclone-vod-bridge-series`.
 
-If you use different folders, set **Settings → Plex → Movie mount root / Series mount root** to
+If you use different folders, set **Settings → Plex → Movie mount root / Movie category mount root / Series mount root** to
 match, so the bridge tells Plex the right paths.
 
 ---

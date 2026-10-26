@@ -26,6 +26,7 @@ Provider  ->  Dispatcharr  ->  VOD Plex Bridge  ->  rclone (on the Plex host)  -
 2. **The bridge** reads the catalog from the Dispatcharr API and stores it in its own database (`/data/vod_bridge.db`). When you activate a title, it writes a STRM file, an NFO file, and a poster into its output folder (`/plex-vod/Movies` or `/plex-vod/Series` inside the container).
 3. The bridge publishes activated titles as a plain HTTP directory listing:
    - Movies: `http://<bridge-host>:8585/vod/`
+   - Movie categories: `http://<bridge-host>:8585/vod-movies/` (one sub-folder per movie category, see section 5.1)
    - Series: `http://<bridge-host>:8585/vod-series/`
 4. **rclone**, running on the Plex host, mounts those listings as folders (for example `/mnt/vod-bridge`). It uses rclone's read-only HTTP backend.
 5. **Plex** scans those folders like any other movie or TV library. When someone presses play, Plex reads the file through rclone. The bridge then streams the video from Dispatcharr.
@@ -55,7 +56,7 @@ The Setup tab opens by itself on first sign-in until every step is done. Each st
 ### What the commands set up
 
 - **Command A** installs `/opt/vod-plex-bridge/` and `/etc/cron.d/vod-plex-bridge` on the Dispatcharr machine. Every minute it asks the bridge whether fresh lists are wanted (the Daily Run and **Run Now** ask for them). Every 12 hours it sends them anyway.
-- **Command B** installs rclone and FUSE, adds the `vodbridge-movies` and `vodbridge-series` remotes to `rclone.conf`, and starts `rclone-vod-bridge-movies.service` and `rclone-vod-bridge-series.service`. They mount `/mnt/vod-bridge` and `/mnt/vod-bridge-series` by default.
+- **Command B** installs rclone and FUSE, adds the `vodbridge-movies`, `vodbridge-movies-cat` and `vodbridge-series` remotes to `rclone.conf`, and starts `rclone-vod-bridge-movies.service`, `rclone-vod-bridge-movies-cat.service` and `rclone-vod-bridge-series.service`. They mount `/mnt/vod-bridge`, `/mnt/vod-bridge-movies` and `/mnt/vod-bridge-series` by default. The movie-categories mount stays empty until you add a movie category.
 
 Both commands are safe to run again. A second run updates what is there and leaves working parts alone. To read a script before running it, download it with `curl -o` instead of piping it to `bash`.
 
@@ -63,11 +64,11 @@ The commands contain a private setup link (`/setup/<token>/...`). If it leaks, u
 
 ### Libraries
 
-- **Plex:** **Create Plex movie library** makes a Movies library at the movie folder from your machine's card and saves its ID in Settings. Series libraries are created by the bridge, one per series category, when you activate episodes (see section 5.3).
+- **Plex:** **Create Plex movie library** makes a Movies library at the movie folder from your machine's card and saves its ID in Settings. This is the **Default** movie library. Each movie category you add gets its own library (section 5.1), and so does each series category (section 5.3).
 - **Jellyfin:** **Dashboard → Libraries → Add Media Library**. Use **Movies** on `/mnt/vod-bridge` and **Shows** on `/mnt/vod-bridge-series`. Untick trickplay and chapter image extraction, tick the **Nfo** metadata reader, and set **Scheduled Tasks → Scan Media Library** to every hour. Jellyfin's real-time monitoring doesn't notice changes on an rclone mount.
 - **On both:** turn off video preview thumbnails, intro and credits markers, and chapter thumbnails. Otherwise the server reads every movie in full through your provider.
 
-The folders you use must match **Plex movie mount root** and **Plex series mount root** in Settings (defaults `/mnt/vod-bridge` and `/mnt/vod-bridge-series`).
+The folders you use must match **Plex movie mount root**, **Plex movie category mount root** and **Plex series mount root** in Settings (defaults `/mnt/vod-bridge`, `/mnt/vod-bridge-movies` and `/mnt/vod-bridge-series`).
 
 If Plex or Jellyfin runs in Docker, the mount is made on the host. Add the volume lines the machine card shows (`/mnt/vod-bridge:/mnt/vod-bridge:ro,rslave`), and recreate the container *after* the mount is up. For Unraid, Windows, macOS and NAS boxes, the card shows filled-in manual steps instead of Command B. These are marked untested.
 
@@ -96,6 +97,8 @@ Open the account menu (top right) and choose **Profile** to change your username
 ## 4. Settings
 
 Open the **Settings** tab. Each section saves on its own. Most sections have a **Test** button that checks the connection using the values currently in the form.
+
+> **Every section and panel in the app can be collapsed.** Click its header to open or close it. Panels start closed, and your browser remembers which ones you opened.
 
 > Saved values are used right away. Keys, tokens and passwords are stored encrypted and are never shown again. Leave a secret field blank to keep the saved value. Use **Clear saved value** to remove it.
 
@@ -143,6 +146,7 @@ If you had an older XC server setting, it may show up as a read-only row in this
 | Movie library ID | The numeric section ID of your movie library. **Setup → 4. Libraries** creates the library and fills this in. If you made the library by hand, the ID appears in the Plex Web URL: `.../library/sections/<id>/...` |
 | Series library ID (fallback) | Used only for series categories that don't have their own library (see section 5) |
 | Plex movie mount root | Where rclone mounts movies on the Plex host (default `/mnt/vod-bridge`) |
+| Plex movie category mount root | Where rclone mounts movie categories on the Plex host (default `/mnt/vod-bridge-movies`). Each category's library points at a sub-folder here |
 | Plex series mount root | Where rclone mounts series on the Plex host (default `/mnt/vod-bridge-series`) |
 
 Library IDs must be numbers, and mount roots must start with `/`.
@@ -190,6 +194,21 @@ The header badge shows which mode is currently running. See section 8 for how th
 - When you add `SETTINGS_KEY` later, saved secrets are re-encrypted with it and the generated `settings.key` file is removed.
 - **If you lose or change the key**, saved secrets can't be decrypted. Those fields show **re-enter**. Type the values in again and save.
 
+### 4.7 Media servers (Jellyfin and Emby)
+
+Optional. Fill these in to see Jellyfin and Emby playback next to Plex.
+
+| Setting | Notes |
+|---|---|
+| Jellyfin URL / API key | e.g. `http://<jellyfin-host>:8096`. Make the key in Jellyfin under **Dashboard → API Keys → +** |
+| Emby URL / API key | e.g. `http://<emby-host>:8096`. Make the key in Emby under **Settings → Advanced → API Keys → New API Key** |
+
+Once a server is set up, **Streams → Now Playing** lists its sessions, tagged with the server name, and the **Health** tab shows a status card for it. **Test** checks the address and key. The bridge only reads sessions from these servers. It does not create Jellyfin or Emby libraries.
+
+### 4.8 Display
+
+**Display size** scales the whole app. **Auto**, the default, scales it up on windows wider than 1920 pixels, up to 200%. Phones and normal screens stay at 100%. You can pick a fixed size from 80% to 200% instead. The choice is saved per browser.
+
 ---
 
 ## 5. Browsing and activating
@@ -225,7 +244,7 @@ The header bar shows catalog, activated and STRM counts. On the Series tab it sh
 | Button | What it does |
 |---|---|
 | Scan Plex Library | Marks movies and shows that are already in a Plex library |
-| Clear Catalog / Clear STRMs | Wipe the stored catalog or the generated files. Use with care |
+| Clear Catalog / Clear STRMs | Wipe the stored catalog or the generated files. Shown on the Catalog tab only. Use with care |
 | Scan Dead | Disabled for now ("pending redesign") |
 
 ### 5.1 Choose what to import (Catalog tab)
@@ -240,6 +259,21 @@ Start in **Catalog**.
 
 Summary tables show counts **by provider** (fallback providers included), **by language**, and **by category**. The category table has a **Remove** mode.
 
+**Movie Categories panel**
+
+Movie categories work like series categories: each one is its own folder and its own Plex library, so you can keep, for example, kids' movies or 4K movies apart from the rest.
+
+1. Enter a **name**. The **folder** defaults to the name.
+2. Pick a Plex library: **+ Create new Plex library** makes a Movies library pointed at `<movie category mount root>/<folder>`, or choose an existing library, or **No Plex library**.
+3. Optionally pick one or more **provider categories** (Ctrl/Cmd-click for several). Movies from those provider categories go to this category when you activate them with **Auto category**.
+4. Click **Add Category**. **Sync Plex Folders** re-adds every category's folder to its library if something got out of line.
+
+The table shows every category with its folder, Plex library, number of active movies and provider categories. The **Default** row is the original movie library at `/vod/` (Settings → Movie library ID), and it gets every movie that isn't in a category. A movie is only ever in one place, so it never shows up twice in Plex.
+
+A category can't be deleted while it has active movies. Move or deactivate them first. Deleting a category also removes its folder from its Plex library.
+
+> **Upgrading?** Movies that were active before you added categories stay in the Default library. Use **Move** (section 5.2) to put them in a category. The new category folder also needs the third rclone mount: run **Command B** again on each Plex/Jellyfin machine.
+
 > **Warning:** your provider and category selection also controls the Daily Run. If you un-select a category or provider, the next catalog refresh **removes its movies, including activated ones**. They are removed from Plex and their STRM folders are deleted.
 
 ### 5.2 Movies tab
@@ -249,7 +283,8 @@ Summary tables show counts **by provider** (fallback providers included), **by l
 - **Search** by title, and **sort** by rating, year or name (ascending or descending).
 - **Filters**: activated or not, decade, genre, language, category, provider (the last four are multi-select). Use **Clear filters** to reset them. Page size can be 60, 100, 200 or 300.
 - **Activate or deactivate one movie** with the button on its card.
-- **Bulk actions**: click cards to select them. The selection bar then offers **Activate**, **Deactivate** and **Clear**. Language detection runs automatically in the Daily Run, and you can run it for a single movie from its details.
+- **Bulk actions**: click cards to select them. The selection bar then offers a category picker, **Activate**, **Move**, **Deactivate** and **Clear**. Language detection runs automatically in the Daily Run, and you can run it for a single movie from its details.
+- **Categories**: the picker chooses where activated movies go. **Auto category** (the default, and what the card's own button uses) picks the movie category whose provider categories include the movie, or the Default library if none do. **Default library** or a named category sends them there. **Move** sends already-active movies to the picked category: they leave their old Plex library and the new one is scanned. A movie in a category shows the category name on its card.
 
 What happens when you activate:
 
@@ -275,7 +310,7 @@ Series are activated **per episode** and grouped into **series categories**. Eac
    If you set neither, the category uses the **Series library ID (fallback)** from Settings.
 3. **Sync Plex Folders** makes sure each category's folder and library are lined up.
 
-The category table shows each category's name, STRM folder, Plex library, number of series and number of active items.
+The category table shows each category's name, STRM folder, Plex library, **Active Shows** (shows with at least one active episode) and **Active Episodes**. Click a row to see the active shows in that library.
 
 Because each category is its own folder under the series mount, one rclone series mount covers all of them. In Plex, add one library per category, each pointed at its own sub-folder of `/mnt/vod-bridge-series`.
 
@@ -352,8 +387,8 @@ This sub-tab appears once a media machine reports that Rclone Manager is running
 
 ### Other monitoring tabs
 
-- **Streams**: active bridge streams and Plex **Now Playing**, each with auto-refresh.
-- **Health**: status cards for the bridge, Dispatcharr and the Plex library (**Check Now** to refresh them). It also shows stream health counts (activated, healthy, striking, dead, never checked) and a health check log. The schedule itself lives in **Maintenance > Daily Updates**, not in Settings.
+- **Streams**: active bridge streams and **Now Playing**, each with auto-refresh. Now Playing covers Plex plus Jellyfin and Emby when they are set up (section 4.7), with each session tagged by server.
+- **Health**: status cards for the bridge, Dispatcharr, the Plex library, and Jellyfin/Emby when set up (**Check Now** to refresh them). It also shows stream health counts (activated, healthy, striking, dead, never checked) and a health check log. The schedule itself lives in **Maintenance > Daily Updates**, not in Settings.
 
 ---
 
@@ -497,7 +532,7 @@ There's no password reset in the UI. Back up the `/data` folder before you try a
 - **There's no per-provider-account connection limit.** Only the global and per-title limits exist.
 - **Changing the stream mode needs a restart.**
 - **Single account.** No multiple users or roles.
-- **Jellyfin libraries are made by hand** in Jellyfin (section 2). The bridge creates Plex libraries only.
+- **Jellyfin libraries are made by hand** in Jellyfin (section 2). The bridge creates Plex libraries only, including the ones for movie and series categories. In Jellyfin, add a Movies library per movie category pointed at its sub-folder of `/mnt/vod-bridge-movies`.
 - Dead Movies **Restore All / Delete All** have been unreliable in the past. The per-selection buttons are the dependable route.
 
 **Coming soon / planned**
