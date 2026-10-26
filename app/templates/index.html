@@ -986,6 +986,9 @@
         .plex-session-state .dot.buffering { background: var(--warning); animation: pulse 0.5s infinite; }
 
         .plex-session-title { font-weight: 600; font-size: 0.88rem; }
+        .server-tag { font-size: 0.68rem; font-weight: 600; padding: 0.05rem 0.4rem; border-radius: 4px; margin-right: 0.4rem; vertical-align: 1px; color: #fff; background: #c98a00; }
+        .server-tag.jellyfin { background: #8e5cd9; }
+        .server-tag.emby { background: #3f9a39; }
         .plex-session-meta { font-size: 0.78rem; color: var(--text-muted); }
         .plex-session-progress {
             height: 4px;
@@ -1523,7 +1526,7 @@
 
             <div class="panel" style="margin-top:1rem;">
                 <div class="panel-header">
-                    Plex Now Playing
+                    Now Playing
                     <span class="tab-badge" id="plexSessionsBadge" style="display:none;margin-left:0.4rem;">0</span>
                     <div style="display:flex;gap:0.4rem;align-items:center;margin-left:auto;">
                         <label style="font-size:0.76rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;cursor:pointer;">
@@ -1533,7 +1536,7 @@
                     </div>
                 </div>
                 <div class="panel-body" id="plexSessionsContainer">
-                    <div class="empty-state">No active Plex sessions</div>
+                    <div class="empty-state">Nothing playing right now</div>
                 </div>
             </div>
         </div>
@@ -1553,7 +1556,7 @@
                 </div>
                 <div class="panel-body">
                     <div id="healthSetupLinks" class="conn-note" style="margin:0 0 0.75rem;"></div>
-                    <div id="healthStatusContainer" style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem;">
+                    <div id="healthStatusContainer" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1rem;margin-bottom:1.5rem;">
                         <div class="health-card">
                             <div class="health-title">Bridge</div>
                             <div class="health-status" id="healthBridge">-</div>
@@ -1568,6 +1571,16 @@
                             <div class="health-title">Plex VOD Library</div>
                             <div class="health-status" id="healthPlexVod">-</div>
                             <div class="health-time" id="healthPlexVodTime">-</div>
+                        </div>
+                        <div class="health-card" id="healthJellyfinCard" style="display:none;">
+                            <div class="health-title">Jellyfin</div>
+                            <div class="health-status" id="healthJellyfin">-</div>
+                            <div class="health-time" id="healthJellyfinTime">-</div>
+                        </div>
+                        <div class="health-card" id="healthEmbyCard" style="display:none;">
+                            <div class="health-title">Emby</div>
+                            <div class="health-status" id="healthEmby">-</div>
+                            <div class="health-time" id="healthEmbyTime">-</div>
                         </div>
                     </div>
                     <div style="border-top:1px solid var(--border);padding-top:1rem;margin-bottom:1.5rem;">
@@ -1712,6 +1725,7 @@
                 <button data-sec="dispatcharr" onclick="showSettingsSection('dispatcharr')">Dispatcharr</button>
                 <button data-sec="providers" onclick="showSettingsSection('providers')">Providers (XC)<span class="src-pill future">Future</span></button>
                 <button data-sec="plex" onclick="showSettingsSection('plex')">Plex</button>
+                <button data-sec="media" onclick="showSettingsSection('media')">Media servers</button>
                 <button data-sec="tmdb" onclick="showSettingsSection('tmdb')">TMDB</button>
                 <button data-sec="streaming" onclick="showSettingsSection('streaming')">Streaming</button>
                 <button data-sec="display" onclick="showSettingsSection('display')">Display</button>
@@ -4608,11 +4622,7 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                 const btn = document.querySelector('[onclick="triggerHealthCheck()"]');
                 if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
                 const result = await fetchJSON('/api/health/check-now', { method: 'POST' });
-                if (result.status) {
-                    updateHealthCard('bridge', result.status.bridge);
-                    updateHealthCard('dispatcharr', result.status.dispatcharr);
-                    updateHealthCard('plex_vod', result.status.plex_vod);
-                }
+                if (result.status) renderHealthCards(result.status);
                 const logs = await fetchJSON('/api/health/log');
                 renderHealthLog(logs.logs || []);
                 if (btn) { btn.disabled = false; btn.textContent = 'Check Now'; }
@@ -4628,15 +4638,22 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                 const status = await fetchJSON('/api/health/status');
                 const logs = await fetchJSON('/api/health/log');
 
-                updateHealthCard('bridge', status.bridge);
-                updateHealthCard('dispatcharr', status.dispatcharr);
-                updateHealthCard('plex_vod', status.plex_vod);
+                renderHealthCards(status);
 
                 renderHealthLog(logs.logs || []);
             } catch (e) {
                 console.error('Health load failed:', e);
                 document.getElementById('healthLogContainer').innerHTML = '<div class="empty-state">Failed to load health status</div>';
             }
+        }
+
+        function renderHealthCards(status) {
+            ['bridge', 'dispatcharr', 'plex_vod'].forEach(c => updateHealthCard(c, status[c] || {}));
+            // Jellyfin/Emby only appear once set up in Settings > Media servers.
+            [['jellyfin', 'Jellyfin'], ['emby', 'Emby']].forEach(([c, id]) => {
+                document.getElementById(`health${id}Card`).style.display = status[c] ? '' : 'none';
+                if (status[c]) updateHealthCard(c, status[c]);
+            });
         }
 
         function updateHealthCard(component, data) {
@@ -4776,6 +4793,16 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                     ['PLEX_SERIES_LIBRARY_ID', 'Fallback series library ID', 'Series go into the library set on their category (Series > Categories, where each category can create or pick its own Plex library). This ID is only used for a category that has no library of its own. Leave blank if every category has one. Test lists which library each category uses.', '12', 'number'],
                     ['PLEX_MOVIE_MOUNT_ROOT', 'Movie folder as Plex sees it', 'Where the bridge movie folder appears on the Plex machine (usually an rclone mount of http://bridge:8585/vod/). Used to match titles to Plex and to scan only the changed folder.', '/mnt/vod-bridge', 'path'],
                     ['PLEX_SERIES_MOUNT_ROOT', 'Series folder as Plex sees it', 'Where the bridge series folder (/vod-series/) appears on the Plex machine.', '/mnt/vod-bridge-series', 'path'],
+                ],
+            },
+            media: {
+                title: 'Media servers',
+                intro: 'Optional. Add Jellyfin or Emby to see what is playing on them under Streams > Now Playing, and to check that they are up on the Health tab. The bridge only reads from them; you add their libraries yourself (point them at the same folders as Plex). Press Test to list each server\'s libraries. Leave a server blank if you don\'t use it.',
+                fields: [
+                    ['JELLYFIN_URL', 'Jellyfin URL', 'The address of your Jellyfin server, including port 8096.', 'http://192.168.1.30:8096', 'url'],
+                    ['JELLYFIN_API_KEY', 'Jellyfin API key', 'In Jellyfin: Dashboard > API Keys > +, name it e.g. VOD Plex Bridge, and paste the key here.', 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', 'secret'],
+                    ['EMBY_URL', 'Emby URL', 'The address of your Emby server, including port 8096.', 'http://192.168.1.31:8096', 'url'],
+                    ['EMBY_API_KEY', 'Emby API key', 'In Emby: Settings > Advanced > API Keys > New API Key, and paste the key here.', 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', 'secret'],
                 ],
             },
             tmdb: {
@@ -5398,18 +5425,14 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
         // --- Plex Now Playing ---
         async function loadPlexSessions() {
             try {
-                const data = await fetchJSON('/api/plex/sessions');
+                const data = await fetchJSON('/api/media/sessions');
                 const container = document.getElementById('plexSessionsContainer');
                 const badge = document.getElementById('plexSessionsBadge');
-
-                if (data.error && !data.sessions.length) {
-                    container.innerHTML = `<div class="empty-state">${escapeHtml(data.error)}</div>`;
-                    badge.style.display = 'none';
-                    return;
-                }
+                const errors = (data.errors || []).map(e => `<div class="empty-state">${escapeHtml(e)}</div>`).join('');
 
                 if (!data.sessions.length) {
-                    container.innerHTML = '<div class="empty-state">Nothing playing in Plex right now</div>';
+                    const names = (data.servers || []).map(s => SERVER_NAMES[s] || s).join(', ');
+                    container.innerHTML = errors + (names ? `<div class="empty-state">Nothing playing on ${escapeHtml(names)} right now</div>` : '');
                     badge.style.display = 'none';
                     return;
                 }
@@ -5420,20 +5443,22 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                 const bridge = data.sessions.filter(s => s.is_bridge);
                 const local = data.sessions.filter(s => !s.is_bridge);
 
-                let html = '';
+                let html = errors;
                 if (bridge.length) {
                     html += '<div class="plex-section-label bridge">Bridge Content</div>';
                     html += bridge.map(s => renderPlexSession(s, true)).join('');
                 }
                 if (local.length) {
-                    html += '<div class="plex-section-label local">Local / Live TV</div>';
+                    html += '<div class="plex-section-label local">Other media / Live TV</div>';
                     html += local.map(s => renderPlexSession(s, false)).join('');
                 }
                 container.innerHTML = html;
             } catch (e) {
-                document.getElementById('plexSessionsContainer').innerHTML = '<div class="empty-state">Failed to load Plex sessions</div>';
+                document.getElementById('plexSessionsContainer').innerHTML = '<div class="empty-state">Failed to load sessions</div>';
             }
         }
+
+        const SERVER_NAMES = {plex: 'Plex', jellyfin: 'Jellyfin', emby: 'Emby'};
 
         function renderPlexSession(s, isBridge) {
             const state = s.state || 'unknown';
@@ -5477,9 +5502,9 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                     <span class="dot ${dotClass}"></span>
                 </div>
                 <div>
-                    <div class="plex-session-title">${escapeHtml(s.title)}${yearStr}${typeLabel ? ' <span style="font-size:0.74rem;color:var(--text-muted);font-weight:400;">' + typeLabel + '</span>' : ''}</div>
+                    <div class="plex-session-title"><span class="server-tag ${escapeHtml(s.server || 'plex')}">${SERVER_NAMES[s.server] || 'Plex'}</span>${escapeHtml(s.title)}${yearStr}${typeLabel ? ' <span style="font-size:0.74rem;color:var(--text-muted);font-weight:400;">' + typeLabel + '</span>' : ''}</div>
                     <div class="plex-session-meta">
-                        ${escapeHtml(playerInfo)} &mdash; ${location}${address}
+                        ${s.user_title && s.user_title !== 'Unknown' ? escapeHtml(s.user_title) + ' on ' : ''}${escapeHtml(playerInfo)} &mdash; ${location}${escapeHtml(address)}
                         ${qualityLine ? ' &bull; ' + qualityLine : ''}
                         ${audioLine ? ' &bull; ' + audioLine : ''}
                     </div>
@@ -5519,7 +5544,7 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                     pipeCount = data.streams.filter(s => s.status === 'streaming' || s.status === 'starting').length;
                 } catch(e) {}
                 try {
-                    const plex = await fetchJSON('/api/plex/sessions');
+                    const plex = await fetchJSON('/api/media/sessions');
                     plexCount = (plex.sessions || []).length;
                 } catch(e) {}
                 const badge = document.getElementById('streamsBadge');

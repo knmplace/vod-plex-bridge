@@ -12,6 +12,12 @@ PLEX_URL = os.environ.get("PLEX_URL", "")
 PLEX_TOKEN = os.environ.get("PLEX_TOKEN", "")
 PLEX_LIBRARY_ID = os.environ.get("PLEX_LIBRARY_ID", "7")
 
+# Watched for now-playing sessions and health only; the bridge never changes their libraries.
+JELLYFIN_URL = os.environ.get("JELLYFIN_URL", "").rstrip("/")
+JELLYFIN_API_KEY = os.environ.get("JELLYFIN_API_KEY", "")
+EMBY_URL = os.environ.get("EMBY_URL", "").rstrip("/")
+EMBY_API_KEY = os.environ.get("EMBY_API_KEY", "")
+
 MAX_CONCURRENT_PER_TITLE = int(os.environ.get("MAX_CONCURRENT_PER_TITLE", "2"))
 REDIRECT_STREAMING = os.environ.get("REDIRECT_MODE", "false").lower() in ("1", "true", "yes")
 
@@ -34,12 +40,13 @@ INSTANCE_ENV["DISPATCHARR_URL"] = os.environ.get("DISPATCHARR_URL", "http://loca
 SETTINGS_GROUPS = {
     "plex": ("PLEX_URL", "PLEX_TOKEN", "PLEX_LIBRARY_ID", "PLEX_SERIES_LIBRARY_ID",
              "PLEX_MOVIE_MOUNT_ROOT", "PLEX_SERIES_MOUNT_ROOT"),
+    "media": ("JELLYFIN_URL", "JELLYFIN_API_KEY", "EMBY_URL", "EMBY_API_KEY"),
     "tmdb": ("TMDB_API_KEY", "TMDB_READ_TOKEN"),
     "streaming": ("MAX_CONCURRENT_PER_TITLE", "REDIRECT_MODE"),
 }
 SETTINGS_KEYS = tuple(k for keys in SETTINGS_GROUPS.values() for k in keys)
 # Stored encrypted and never sent back to the browser.
-SECRET_KEYS = ("PLEX_TOKEN", "TMDB_API_KEY", "TMDB_READ_TOKEN")
+SECRET_KEYS = ("PLEX_TOKEN", "TMDB_API_KEY", "TMDB_READ_TOKEN", "JELLYFIN_API_KEY", "EMBY_API_KEY")
 # Read once at startup, so a saved change waits for the next container restart.
 RESTART_KEYS = ("REDIRECT_MODE",)
 DEFAULTS = {"PLEX_LIBRARY_ID": "7",
@@ -53,7 +60,7 @@ UNREADABLE = set()
 
 def _converted(key: str, value: str):
     """Setting text -> (module attribute name, typed value)."""
-    if key in ("DISPATCHARR_URL", "PLEX_URL", "PLEX_MOVIE_MOUNT_ROOT", "PLEX_SERIES_MOUNT_ROOT"):
+    if key in ("DISPATCHARR_URL", "PLEX_URL", "JELLYFIN_URL", "EMBY_URL", "PLEX_MOVIE_MOUNT_ROOT", "PLEX_SERIES_MOUNT_ROOT"):
         return key, value.rstrip("/")
     if key == "MAX_CONCURRENT_PER_TITLE":
         return key, int(value)

@@ -1,5 +1,5 @@
 """
-Health check system for bridge, Dispatcharr, and Plex VOD library.
+Health check system for bridge, Dispatcharr, Plex VOD library, and Jellyfin/Emby when set up.
 Polls every 2 hours, logs status, and triggers auto-restart if degraded.
 """
 import asyncio
@@ -134,21 +134,28 @@ async def run_health_checks():
     _component_status["plex_vod"]["last_check"] = time.time()
     _log_health_event("plex_vod", plex_status, plex_time)
 
-    return {
-        "bridge": _component_status["bridge"],
-        "dispatcharr": _component_status["dispatcharr"],
-        "plex_vod": _component_status["plex_vod"],
-    }
+    import media_servers
+    for server in media_servers.configured():
+        status, elapsed = await media_servers.check_health(server)
+        _component_status[server] = {"status": status, "response_time": elapsed, "last_check": time.time()}
+        _log_health_event(server, status, elapsed)
+
+    return _current()
+
+
+def _current() -> dict:
+    """Status of every component, leaving out media servers that are no longer set up."""
+    import media_servers
+    active = set(media_servers.configured())
+    for server in active:  # set up since the last check
+        _component_status.setdefault(server, {"status": "unknown", "response_time": None, "last_check": None})
+    return {k: v for k, v in _component_status.items() if k not in media_servers.SERVERS or k in active}
 
 
 def get_health_status() -> dict:
     """Get current health status of all components."""
-    return {
-        "bridge": _component_status["bridge"],
-        "dispatcharr": _component_status["dispatcharr"],
-        "plex_vod": _component_status["plex_vod"],
-        "overall": "ok" if all(s["status"] == "ok" for s in _component_status.values()) else "degraded",
-    }
+    status = _current()
+    return {**status, "overall": "ok" if all(s["status"] == "ok" for s in status.values()) else "degraded"}
 
 
 def get_health_log() -> list[dict]:

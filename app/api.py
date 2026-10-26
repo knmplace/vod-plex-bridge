@@ -13,6 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_URL, PLEX_TOKEN, PLEX_LIBRARY_ID, STRM_SERIES_OUTPUT_DIR, PLEX_SERIES_LIBRARY_ID, PLEX_SERIES_MOUNT_ROOT
+import media_servers
 import plex_libraries
 import plex_presence
 from database import get_db
@@ -752,8 +753,36 @@ async def active_streams():
 
 @router.get("/plex/sessions")
 async def plex_sessions():
+    sessions, error = await _plex_sessions()
+    return {"sessions": sessions, "error": error} if error else {"sessions": sessions}
+
+
+@router.get("/media/sessions")
+async def media_sessions():
+    """Now playing on Plex and on any Jellyfin/Emby server that is set up, each session tagged with its server."""
+    sessions, errors, servers = [], [], []
+    if PLEX_URL and PLEX_TOKEN:
+        servers.append("plex")
+        plex, error = await _plex_sessions()
+        sessions += plex
+        if error:
+            errors.append(f"Plex: {error}")
+    async with httpx.AsyncClient(timeout=10) as client:
+        for server in media_servers.configured():
+            servers.append(server)
+            try:
+                sessions += await media_servers.sessions(client, server)
+            except Exception as e:
+                logger.warning("%s sessions query failed: %s", server, e)
+                errors.append(f"{media_servers.SERVERS[server]}: {e}")
+    if not servers:
+        errors.append("No media server set up (Settings > Plex or Media servers)")
+    return {"sessions": sessions, "servers": servers, "errors": errors}
+
+
+async def _plex_sessions() -> tuple[list[dict], str]:
     if not PLEX_URL or not PLEX_TOKEN:
-        return {"sessions": [], "error": "PLEX_URL or PLEX_TOKEN not configured"}
+        return [], "PLEX_URL or PLEX_TOKEN not configured"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
@@ -761,11 +790,11 @@ async def plex_sessions():
                 headers={"X-Plex-Token": PLEX_TOKEN, "Accept": "application/json"},
             )
             if resp.status_code != 200:
-                return {"sessions": [], "error": f"Plex returned {resp.status_code}"}
+                return [], f"Plex returned {resp.status_code}"
             data = resp.json()
     except Exception as e:
         logger.warning("Plex sessions query failed: %s", e)
-        return {"sessions": [], "error": str(e)}
+        return [], str(e) or type(e).__name__
 
     mc = data.get("MediaContainer", {})
     raw_sessions = mc.get("Metadata", [])
@@ -795,6 +824,7 @@ async def plex_sessions():
         view_offset_ms = int(s.get("viewOffset", 0))
 
         sessions.append({
+            "server": "plex",
             "title": s.get("title", "Unknown"),
             "year": s.get("year"),
             "type": s.get("type", "movie"),
@@ -822,7 +852,7 @@ async def plex_sessions():
             "bitrate_kbps": int(media.get("bitrate", 0)),
         })
 
-    return {"sessions": sessions}
+    return sessions, ""
 
 
 @router.post("/movies/activate")

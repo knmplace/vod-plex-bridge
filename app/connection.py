@@ -1,4 +1,4 @@
-"""Settings-tab sections (Plex, TMDB, Streaming): saved values win over the compose file.
+"""Settings-tab sections (Plex, media servers, TMDB, Streaming): saved values win over the compose file.
 Dispatcharr instances and provider accounts are lists of their own, in sources.py."""
 import os
 import re
@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 import config
+import media_servers
 import secret_box
 from database import get_db
 
@@ -73,6 +74,9 @@ def _validate(group: str, values: dict) -> str | None:
     v = _effective(values)
     if v.get("PLEX_URL") and not re.match(r"https?://", v["PLEX_URL"]):
         return "Plex URL must start with http:// or https://"
+    for k, name in (("JELLYFIN_URL", "Jellyfin"), ("EMBY_URL", "Emby")):
+        if v.get(k) and not re.match(r"https?://", v[k]):
+            return f"{name} URL must start with http:// or https://"
     for k in ("PLEX_LIBRARY_ID", "PLEX_SERIES_LIBRARY_ID"):
         if v.get(k) and not v[k].isdigit():
             return "Library IDs are numbers, e.g. 7"
@@ -118,6 +122,8 @@ async def test_settings(group: str, request: Request):
                 return await _test_plex(client, values)
             if group == "tmdb":
                 return await _test_tmdb(client, values)
+            if group == "media":
+                return await _test_media(client, values)
     except httpx.HTTPError as e:
         return {"ok": False, "message": f"Could not connect: {type(e).__name__}"}
     return JSONResponse({"error": "Nothing to test in this section"}, status_code=400)
@@ -155,6 +161,20 @@ async def _test_plex(client: httpx.AsyncClient, v: dict) -> dict:
     if missing:
         message += f". Not found: {', '.join(missing)}"
     return {"ok": not missing, "message": message, "libraries": libraries, "categories": categories}
+
+
+async def _test_media(client: httpx.AsyncClient, v: dict) -> dict:
+    servers = [s for s in media_servers.SERVERS if v[f"{s.upper()}_URL"] or v[f"{s.upper()}_API_KEY"]]
+    if not servers:
+        return {"ok": False, "message": "Enter a Jellyfin or Emby URL and API key first"}
+    results = []
+    for s in servers:
+        try:
+            results.append(await media_servers.test(client, s, v[f"{s.upper()}_URL"], v[f"{s.upper()}_API_KEY"]))
+        except httpx.HTTPError as e:
+            results.append({"ok": False, "message": f"{media_servers.SERVERS[s]}: could not connect ({type(e).__name__})"})
+    return {"ok": all(r["ok"] for r in results), "message": ". ".join(r["message"] for r in results),
+            "libraries": [lib for r in results for lib in r.get("libraries", [])]}
 
 
 async def _test_tmdb(client: httpx.AsyncClient, v: dict) -> dict:
