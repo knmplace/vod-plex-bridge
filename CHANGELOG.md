@@ -29,10 +29,41 @@ The three minor bumps each mark a major feature:
 
 ---
 
+## [0.41.2] — 2026-10-26
+
+### Added
+- **Activity indicator.** A spinning pill next to **Scan Plex Library** shows what's running (activating, moving or deactivating movies or episodes) and ends with a ✓ or ✕ result. Cards and counts update without reloading the page.
+- **Card Activate asks where the movie goes.** The card's **Activate** button opens a window with **Auto category**, **Default library**, every movie category, and **+ New category…**, which creates the category and its Plex library and activates the movie into it in one step.
+- **Click a movie category to see its movies.** Clicking a row in **Movie Categories** (Default included) shows only the movies active in that library, like series categories. Click it again or **Back to catalog** to return.
+
+### Changed
+- **Plex matches bridge titles by TMDB ID.** Movie files and series show folders, as the bridge lists them to Plex, now carry Plex's exact-match hint, for example `The Lost Ones (2014) {tmdb-433534} [3331028].mp4` and `Verna {tmdb-480014}/`. Plex no longer guesses from title and year, which picked the wrong film when the provider's year differed from TMDB's. Titles without a TMDB ID keep the old name. Only the names Plex sees change: the bridge's STRM folders, your other Plex libraries and the `[id]` that links a file back to the bridge stay the same.
+- **New logo.** The VPB logo now sits next to the app name in the top-left corner and on the sign-in page, and is used for the browser tab icon (favicon), the home-screen icons and the README.
+
+### Fixed
+- **A newly activated movie sometimes didn't appear in Plex.** The rclone mount on the Plex host caches each folder listing for a minute. A scan fired right after activation could read the old listing and find nothing new, which was more likely when the folder had just been listed. The bridge now scans again about 70 seconds later, once that cache has expired. Several activations in a row share one follow-up scan per library.
+- **Slow Plex scans after activation in redirect mode.** Redirect mode sent Plex's scan reads of a movie's start and end to Dispatcharr instead of answering them from the copy saved at activation. Those reads are now served by the bridge in both modes; only playback is redirected.
+- **Now Playing listed bridge movies under "Other media".** Sessions are now also matched by Plex library, so a bridge movie whose file path doesn't match still shows as a bridge title.
+- The generated Command B rclone mounts now use `--timeout 30s`, so a stalled read fails and retries instead of hanging a Plex scan for the 5-minute default.
+
+### Upgrade notes
+- This release also includes 0.41.1, which was never published on its own.
+- **Already-matched titles keep their Plex match.** The new names appear on the next scan, but Plex only uses the TMDB hint when it matches an item for the first time. If a title is already matched to the wrong film, use **Fix Match** in Plex and search `{tmdb-<id>}` (for example `{tmdb-433534}`), or remove it from the library and scan again. Empty the library's trash afterwards if an old entry lingers.
+- To pick up `--timeout 30s` on an existing Plex/Jellyfin host, run **Command B** again from the Setup tab. Nothing else is needed.
+
+---
+
+## [0.41.1] — 2026-10-26
+
+### Changed
+- **Movie Categories panel is now on the Movies tab.** It sits at the top of the Movies tab, collapsible, the same way **Series Categories** sits at the top of the Series tab. Add a category there and it appears in the selection bar's picker next to **Auto category** and **Default library**. It used to be on the Catalog tab, so the Movies tab only offered Auto and Default.
+
+---
+
 ## [0.41.0] — 2026-10-26
 
 ### Added
-- **Movie categories.** Movies can now be split into categories the way series are. Each category has its own folder under `/vod-movies/<folder>/` and its own Plex Movies library, which the bridge can create for you. Set them up in the new **Movie Categories** panel on the Catalog tab. A category can list provider categories, so **Auto category** activation sends matching movies to it. Everything else stays in the **Default** library at `/vod/`, as before. A movie is only ever in one place, so it never shows up twice in Plex.
+- **Movie categories.** Movies can now be split into categories the way series are. Each category has its own folder under `/vod-movies/<folder>/` and its own Plex Movies library, which the bridge can create for you. Set them up in the new **Movie Categories** panel (moved to the top of the Movies tab in 0.41.1). A category can list provider categories, so **Auto category** activation sends matching movies to it. Everything else stays in the **Default** library at `/vod/`, as before. A movie is only ever in one place, so it never shows up twice in Plex.
 - **Category picker and Move in the Movies selection bar.** Activate into Auto, Default or a named category. **Move** sends already-active movies to another category. Cards show which category a movie is in.
 - **Settings → Plex movie category mount root** (default `/mnt/vod-bridge-movies`), plus a matching folder field on each machine card in the Setup tab.
 - **Jellyfin and Emby in Now Playing and Health.** Add their URL and API key under **Settings → Media servers**. Their sessions appear in **Streams → Now Playing**, tagged by server, and each server gets a Health card.

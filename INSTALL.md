@@ -262,7 +262,7 @@ Open **Setup → 4. Libraries**.
    for it.
 2. **Series** need no step here. When you activate episodes on the Series tab, the bridge
    creates one Plex TV library per series category, under the series folder.
-   **Movie categories** work the same way: each one you add on the Catalog tab gets its own
+   **Movie categories** work the same way: each one you add on the Movies tab gets its own
    Plex Movies library under the movie categories folder. Movies not in a category go to the
    library you just made.
 3. In Plex, open **Settings → Library** and set these to **never**:
@@ -339,8 +339,9 @@ of the volume line from step 5 (`/mnt/vod-bridge` with the lines above).
 > - **Jellyfin does the same.** Its library scan probes each new file (ffprobe), which reads
 >   the start of the file and often the end.
 > - **Redirect mode: use with caution.** It sends Plex and Jellyfin straight to Dispatcharr's
->   proxy, so every scan read and every playback opens its own Dispatcharr connection; the
->   bridge's saved start/end and its shared pipe don't apply. **Running a VPN on the
+>   proxy, so every playback opens its own Dispatcharr connection and the bridge's shared
+>   pipe doesn't apply. Plex's scan reads of a movie's start and end are still answered from
+>   the copy saved at activation (since 0.41.2); anything else goes to Dispatcharr. **Running a VPN on the
 >   Plex/Jellyfin machine is recommended** in this mode.
 >
 > Activate 50 episodes at once and the scan can fill every slot your provider allows, block
@@ -365,7 +366,7 @@ of the volume line from step 5 (`/mnt/vod-bridge` with the lines above).
 
 4. **Optional: split movies into categories** (for example Kids or 4K, each its own Plex
    library). Skip this to keep every movie in one library.
-   1. On the **Catalog** tab, open **Movie Categories**. Enter a name (the folder defaults to
+   1. At the top of the **Movies** tab, open **Movie Categories**. Enter a name (the folder defaults to
       it), leave **+ Create new Plex library** selected, and pick the provider categories that
       belong in it (Ctrl/Cmd-click for several). Press **Add Category**.
    2. The bridge creates a Plex Movies library at `/mnt/vod-bridge-movies/<folder>`. For
@@ -547,7 +548,7 @@ Wants=network-online.target
 [Service]
 Type=notify
 ExecStartPre=/bin/mkdir -p /mnt/vod-bridge
-ExecStart=/usr/bin/rclone mount vodbridge-movies: /mnt/vod-bridge --read-only --allow-other --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m
+ExecStart=/usr/bin/rclone mount vodbridge-movies: /mnt/vod-bridge --read-only --allow-other --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m --timeout 30s
 ExecStop=/bin/fusermount -uz /mnt/vod-bridge
 Restart=on-failure
 RestartSec=10

@@ -202,7 +202,7 @@ Wants=network-online.target
 [Service]
 Type=notify
 ExecStartPre=-/bin/mkdir -p $path
-ExecStart=$RCLONE mount $remote: $path --config $conf --allow-other --read-only --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m
+ExecStart=$RCLONE mount $remote: $path --config $conf --allow-other --read-only --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m --timeout 30s
 ExecStop=$FUSERMOUNT -uz $path
 Restart=on-failure
 RestartSec=10

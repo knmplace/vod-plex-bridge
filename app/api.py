@@ -567,6 +567,7 @@ async def list_movies(
     activated: str = "",
     year_min: int = 0,
     year_max: int = 0,
+    movie_category: str = "",
 ):
     account_ids = [int(x) for x in request.query_params.getlist("account_id") if x]
     category_ids = [int(x) for x in request.query_params.getlist("category_id") if x]
@@ -586,6 +587,13 @@ async def list_movies(
             conditions.append("m.activated = 1")
         elif activated == "0":
             conditions.append("m.activated = 0")
+
+        # A movie category's library view: its active movies ("default" = no category).
+        if movie_category == "default":
+            conditions.append("m.activated = 1 AND m.category_id IS NULL")
+        elif movie_category.isdigit():
+            conditions.append("m.activated = 1 AND m.category_id = ?")
+            params.append(int(movie_category))
 
         if year_min:
             conditions.append("m.year >= ?")
@@ -798,13 +806,16 @@ async def _plex_sessions() -> tuple[list[dict], str]:
 
     mc = data.get("MediaContainer", {})
     raw_sessions = mc.get("Metadata", [])
+    bridge_sections = await _plex_bridge_sections() if raw_sessions else set()
 
     sessions = []
     for s in raw_sessions:
         media = s.get("Media", [{}])[0]
         parts = media.get("Part", [{}])
         file_path = parts[0].get("file", "") if parts else ""
-        is_bridge = "vod-bridge" in file_path or "vod_bridge" in file_path
+        # Plex often leaves Part.file out of sessions, so the library is the reliable signal.
+        is_bridge = ("vod-bridge" in file_path or "vod_bridge" in file_path
+                     or str(s.get("librarySectionID", "")) in bridge_sections)
 
         player = s.get("Player", {})
         user = s.get("User", {})
@@ -928,9 +939,13 @@ async def activate_movies(request: Request):
 
         count_row = await db.execute("SELECT COUNT(*) as cnt FROM movies WHERE activated = 1")
         total = (await count_row.fetchone())["cnt"]
+        # Lets the UI update a card's category badge without reloading the grid.
+        cat_rows = await db.execute(f"SELECT id, category_id FROM movies WHERE id IN ({placeholders})", movie_ids)
+        categories = {r["id"]: r["category_id"] for r in await cat_rows.fetchall()}
 
         return {
             "status": "ok",
+            "categories": categories,
             "activated": len(activated_ids),
             "failed": len(failed_ids),
             "activated_ids": activated_ids,
@@ -1738,6 +1753,17 @@ async def _plex_movie_sections() -> list[str]:
     return list(dict.fromkeys(sections))
 
 
+async def _plex_bridge_sections() -> set[str]:
+    """Every Plex library the bridge serves: movie libraries plus series libraries."""
+    db = await get_db()
+    rows = await db.execute(
+        "SELECT plex_library_section FROM series_categories "
+        "WHERE plex_library_section IS NOT NULL AND plex_library_section != 999"
+    )
+    series = [str(r[0]) for r in await rows.fetchall()] + ([str(PLEX_SERIES_LIBRARY_ID)] if PLEX_SERIES_LIBRARY_ID else [])
+    return set(await _plex_movie_sections()) | set(series)
+
+
 async def _plex_remove_movies(movie_ids: list[int]):
     """Queue background Plex deletion for movie_ids. Returns the number queued.
     Every movie library is searched, so it works even after the movie's row or category is gone."""
@@ -1845,6 +1871,13 @@ async def _plex_delete_items(items: list[tuple[str, str]]):
         _log_event("warning", None, f"Plex removal gave up for {title} — remove it manually or rescan the library")
 
 
+# The rclone mount on the Plex host caches folder listings for 1 minute (--dir-cache-time 1m),
+# so a scan fired right after activation can read a listing without the new file. Scan again
+# once that cache has expired; repeated activations push the follow-up back instead of stacking.
+_PLEX_RESCAN_DELAY = 70
+_plex_rescan_tasks: dict[str, asyncio.Task] = {}
+
+
 async def _plex_scan_library(library_id: str | None = None):
     """Trigger Plex to scan a library section for newly-activated STRM files.
     Defaults to the movies library (PLEX_LIBRARY_ID) when library_id is None."""
@@ -1855,12 +1888,30 @@ async def _plex_scan_library(library_id: str | None = None):
     if not section_id:
         logger.warning("Plex library scan skipped: no library section id configured")
         return
+    await _plex_refresh_section(section_id)
+    key = str(section_id)
+    previous = _plex_rescan_tasks.get(key)
+    if previous and not previous.done():
+        previous.cancel()
+    _plex_rescan_tasks[key] = asyncio.create_task(_plex_rescan_later(key))
+
+
+async def _plex_rescan_later(section_id: str):
+    try:
+        await asyncio.sleep(_PLEX_RESCAN_DELAY)
+    except asyncio.CancelledError:
+        return
+    await _plex_refresh_section(section_id, followup=True)
+
+
+async def _plex_refresh_section(section_id, followup: bool = False):
     try:
         # Token goes in a header so it doesn't end up in httpx's request log lines.
         async with httpx.AsyncClient(timeout=15, headers={"X-Plex-Token": PLEX_TOKEN}) as client:
             resp = await client.get(f"{PLEX_URL}/library/sections/{section_id}/refresh")
             if resp.status_code in (200, 204):
-                logger.info("Plex library scan triggered (section %s)", section_id)
+                logger.info("Plex library scan triggered (section %s%s)", section_id,
+                            ", follow-up after mount cache expiry" if followup else "")
             else:
                 logger.warning("Plex library scan trigger failed: %d", resp.status_code)
     except Exception as e:

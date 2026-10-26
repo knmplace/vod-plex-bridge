@@ -848,6 +848,15 @@ def sanitize_folder(name: str) -> str:
     return name.strip('. ')[:200]
 
 
+_TMDB_TAG_RE = re.compile(r' \{tmdb-\d+\}')
+
+
+def tmdb_tag(tmdb_id) -> str:
+    """Plex's exact-match hint (" {tmdb-123}"), or "" when there is no usable TMDB ID."""
+    tmdb_id = str(tmdb_id or "").strip()
+    return f" {{tmdb-{tmdb_id}}}" if tmdb_id.isdigit() else ""
+
+
 def make_filename(movie) -> str:
     clean = re.sub(r'\s*[-–]\s*\d{4}\s*$', '', movie["name"]).strip()
     clean = re.sub(r'\s*\(\d{4}\)\s*$', '', clean).strip()
@@ -855,7 +864,8 @@ def make_filename(movie) -> str:
         base = sanitize_folder(f"{clean} ({movie['year']})")
     else:
         base = sanitize_folder(clean)
-    return f"{base} [{movie['id']}].mp4"
+    # The TMDB tag makes Plex match the exact title instead of guessing from title + year.
+    return f"{base}{tmdb_tag(movie['tmdb_id'])} [{movie['id']}].mp4"
 
 
 def extract_movie_id(filename: str) -> int | None:
@@ -874,7 +884,7 @@ async def vod_root(request: Request):
     db = await get_db()
     try:
         rows = await db.execute(
-            "SELECT id, name, year FROM movies "
+            "SELECT id, name, year, tmdb_id FROM movies "
             "WHERE name != '' AND stream_id IS NOT NULL AND activated = 1 AND " + DEFAULT_CATEGORY_SQL +
             " ORDER BY name"
         )
@@ -985,24 +995,6 @@ async def vod_file(filename: str, request: Request):
                 },
             )
 
-        if REDIRECT_STREAMING:
-            from redirect import get_redirect_url, get_redirect_label
-            redirect_url, redirect_err, fresh = await get_redirect_url(movie_id)
-            if redirect_url:
-                if fresh:
-                    now = time.time()
-                    last = _redirect_logged.get(movie_id)
-                    target = get_redirect_label(movie_id)
-                    if not last or now - last[1] > REDIRECT_LOG_QUIET_SECS:
-                        _log_event("info", movie_id, f"Redirecting to Dispatcharr proxy via {target}", movie_name=movie_name)
-                    elif last[0] != redirect_url:
-                        _log_event("info", movie_id, f"Redirect switched to {target}", movie_name=movie_name)
-                    _redirect_logged[movie_id] = (redirect_url, now)
-                return Response(status_code=302, headers={"Location": redirect_url})
-            _log_event("error", movie_id, f"Redirect resolve failed: {redirect_err}", movie_name=movie_name)
-            err = _error_screen_response("busy", request)
-            return err if err else Response(status_code=503, content=redirect_err or "No stream available")
-
         range_start = 0
         range_end = None
         if "range" in request.headers:
@@ -1057,6 +1049,25 @@ async def vod_file(filename: str, request: Request):
                     },
                     content=chunk,
                 )
+
+        # Redirect mode: head/tail reads (Plex/Jellyfin analysis) come from the activation cache above.
+        if REDIRECT_STREAMING:
+            from redirect import get_redirect_url, get_redirect_label
+            redirect_url, redirect_err, fresh = await get_redirect_url(movie_id)
+            if redirect_url:
+                if fresh:
+                    now = time.time()
+                    last = _redirect_logged.get(movie_id)
+                    target = get_redirect_label(movie_id)
+                    if not last or now - last[1] > REDIRECT_LOG_QUIET_SECS:
+                        _log_event("info", movie_id, f"Redirecting to Dispatcharr proxy via {target}", movie_name=movie_name)
+                    elif last[0] != redirect_url:
+                        _log_event("info", movie_id, f"Redirect switched to {target}", movie_name=movie_name)
+                    _redirect_logged[movie_id] = (redirect_url, now)
+                return Response(status_code=302, headers={"Location": redirect_url})
+            _log_event("error", movie_id, f"Redirect resolve failed: {redirect_err}", movie_name=movie_name)
+            err = _error_screen_response("busy", request)
+            return err if err else Response(status_code=503, content=redirect_err or "No stream available")
 
         # --- Serve from disk buffer (no active pipe, but buffer file exists) ---
         buffer_path = os.path.join(BUFFER_DIR, f"movie_{movie_id}.buf")
@@ -1439,7 +1450,7 @@ async def vod_movies_root(request: Request):
 async def vod_movies_category(folder: str, request: Request):
     db = await get_db()
     rows = await db.execute(
-        "SELECT m.id, m.name, m.year FROM movies m JOIN user_movie_categories c ON m.category_id = c.id "
+        "SELECT m.id, m.name, m.year, m.tmdb_id FROM movies m JOIN user_movie_categories c ON m.category_id = c.id "
         "WHERE c.strm_folder = ? AND m.name != '' AND m.stream_id IS NOT NULL AND m.activated = 1 "
         "ORDER BY m.name",
         (folder,),
@@ -1479,6 +1490,8 @@ async def vod_series_root(request: Request):
 
 @router.api_route("/vod-series/{subpath:path}", methods=["GET", "HEAD"])
 async def vod_series_file(subpath: str, request: Request):
+    # Show folders are listed to Plex with a TMDB tag the on-disk folder doesn't have.
+    subpath = _TMDB_TAG_RE.sub("", subpath)
     full_path = os.path.join(STRM_SERIES_OUTPUT_DIR, subpath)
 
     base_abs = os.path.abspath(STRM_SERIES_OUTPUT_DIR)
@@ -1493,13 +1506,23 @@ async def vod_series_file(subpath: str, request: Request):
 
     if os.path.isdir(target_abs):
         entries = sorted(os.listdir(target_abs))
+        show_tags = {}
+        if os.path.dirname(target_abs.rstrip(os.sep)) == base_abs:
+            # A category folder: its subfolders are shows, listed with their TMDB tag.
+            tag_rows = await db.execute(
+                "SELECT s.strm_folder, s.tmdb_id FROM series s JOIN series_categories c ON s.category_id = c.id "
+                "WHERE c.strm_folder = ?",
+                (os.path.basename(target_abs.rstrip(os.sep)),),
+            )
+            show_tags = {r["strm_folder"]: tmdb_tag(r["tmdb_id"]) for r in await tag_rows.fetchall()}
         links = []
         for name in entries:
             entry_path = os.path.join(target_abs, name)
             mtime_str = _mod_autoindex_mtime(entry_path)
             # rclone's http backend only treats trailing-slash links as directories
             slash = "/" if os.path.isdir(entry_path) else ""
-            links.append(f'<a href="{quote(name)}{slash}">{name}{slash}</a> {mtime_str}')
+            shown = name + show_tags.get(name, "") if slash else name
+            links.append(f'<a href="{quote(shown)}{slash}">{shown}{slash}</a> {mtime_str}')
 
         season_match = re.match(r'Season (\d+)$', os.path.basename(target_abs.rstrip(os.sep)))
         if season_match:

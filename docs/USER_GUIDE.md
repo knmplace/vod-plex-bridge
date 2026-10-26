@@ -29,6 +29,7 @@ Provider  ->  Dispatcharr  ->  VOD Plex Bridge  ->  rclone (on the Plex host)  -
    - Movie categories: `http://<bridge-host>:8585/vod-movies/` (one sub-folder per movie category, see section 5.1)
    - Series: `http://<bridge-host>:8585/vod-series/`
 4. **rclone**, running on the Plex host, mounts those listings as folders (for example `/mnt/vod-bridge`). It uses rclone's read-only HTTP backend.
+   Movie files are named `Title (Year) {tmdb-<id>} [<bridge id>].mp4` and show folders `Show {tmdb-<id>}`. The `{tmdb-…}` part tells Plex the exact title to match; it's left out for titles without a TMDB ID.
 5. **Plex** scans those folders like any other movie or TV library. When someone presses play, Plex reads the file through rclone. The bridge then streams the video from Dispatcharr.
 
 No network share (NAS, SMB/CIFS, NFS) is involved. The only link between the bridge and Plex is HTTP.
@@ -231,8 +232,9 @@ Once a server is set up, **Streams → Now Playing** lists its sessions, tagged 
 > - **Jellyfin does the same.** Its library scan probes each new file (ffprobe), which reads
 >   the start of the file and often the end.
 > - **Redirect mode: use with caution.** It sends Plex and Jellyfin straight to Dispatcharr's
->   proxy, so every scan read and every playback opens its own Dispatcharr connection; the
->   bridge's saved start/end and its shared pipe don't apply. **Running a VPN on the
+>   proxy, so every playback opens its own Dispatcharr connection and the bridge's shared
+>   pipe doesn't apply. Plex's scan reads of a movie's start and end are still answered from
+>   the copy saved at activation (since 0.41.2); anything else goes to Dispatcharr. **Running a VPN on the
 >   Plex/Jellyfin machine is recommended** in this mode.
 >
 > Activate 50 episodes at once and the scan can fill every slot your provider allows, block
@@ -259,21 +261,6 @@ Start in **Catalog**.
 
 Summary tables show counts **by provider** (fallback providers included), **by language**, and **by category**. The category table has a **Remove** mode.
 
-**Movie Categories panel**
-
-Movie categories work like series categories: each one is its own folder and its own Plex library, so you can keep, for example, kids' movies or 4K movies apart from the rest.
-
-1. Enter a **name**. The **folder** defaults to the name.
-2. Pick a Plex library: **+ Create new Plex library** makes a Movies library pointed at `<movie category mount root>/<folder>`, or choose an existing library, or **No Plex library**.
-3. Optionally pick one or more **provider categories** (Ctrl/Cmd-click for several). Movies from those provider categories go to this category when you activate them with **Auto category**.
-4. Click **Add Category**. **Sync Plex Folders** re-adds every category's folder to its library if something got out of line.
-
-The table shows every category with its folder, Plex library, number of active movies and provider categories. The **Default** row is the original movie library at `/vod/` (Settings → Movie library ID), and it gets every movie that isn't in a category. A movie is only ever in one place, so it never shows up twice in Plex.
-
-A category can't be deleted while it has active movies. Move or deactivate them first. Deleting a category also removes its folder from its Plex library.
-
-> **Upgrading?** Movies that were active before you added categories stay in the Default library. Use **Move** (section 5.2) to put them in a category. The new category folder also needs the third rclone mount: run **Command B** again on each Plex/Jellyfin machine.
-
 > **Warning:** your provider and category selection also controls the Daily Run. If you un-select a category or provider, the next catalog refresh **removes its movies, including activated ones**. They are removed from Plex and their STRM folders are deleted.
 
 ### 5.2 Movies tab
@@ -282,7 +269,8 @@ A category can't be deleted while it has active movies. Move or deactivate them 
 
 - **Search** by title, and **sort** by rating, year or name (ascending or descending).
 - **Filters**: activated or not, decade, genre, language, category, provider (the last four are multi-select). Use **Clear filters** to reset them. Page size can be 60, 100, 200 or 300.
-- **Activate or deactivate one movie** with the button on its card.
+- **Activate or deactivate one movie** with the button on its card. **Activate** opens a small window where you pick its Plex library: **Auto category**, **Default library**, any movie category, or **+ New category…** (enter a name, an optional folder and a Plex library, and the bridge creates the category and its library, then activates the movie into it). **Remove** deactivates straight away. The card updates in place; the page doesn't reload.
+- **Activity indicator**: while an activation, move or deactivation runs (single or bulk, movies or episodes), a spinning pill next to **Scan Plex Library** says what's happening. It turns into a green ✓ or red ✕ result for a few seconds when it's done.
 - **Bulk actions**: click cards to select them. The selection bar then offers a category picker, **Activate**, **Move**, **Deactivate** and **Clear**. Language detection runs automatically in the Daily Run, and you can run it for a single movie from its details.
 - **Categories**: the picker chooses where activated movies go. **Auto category** (the default, and what the card's own button uses) picks the movie category whose provider categories include the movie, or the Default library if none do. **Default library** or a named category sends them there. **Move** sends already-active movies to the picked category: they leave their old Plex library and the new one is scanned. A movie in a category shows the category name on its card.
 
@@ -293,6 +281,23 @@ What happens when you activate:
 - **If it fails**, the movie is marked dead right away (one strike) and disappears from the grid. It's moved to **Maintenance > Dead Movies**, where you can restore it.
 
 Activation is the only action, besides actually playing, that connects to the provider. Activate in reasonable batches rather than thousands at once.
+
+**Movie Categories panel** (top of the Movies tab, like **Series Categories** on the Series tab)
+
+Movie categories work like series categories: each one is its own folder and its own Plex library, so you can keep, for example, kids' movies or 4K movies apart from the rest.
+
+1. Enter a **name**. The **folder** defaults to the name.
+2. Pick a Plex library: **+ Create new Plex library** makes a Movies library pointed at `<movie category mount root>/<folder>`, or choose an existing library, or **No Plex library**.
+3. Optionally pick one or more **provider categories** (Ctrl/Cmd-click for several). Movies from those provider categories go to this category when you activate them with **Auto category**.
+4. Click **Add Category**. **Sync Plex Folders** re-adds every category's folder to its library if something got out of line.
+
+The table shows every category with its folder, Plex library, number of active movies and provider categories. The **Default** row is the original movie library at `/vod/` (Settings → Movie library ID), and it gets every movie that isn't in a category. A movie is only ever in one place, so it never shows up twice in Plex.
+
+**Click a row** (name, folder or Active count, including **Default**) to show only the movies active in that library, the same way series categories work. A banner above the grid names the library; click the row again or **Back to catalog** to return to the full catalog. Removing a movie in this view takes its card off the grid.
+
+A category can't be deleted while it has active movies. Move or deactivate them first. Deleting a category also removes its folder from its Plex library.
+
+> **Upgrading?** Movies that were active before you added categories stay in the Default library. Use **Move** (section 5.2) to put them in a category. The new category folder also needs the third rclone mount: run **Command B** again on each Plex/Jellyfin machine.
 
 ### 5.3 Series tab
 
@@ -473,6 +478,9 @@ Changing the mode requires a container restart.
 2. Open `http://<bridge-host>:8585/vod/` in a browser. It should list your activated movies. If it does but the mount is empty, check the URL in `rclone.conf`.
 3. Make sure the Plex library points at the mount path, and that path matches **Plex movie mount root** in Settings.
 4. Wait about a minute (rclone's directory cache), then scan the library in Plex.
+
+**Plex matched a movie or show to the wrong title.**
+Titles activated since 0.41.2 carry their TMDB ID in the name Plex sees, so this is mostly older titles that Plex matched before. Plex keeps an existing match. Use **Fix Match** on the item and search `{tmdb-<id>}`, with the ID from the bridge's movie card, or remove the item and scan again. If the title has no TMDB ID, Plex can only guess from the name and year.
 
 **Activated movies vanished from the Movies grid.**
 They failed activation and were marked dead. Look in **Maintenance > Dead Movies**.

@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/logo.png" alt="VOD Plex Bridge logo" width="120"></p>
+
 # VOD Plex Bridge
 
 A self-hosted Docker application that bridges Video On Demand (VOD) content from [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) into [Plex Media Server](https://www.plex.tv/). Browse, activate, and stream VOD movies and TV series directly through the Plex interface — no manual file management required.
@@ -63,7 +65,7 @@ sequenceDiagram
     participant D as Dispatcharr
     participant S as Provider
 
-    P->>B: HEAD /vod/Movie [123].mp4
+    P->>B: HEAD /vod/Movie (2020) {tmdb-456} [123].mp4
     B-->>P: 200 OK (file size, content type)
     P->>B: GET (Range: bytes=0-8MB)
     B-->>P: 206 Partial (from head cache — instant)
@@ -169,8 +171,8 @@ See **[INSTALL.md](INSTALL.md)** for the full step-by-step guide with explanatio
 3. **Paste Command A on the Dispatcharr host.** The Setup tab shows it with a copy button. It installs a small agent that sends the movie and series lists to the bridge and refreshes them every day.
 4. **Paste Command B on each Plex or Jellyfin host.** It installs rclone and FUSE, mounts `/mnt/vod-bridge`, `/mnt/vod-bridge-movies` (movie categories) and `/mnt/vod-bridge-series`, and checks that Plex or Jellyfin can read them. If you want the Rclone Manager web UI, tick it on that machine's card *before* you run the command.
 5. **Create the libraries.** For Plex, one click on the Setup tab. For Jellyfin, add two libraries by hand (plus one per movie category); [INSTALL.md](INSTALL.md) has the exact steps.
-6. **Optional: movie categories.** On the Catalog tab, add a category in **Movie Categories** and the bridge creates its own Plex library. Activate with **Auto category** and movies from its provider categories land there. Upgrading from 0.40? Run Command B again for the new mount ([INSTALL.md](INSTALL.md#upgrading-from-040-or-earlier)).
-6. **Pick categories** in the Catalog tab, then activate titles on the Movies and Series tabs.
+6. **Optional: movie categories.** At the top of the Movies tab, add a category in **Movie Categories** and the bridge creates its own Plex library. Activate with **Auto category** and movies from its provider categories land there. Upgrading from 0.40? Run Command B again for the new mount ([INSTALL.md](INSTALL.md#upgrading-from-040-or-earlier)).
+7. **Pick categories** in the Catalog tab, then activate titles on the Movies and Series tabs.
 
 Each step on the Setup tab turns green once the bridge confirms it worked. Platforms without systemd (Unraid, Windows, macOS, NAS) have manual steps in [INSTALL.md](INSTALL.md).
 

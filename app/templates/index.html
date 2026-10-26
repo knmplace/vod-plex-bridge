@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VOD Plex Bridge</title>
-<link rel="icon" type="image/png" href="/static/logo.png">
-<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
-<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
-<link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png">
+<link rel="icon" sizes="any" href="/static/favicon.ico?v=2">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png?v=2">
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png?v=2">
+<link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png?v=2">
 <link rel="manifest" href="/static/manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="VOD Bridge">
@@ -52,7 +52,8 @@
             z-index: 100;
         }
 
-        .header h1 { font-size: 1.1rem; font-weight: 600; }
+        .header h1 { font-size: 1.1rem; font-weight: 600; white-space: nowrap; }
+        .header h1 .app-logo { width: 30px; height: 30px; border-radius: 6px; vertical-align: middle; margin-right: 0.5rem; position: relative; top: -2px; }
         .header h1 span { color: var(--accent); }
 
         .header-left { display: flex; align-items: center; gap: 1.5rem; }
@@ -726,6 +727,16 @@
             animation: spin 0.8s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        .busy-ind { display: none; align-items: center; gap: 0.45rem; font-size: 0.8rem; color: var(--text-secondary); padding: 0.25rem 0.75rem; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card); }
+        .busy-spin { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        .busy-ind.done { color: var(--success); border-color: var(--success); }
+        .busy-ind.fail { color: var(--danger); border-color: var(--danger); }
+        .busy-ind.done .busy-spin, .busy-ind.fail .busy-spin { display: none; }
+        .act-modal-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; width: min(420px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 0.6rem; }
+        .act-modal-box h3 { margin: 0; font-size: 1rem; color: var(--text-primary); }
+        .act-modal-box label { font-size: 0.78rem; color: var(--text-muted); }
+        .act-modal-box .search-input { width: 100%; margin-bottom: 0; }
+        .act-modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.4rem; }
         .sync-overlay .sync-title {
             font-size: 1.2rem;
             font-weight: 600;
@@ -1037,9 +1048,26 @@
         <iframe id="trailerFrame" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe>
     </div>
 
+    <div class="trailer-modal" id="activateModal" onclick="if (event.target === this) closeActivateModal()">
+        <div class="act-modal-box" role="dialog" aria-modal="true" aria-labelledby="actModalTitle">
+            <h3 id="actModalTitle">Activate</h3>
+            <label for="actModalCategory">Plex library</label>
+            <select class="search-input" id="actModalCategory" onchange="actModalToggleNew()"></select>
+            <div id="actModalNew" style="display:none;flex-direction:column;gap:0.5rem;">
+                <input type="text" class="search-input" id="actModalNewName" placeholder="Category name">
+                <input type="text" class="search-input" id="actModalNewFolder" placeholder="Folder (defaults to name)">
+                <select class="search-input" id="actModalNewPlex" title="Plex movie library this category's folder is added to"></select>
+            </div>
+            <div class="act-modal-actions">
+                <button class="btn btn-outline" onclick="closeActivateModal()">Cancel</button>
+                <button class="btn btn-primary" id="actModalGo" onclick="confirmActivateModal()">Activate</button>
+            </div>
+        </div>
+    </div>
+
     <div class="header">
         <div class="header-left">
-            <h1><span>VOD</span> Plex Bridge <span style="color:#fff" id="appVersion"></span> <span id="streamMode" style="font-size:0.55em;padding:2px 8px;border-radius:4px;vertical-align:middle;display:none;"></span></h1>
+            <h1><img class="app-logo" src="/static/logo.png?v=2" alt=""><span>VOD</span> Plex Bridge <span style="color:#fff" id="appVersion"></span> <span id="streamMode" style="font-size:0.55em;padding:2px 8px;border-radius:4px;vertical-align:middle;display:none;"></span></h1>
             <div class="tab-nav">
                 <button class="tab-btn active" data-tab="browse" onclick="switchTab('browse')">Movies</button>
                 <button class="tab-btn" data-tab="series" onclick="switchTab('series')">Series</button>
@@ -1103,6 +1131,7 @@
         </div>
         </div>
         <button class="btn btn-outline" onclick="scanPlexPresence(this)" title="Mark movies and shows that are already in a Plex library">Scan Plex Library</button>
+        <span class="busy-ind" id="busyInd" role="status" aria-live="polite"><span class="busy-spin"></span><span id="busyText"></span></span>
         <button class="btn btn-danger" id="stopBtn" onclick="stopSync()" style="display:none;">Stop</button>
         <span class="msg" id="syncMessage"></span>
         <span class="msg" id="langMessage" style="color:var(--warning);margin-left:0.5rem;"></span>
@@ -1120,6 +1149,32 @@
     <div class="tab-content active" id="tabBrowse">
         <!-- Movie Browser -->
         <div class="browse-section">
+            <div class="panel" style="margin-bottom:1rem;" id="movieCategoryPanel">
+                <div class="panel-header collapsible" onclick="togglePanel('movieCategoryPanel')">
+                    <span><span class="collapse-arrow">&#9660;</span>Movie Categories</span>
+                    <span class="badge" id="movieCategoryCount">0</span>
+                </div>
+                <div class="panel-body">
+                    <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.5rem;">
+                        Each category is its own Plex library. Movies from a category's provider categories go there when activated with "Auto category"; everything else goes to the Default library.
+                    </div>
+                    <div style="display:flex;gap:0.4rem;margin-bottom:0.6rem;flex-wrap:wrap;align-items:flex-start;" onclick="event.stopPropagation()">
+                        <input type="text" class="search-input" id="newMovieCatName" placeholder="Category name" style="width:160px;margin-bottom:0;">
+                        <input type="text" class="search-input" id="newMovieCatFolder" placeholder="Folder (defaults to name)" style="width:180px;margin-bottom:0;">
+                        <select class="search-input" id="newMovieCatPlexSection" title="Plex movie library this category's folder is added to" style="width:200px;margin-bottom:0;">
+                            <option value="new">+ Create new Plex library</option>
+                        </select>
+                        <select class="search-input" id="newMovieCatSources" multiple size="4" title="Provider categories whose movies go here (Ctrl/Cmd-click for several)" style="width:240px;margin-bottom:0;"></select>
+                        <button class="btn btn-primary" style="font-size:0.78rem;padding:0.25rem 0.6rem;" onclick="createMovieCategory()">Add Category</button>
+                        <button class="btn" style="font-size:0.78rem;padding:0.25rem 0.6rem;" title="Re-add every category folder to its Plex library" onclick="syncMovieCategoriesToPlex()">Sync Plex Folders</button>
+                    </div>
+                    <table class="summary-table compact" id="movieCategoryTable">
+                        <thead><tr><th>Name</th><th>Folder</th><th>Plex Library</th><th style="text-align:right">Active</th><th>Provider Categories</th><th></th></tr></thead>
+                        <tbody id="movieCategoryBody"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+
             <div class="panel">
                 <div class="panel-header">
                     Movies
@@ -1183,6 +1238,10 @@
                         <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="deactivateSelected()">Deactivate</button>
                         <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="clearSelection()">Clear</button>
                     </div>
+                </div>
+                <div id="movieLibraryBanner" style="display:none;align-items:center;gap:0.75rem;padding:0.5rem 1rem;background:var(--bg-card-hover);border-left:3px solid var(--accent);font-size:0.82rem;">
+                    <span id="movieLibraryBannerText"></span>
+                    <button class="btn btn-outline" style="padding:0.15rem 0.6rem;font-size:0.78rem;" onclick="showMovieCatalog()">Back to catalog</button>
                 </div>
                 <div class="panel-body">
                     <div class="movie-grid" id="movieGrid">
@@ -1284,32 +1343,6 @@
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            <div class="panel" style="margin-bottom:1rem;" id="movieCategoryPanel">
-                <div class="panel-header collapsible" onclick="togglePanel('movieCategoryPanel')">
-                    <span><span class="collapse-arrow">&#9660;</span>Movie Categories</span>
-                    <span class="badge" id="movieCategoryCount">0</span>
-                </div>
-                <div class="panel-body">
-                    <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.5rem;">
-                        Each category is its own Plex library. Movies from a category's provider categories go there when activated with "Auto category"; everything else goes to the Default library.
-                    </div>
-                    <div style="display:flex;gap:0.4rem;margin-bottom:0.6rem;flex-wrap:wrap;align-items:flex-start;" onclick="event.stopPropagation()">
-                        <input type="text" class="search-input" id="newMovieCatName" placeholder="Category name" style="width:160px;margin-bottom:0;">
-                        <input type="text" class="search-input" id="newMovieCatFolder" placeholder="Folder (defaults to name)" style="width:180px;margin-bottom:0;">
-                        <select class="search-input" id="newMovieCatPlexSection" title="Plex movie library this category's folder is added to" style="width:200px;margin-bottom:0;">
-                            <option value="new">+ Create new Plex library</option>
-                        </select>
-                        <select class="search-input" id="newMovieCatSources" multiple size="4" title="Provider categories whose movies go here (Ctrl/Cmd-click for several)" style="width:240px;margin-bottom:0;"></select>
-                        <button class="btn btn-primary" style="font-size:0.78rem;padding:0.25rem 0.6rem;" onclick="createMovieCategory()">Add Category</button>
-                        <button class="btn" style="font-size:0.78rem;padding:0.25rem 0.6rem;" title="Re-add every category folder to its Plex library" onclick="syncMovieCategoriesToPlex()">Sync Plex Folders</button>
-                    </div>
-                    <table class="summary-table compact" id="movieCategoryTable">
-                        <thead><tr><th>Name</th><th>Folder</th><th>Plex Library</th><th style="text-align:right">Active</th><th>Provider Categories</th><th></th></tr></thead>
-                        <tbody id="movieCategoryBody"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
-                    </table>
                 </div>
             </div>
 
@@ -2408,7 +2441,6 @@
             if (tab === 'catalog') {
                 document.getElementById('tabCatalog').classList.add('active');
                 loadCatalogSummary();
-                loadMovieCategories();
                 if (!allProviders.length) refreshProviders();
                 if (!allCategories.length) refreshCategories();
             } else if (tab === 'series') {
@@ -3418,6 +3450,16 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             const filterAct = document.getElementById('filterActivated').value;
             const ps = parseInt(document.getElementById('pageSize').value) || 100;
             let url = `/api/movies?page=${currentPage}&page_size=${ps}&sort_by=${sortBy}&sort_order=${sortOrder}`;
+            const banner = document.getElementById('movieLibraryBanner');
+            if (movieLibraryView !== null) {
+                url += `&movie_category=${movieLibraryView}`;
+                const libName = movieLibraryView === 'default' ? 'Default' : movieCategoryName(parseInt(movieLibraryView));
+                document.getElementById('movieLibraryBannerText').innerHTML =
+                    `Showing movies active in <b>${libName.replace(/</g,'&lt;')}</b>`;
+                banner.style.display = 'flex';
+            } else {
+                banner.style.display = 'none';
+            }
             if (search) url += `&search=${encodeURIComponent(search)}`;
             if (filterAct) url += `&activated=${filterAct}`;
             const filterYear = document.getElementById('filterYear').value;
@@ -3518,8 +3560,10 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                 const card = document.querySelector(`.movie-card[data-id="${id}"]`);
                 if (card) card.style.opacity = '0.5';
             });
+            busyStart(`Activating ${plural(ids.length, 'movie')}…`);
+            let res = {};
             try {
-                const res = await fetchJSON('/api/movies/activate', {
+                res = await fetchJSON('/api/movies/activate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({movie_ids: ids, category: document.getElementById('selMovieCategory').value})
@@ -3534,38 +3578,47 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             } catch(e) { /* fetchJSON already logged */ }
             selectedMovies.clear();
             updateSelectionBar();
-            loadMovies(currentPage);
+            await Promise.all([loadMovies(currentPage), loadMovieCategories()]);
             refreshActivatedCount();
             refreshStatus();
+            const failed = (res.failed_ids || []).length;
+            busyEnd(res.error ? 'Activation failed' : `Activated ${res.activated || 0}` + (failed ? `, ${failed} failed` : ''), !!res.error || failed > 0);
         }
 
         async function moveSelectedMovies() {
             if (!selectedMovies.size) return;
+            busyStart(`Moving ${plural(selectedMovies.size, 'movie')}…`);
             const res = await fetchJSON('/api/movie-categories/assign', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({movie_ids: [...selectedMovies], category: document.getElementById('selMovieCategory').value})
             });
-            if (res.error) { alert(res.error); return; }
-            alert(`Moved ${res.moved} active movie${res.moved === 1 ? '' : 's'}. Inactive ones go there when activated.`);
+            if (res.error) { busyEnd('Move failed', true); alert(res.error); return; }
             selectedMovies.clear();
             updateSelectionBar();
-            loadMovies(currentPage);
-            loadMovieCategories();
+            await Promise.all([loadMovies(currentPage), loadMovieCategories()]);
+            busyEnd(`Moved ${plural(res.moved, 'active movie')} (inactive ones go there when activated)`);
         }
 
         async function deactivateSelected() {
             if (!selectedMovies.size) return;
-            await fetchJSON('/api/movies/deactivate', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({movie_ids: [...selectedMovies]})
-            });
+            const n = selectedMovies.size;
+            busyStart(`Deactivating ${plural(n, 'movie')}…`);
+            let ok = true;
+            try {
+                const res = await fetchJSON('/api/movies/deactivate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({movie_ids: [...selectedMovies]})
+                });
+                ok = !res.error;
+            } catch (e) { ok = false; }
             selectedMovies.clear();
             updateSelectionBar();
-            loadMovies(currentPage);
+            await Promise.all([loadMovies(currentPage), loadMovieCategories()]);
             refreshActivatedCount();
             refreshStatus();
+            busyEnd(ok ? `Deactivated ${plural(n, 'movie')}` : 'Deactivation failed', !ok);
         }
 
         function debounceSearch() {
@@ -3714,21 +3767,22 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             };
             const provName = id => (movieProviderCategories.find(c => c.id == id) || {}).name || `#${id}`;
             const def = data.default || {};
-            const rows = [`<tr>
+            const rowAttrs = key => `style="cursor:pointer;${movieLibraryView === key ? 'background:var(--bg-card-hover);box-shadow:inset 3px 0 0 var(--accent);' : ''}" title="Show the active movies in this library" onclick="showLibraryMovies('${key}')"`;
+            const rows = [`<tr ${rowAttrs('default')}>
                     <td><em>Default</em></td>
                     <td><span style="color:var(--text-muted)">/vod/</span></td>
                     <td>${def.plex_library_section ? libLabel(def.plex_library_section) : '<span style="color:var(--text-muted)">Settings &rarr; Plex library ID</span>'}</td>
                     <td style="text-align:right">${(def.active_count || 0).toLocaleString()}</td>
                     <td><span style="color:var(--text-muted)">everything else</span></td>
                     <td></td>
-                </tr>`].concat(movieCategories.map(c => `<tr>
+                </tr>`].concat(movieCategories.map(c => `<tr ${rowAttrs(String(c.id))}>
                     <td>${esc(c.name)}</td>
                     <td>${esc(c.strm_folder)}</td>
                     <td>${libLabel(c.plex_library_section)}</td>
                     <td style="text-align:right">${(c.active_count || 0).toLocaleString()}</td>
                     <td style="font-size:0.78rem;">${c.sources.length ? c.sources.map(s => esc(provName(s))).join(', ') : '<span style="color:var(--text-muted)">manual only</span>'}</td>
                     <td style="text-align:right">
-                        <button class="btn btn-danger" style="padding:0.15rem 0.5rem;font-size:0.74rem;" onclick="deleteMovieCategory(${c.id})">Delete</button>
+                        <button class="btn btn-danger" style="padding:0.15rem 0.5rem;font-size:0.74rem;" onclick="event.stopPropagation();deleteMovieCategory(${c.id})">Delete</button>
                     </td>
                 </tr>`));
             document.getElementById('movieCategoryBody').innerHTML = rows.join('');
@@ -3747,6 +3801,49 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             sel.innerHTML = '<option value="auto">Auto category</option><option value="default">Default library</option>'
                 + movieCategories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
             if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+            if (movieLibraryView !== null && movieLibraryView !== 'default'
+                && !movieCategories.some(c => String(c.id) === movieLibraryView)) showMovieCatalog();
+        }
+
+        // Clicking a movie category shows only the movies active in its Plex library.
+        let movieLibraryView = null;
+
+        function showLibraryMovies(key) {
+            if (movieLibraryView === key) return showMovieCatalog();
+            movieLibraryView = key;
+            loadMovieCategories();
+            loadMovies(1);
+            document.getElementById('movieGrid').scrollIntoView({behavior: 'smooth', block: 'start'});
+        }
+
+        function showMovieCatalog() {
+            const wasLibrary = movieLibraryView !== null;
+            movieLibraryView = null;
+            if (wasLibrary) loadMovieCategories();
+            loadMovies(1);
+        }
+
+        // Sub-header activity pill, shown while activations and deactivations run.
+        let busyCount = 0, busyTimer = null;
+
+        function plural(n, word) { return `${n} ${word}${n === 1 ? '' : 's'}`; }
+
+        function busyStart(text) {
+            busyCount++;
+            clearTimeout(busyTimer);
+            const el = document.getElementById('busyInd');
+            el.className = 'busy-ind';
+            el.style.display = 'inline-flex';
+            document.getElementById('busyText').textContent = text;
+        }
+
+        function busyEnd(text, failed) {
+            busyCount = Math.max(0, busyCount - 1);
+            if (busyCount) return;
+            const el = document.getElementById('busyInd');
+            el.className = 'busy-ind ' + (failed ? 'fail' : 'done');
+            document.getElementById('busyText').textContent = (failed ? '✕ ' : '✓ ') + text;
+            busyTimer = setTimeout(() => { el.style.display = 'none'; }, failed ? 8000 : 4000);
         }
 
         async function createMovieCategory() {
@@ -3982,6 +4079,7 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             if (!selectedEpisodes.size) return;
             const category_id = parseInt(document.getElementById('seriesDetailCategory').value);
             if (!category_id) { alert('Select a category first.'); return; }
+            busyStart(`Activating ${plural(selectedEpisodes.size, 'episode')}…`);
             const res = await fetchJSON('/api/episodes/activate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -3992,14 +4090,15 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                       res.failed.map(f => `#${f.episode_id}: ${f.reason}`).join('\n'));
             }
             clearEpisodeSelection();
-            loadSeriesDetailEpisodes();
-            loadSeriesList(seriesCurrentPage);
-            loadSeriesCategories();
+            await Promise.all([loadSeriesDetailEpisodes(), loadSeriesList(seriesCurrentPage), loadSeriesCategories()]);
             refreshActivatedCount();
+            const failed = (res.failed || []).length;
+            busyEnd(res.error ? 'Activation failed' : `Activated ${plural((res.activated || []).length, 'episode')}` + (failed ? `, ${failed} failed` : ''), !!res.error || failed > 0);
         }
 
         async function reactivateSelectedEpisodes() {
             if (!selectedEpisodes.size) return;
+            busyStart(`Reactivating ${plural(selectedEpisodes.size, 'episode')}…`);
             const res = await fetchJSON('/api/episodes/reactivate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -4009,21 +4108,25 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                 alert(`Reactivated: ${res.activated.length}\nFailed: ${res.failed.length}`);
             }
             clearEpisodeSelection();
-            loadSeriesDetailEpisodes();
+            await Promise.all([loadSeriesDetailEpisodes(), loadSeriesList(seriesCurrentPage), loadSeriesCategories()]);
+            refreshActivatedCount();
+            const failed = (res.failed || []).length;
+            busyEnd(res.error ? 'Reactivation failed' : `Reactivated ${plural((res.activated || []).length, 'episode')}` + (failed ? `, ${failed} failed` : ''), !!res.error || failed > 0);
         }
 
         async function deactivateSelectedEpisodes() {
             if (!selectedEpisodes.size) return;
-            await fetchJSON('/api/episodes/deactivate', {
+            const n = selectedEpisodes.size;
+            busyStart(`Deactivating ${plural(n, 'episode')}…`);
+            const res = await fetchJSON('/api/episodes/deactivate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({episode_ids: [...selectedEpisodes]})
             });
             clearEpisodeSelection();
-            loadSeriesDetailEpisodes();
-            loadSeriesList(seriesCurrentPage);
-            loadSeriesCategories();
+            await Promise.all([loadSeriesDetailEpisodes(), loadSeriesList(seriesCurrentPage), loadSeriesCategories()]);
             refreshActivatedCount();
+            busyEnd(res && res.error ? 'Deactivation failed' : `Deactivated ${plural(n, 'episode')}`, !!(res && res.error));
         }
 
         // --- Sync ---
@@ -4349,7 +4452,7 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             document.getElementById('trailerFrame').src = '';
             document.getElementById('trailerModal').classList.remove('active');
         }
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTrailer(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeTrailer(); closeActivateModal(); } });
 
         // --- Single Language Detect (hover button) ---
         async function markMovieDead(movieId) {
@@ -4391,35 +4494,154 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
         }
 
         // --- Single Activate/Deactivate (card button) ---
+        // Activate asks which library first; Remove runs straight away.
         async function toggleActivate(movieId, isActive, btn) {
+            if (!isActive) return openActivateModal(movieId);
+            const card = btn.closest('.movie-card');
+            const name = cardTitle(movieId);
             btn.classList.add('working');
-            const endpoint = isActive ? '/api/movies/deactivate' : '/api/movies/activate';
+            busyStart(`Deactivating ${name}…`);
             try {
-                const res = await fetchJSON(endpoint, {
+                const res = await fetchJSON('/api/movies/deactivate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({movie_ids: [movieId]})
                 });
-                const card = btn.closest('.movie-card');
-                if (!isActive && res.failed_ids && res.failed_ids.includes(movieId)) {
-                    card.style.transition = 'opacity 0.3s';
-                    card.style.opacity = '0';
-                    setTimeout(() => card.remove(), 300);
-                    refreshActivatedCount();
-                    return;
-                }
-                const nowActive = !isActive;
-                const badges = card.querySelector('.card-badges');
-                badges.querySelector('.activated-badge')?.remove();
-                if (nowActive) badges.insertAdjacentHTML('beforeend', '<span class="activated-badge">ACTIVE</span>');
-                btn.outerHTML = activateBtnHTML(movieId, nowActive);
-                refreshActivatedCount();
-                refreshStatus();
-                loadCatalogSummary();
+                if (res.error) throw new Error(res.error);
+                if (movieLibraryView !== null) fadeOutCard(card);
+                else setCardState(movieId, false, null);
+                afterCardChange();
+                busyEnd(`Deactivated ${name}`);
             } catch (e) {
                 btn.classList.remove('working');
                 btn.classList.add('fail');
                 setTimeout(() => btn.classList.remove('fail'), 2000);
+                busyEnd(`Could not deactivate ${name}`, true);
+            }
+        }
+
+        function cardTitle(movieId) {
+            return document.querySelector(`#movieGrid .movie-card[data-id="${movieId}"] .info .title`)?.textContent || 'movie';
+        }
+
+        function fadeOutCard(card) {
+            if (!card) return;
+            card.style.transition = 'opacity 0.3s';
+            card.style.opacity = '0';
+            setTimeout(() => card.remove(), 300);
+        }
+
+        // Redraws a card's ACTIVE and category badges and its button in place.
+        function setCardState(movieId, active, categoryId) {
+            const card = document.querySelector(`#movieGrid .movie-card[data-id="${movieId}"]`);
+            if (!card) return;
+            const badges = card.querySelector('.card-badges');
+            badges.querySelectorAll('.activated-badge').forEach(b => b.remove());
+            if (active) badges.insertAdjacentHTML('beforeend', '<span class="activated-badge">ACTIVE</span>');
+            const catName = movieCategoryName(categoryId);
+            if (catName) badges.insertAdjacentHTML('beforeend', '<span class="activated-badge" style="background:var(--accent);">' + catName.replace(/</g,'&lt;') + '</span>');
+            const btn = card.querySelector('.activate-btn');
+            if (btn) btn.outerHTML = activateBtnHTML(movieId, active);
+        }
+
+        function afterCardChange() {
+            refreshActivatedCount();
+            refreshStatus();
+            loadCatalogSummary();
+            loadMovieCategories();
+        }
+
+        // Card Activate popup: same library choices as the selection bar, plus a new category.
+        let activateModalMovie = null;
+
+        function openActivateModal(movieId) {
+            const esc = s => String(s ?? '').replace(/</g,'&lt;');
+            activateModalMovie = movieId;
+            document.getElementById('actModalTitle').textContent = `Activate ${cardTitle(movieId)}`;
+            const sel = document.getElementById('actModalCategory');
+            sel.innerHTML = '<option value="auto">Auto category (provider category match, else Default)</option>'
+                + '<option value="default">Default library</option>'
+                + movieCategories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
+                + '<option value="new">+ New category…</option>';
+            const barChoice = document.getElementById('selMovieCategory').value;
+            sel.value = [...sel.options].some(o => o.value === barChoice) ? barChoice : 'auto';
+            document.getElementById('actModalNewPlex').innerHTML = document.getElementById('newMovieCatPlexSection').innerHTML;
+            document.getElementById('actModalNewName').value = '';
+            document.getElementById('actModalNewFolder').value = '';
+            document.getElementById('actModalGo').disabled = false;
+            document.getElementById('activateModal').classList.add('active');
+            actModalToggleNew();
+            sel.focus();
+        }
+
+        function closeActivateModal() {
+            activateModalMovie = null;
+            document.getElementById('activateModal').classList.remove('active');
+        }
+
+        function actModalToggleNew() {
+            const isNew = document.getElementById('actModalCategory').value === 'new';
+            document.getElementById('actModalNew').style.display = isNew ? 'flex' : 'none';
+            if (isNew) document.getElementById('actModalNewName').focus();
+        }
+
+        async function confirmActivateModal() {
+            const movieId = activateModalMovie;
+            if (movieId === null) return;
+            let category = document.getElementById('actModalCategory').value;
+            const name = cardTitle(movieId);
+            if (category === 'new') {
+                const catName = document.getElementById('actModalNewName').value.trim();
+                if (!catName) { alert('Category name is required.'); return; }
+                document.getElementById('actModalGo').disabled = true;
+                busyStart(`Creating category ${catName}…`);
+                const created = await fetchJSON('/api/movie-categories', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        name: catName,
+                        strm_folder: document.getElementById('actModalNewFolder').value.trim(),
+                        plex_library_section: document.getElementById('actModalNewPlex').value || 999,
+                        sources: [],
+                    })
+                });
+                if (created.error) {
+                    busyEnd('Could not create the category', true);
+                    document.getElementById('actModalGo').disabled = false;
+                    alert(created.error);
+                    return;
+                }
+                if (created.warning) alert(created.warning);
+                await loadMovieCategories();
+                busyEnd(`Created category ${catName}`);
+                const made = created.id ?? (movieCategories.find(c => c.name === catName) || {}).id;
+                if (made == null) { alert('Category created, but it could not be found. Pick it from the list.'); return; }
+                category = String(made);
+            }
+            closeActivateModal();
+            const card = document.querySelector(`#movieGrid .movie-card[data-id="${movieId}"]`);
+            const btn = card?.querySelector('.activate-btn');
+            btn?.classList.add('working');
+            busyStart(`Activating ${name}…`);
+            try {
+                const res = await fetchJSON('/api/movies/activate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({movie_ids: [movieId], category})
+                });
+                if (res.error) throw new Error(res.error);
+                if (res.failed_ids && res.failed_ids.includes(movieId)) {
+                    fadeOutCard(card);
+                    busyEnd(`${name} could not be played and was marked dead`, true);
+                } else {
+                    const catId = (res.categories || {})[movieId] ?? null;
+                    setCardState(movieId, true, catId);
+                    busyEnd(`Activated ${name} in ${movieCategoryName(catId) || 'Default'}`);
+                }
+                afterCardChange();
+            } catch (e) {
+                btn?.classList.remove('working');
+                busyEnd(`Could not activate ${name}${e.message ? ': ' + e.message : ''}`, true);
             }
         }
 
