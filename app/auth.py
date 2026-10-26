@@ -14,7 +14,8 @@ from database import get_db
 COOKIE = "vpb_session"
 SESSION_SECONDS = 30 * 86400
 # Plex, rclone and players fetch these without a browser login.
-OPEN_PREFIXES = ("/vod/", "/vod-series/", "/stream/", "/static/", "/api/auth/", "/login", "/version")
+# /setup/<token>/ is for the host scripts from the Setup tab; those routes check the token themselves.
+OPEN_PREFIXES = ("/vod/", "/vod-series/", "/stream/", "/static/", "/api/auth/", "/login", "/version", "/setup/")
 LOGIN_PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", "login.html")
 
 router = APIRouter()

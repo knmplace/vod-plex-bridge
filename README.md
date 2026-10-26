@@ -2,8 +2,7 @@
 
 A self-hosted Docker application that bridges Video On Demand (VOD) content from [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) into [Plex Media Server](https://www.plex.tv/). Browse, activate, and stream VOD movies and TV series directly through the Plex interface — no manual file management required.
 
-<!-- TODO: Add screenshot of the bridge UI here -->
-<!-- ![Bridge UI](docs/screenshots/bridge-ui.png) -->
+![Movies tab](docs/images/movies.png)
 
 ## How It Works
 
@@ -122,8 +121,8 @@ graph TB
 
 ```mermaid
 flowchart TD
-    A[Run dump_mappings.sh on Dispatcharr host] --> B[Creates stream_mapping.json<br/>category_mapping.json<br/>series_category_mapping.json<br/>movie_metadata.json<br/>account_credentials.json]
-    B --> C[Bridge reads mapping files from /data/]
+    A[Bridge agent on Dispatcharr host<br/>installed by Command A] --> B[Creates stream_mapping.json<br/>category_mapping.json<br/>series_category_mapping.json<br/>movie_metadata.json<br/>account_credentials.json]
+    B --> C[Agent uploads the files to the bridge's /data/]
     C --> D[Select Providers in Bridge UI]
     D --> E[Categories populate filtered to selected providers]
     E --> F[Select categories → Sync Selected]
@@ -149,11 +148,11 @@ Before you start, you'll need:
 | Requirement | Why | Notes |
 |-------------|-----|-------|
 | **[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr)** | Manages your M3U accounts and proxies VOD streams | Must be running and accessible from the bridge |
-| **[Plex Media Server](https://www.plex.tv/)** | Plays the movies | Must be able to reach the bridge over your LAN |
+| **[Plex Media Server](https://www.plex.tv/)** and/or **[Jellyfin](https://jellyfin.org/)** | Plays the movies and series | Must be able to reach the bridge over your LAN |
 | **Docker + Docker Compose** | Runs the bridge | v20+ recommended |
-| **Shell access to Dispatcharr host** | Run the dump script to extract mapping data | SSH or direct terminal |
-| **[rclone](https://rclone.org/)** | Mounts the bridge's HTTP endpoint as a local directory on the Plex host | Install on the **Plex host**, not the bridge |
-| **FUSE** | Required by rclone for filesystem mounting | `apt install fuse3` on the Plex host |
+| **Root shell on the Dispatcharr host** | Paste Command A once (installs the bridge agent) | SSH or direct terminal |
+| **Root shell on each Plex / Jellyfin host** | Paste Command B once (installs rclone, FUSE and the mounts for you) | Linux / Proxmox LXC with systemd is tested; other platforms have manual steps in [INSTALL.md](INSTALL.md) |
+| **FUSE in LXC containers** | rclone needs `/dev/fuse` | On Proxmox: `pct set <id> --features fuse=1`, then restart the LXC. Command B checks this for you |
 | **Dispatcharr API key** | The bridge reads the catalog through Dispatcharr's API | Create one in Dispatcharr; enter it in **Settings → Dispatcharr** |
 | **TMDB API key** *(optional)* | Enriches metadata (posters, genres, descriptions) | Free at [themoviedb.org](https://www.themoviedb.org/settings/api) |
 
@@ -161,50 +160,42 @@ Before you start, you'll need:
 
 See **[INSTALL.md](INSTALL.md)** for the full step-by-step guide with explanations. Once it's running, the **[User Guide](docs/USER_GUIDE.md)** covers every tab and setting. Release history is in **[CHANGELOG.md](CHANGELOG.md)**.
 
-> **rclone is required.** Plex sees the bridge's movies and series only through an rclone mount on the Plex host, which you install and set up separately (Step 4 below). A future version will have rclone built in.
+![First run and everyday use](docs/images/first-run-vs-everyday.svg)
 
-> **Dispatcharr, Plex and TMDB are set in the app.** After the first start, sign in (the first visit creates your account) and fill in **Settings**. Values in `.env` are only a starting point.
+1. **Start the bridge.** Save [docker-compose.example.yml](docker-compose.example.yml) as `docker-compose.yml` next to a `.env` that sets `BRIDGE_HOST` (the bridge's LAN IP) and `SETTINGS_KEY` (any long random string), then run `docker compose up -d`. This uses the published `ghcr.io/knmplace/vod-plex-bridge` image, so you don't need to clone or build anything.
+2. **Sign in.** Open `http://BRIDGE_IP:8585`. The first visit creates your admin account and opens the **Setup** tab. Fill in **Settings** for Dispatcharr, Plex and TMDB.
+3. **Paste Command A on the Dispatcharr host.** The Setup tab shows it with a copy button. It installs a small agent that sends the movie and series lists to the bridge and refreshes them every day.
+4. **Paste Command B on each Plex or Jellyfin host.** It installs rclone and FUSE, mounts `/mnt/vod-bridge` and `/mnt/vod-bridge-series`, and checks that Plex or Jellyfin can read them. If you want the Rclone Manager web UI, tick it on that machine's card *before* you run the command.
+5. **Create the libraries.** For Plex, one click on the Setup tab. For Jellyfin, add two libraries by hand; [INSTALL.md](INSTALL.md) has the exact steps.
+6. **Pick categories** in the Catalog tab, then activate titles on the Movies and Series tabs.
 
-```bash
-# 1. Clone and configure
-git clone https://github.com/knmplace/vod-plex-bridge.git
-cd vod-plex-bridge
-cp .env.example .env          # Edit with your IPs, tokens, paths
-cp docker-compose.example.yml docker-compose.yml
+Each step on the Setup tab turns green once the bridge confirms it worked. Platforms without systemd (Unraid, Windows, macOS, NAS) have manual steps in [INSTALL.md](INSTALL.md).
 
-# 2. Build and start
-docker compose up -d --build
-
-# 3. Run the dump script on your Dispatcharr host
-DISPATCHARR_CONTAINER=your-container-name \
-BRIDGE_DATA_DIR=/path/to/bridge/data \
-bash setup/dump_mappings.sh
-
-# 4. Set up rclone on the Plex host (see INSTALL.md Step 7 for full details)
-#    On the Plex server:
-apt install rclone fuse3
-mkdir -p /root/.config/rclone
-cat > /root/.config/rclone/rclone.conf << EOF
-[vodbridge]
-type = http
-url = http://BRIDGE_IP:8585/vod/
-
-[vodbridgeseries]
-type = http
-url = http://BRIDGE_IP:8585/vod-series/
-EOF
-rclone mount vodbridge: /mnt/vod-bridge --allow-other --dir-cache-time 1m \
-  --vfs-cache-mode full --vfs-cache-max-age 10m &
-rclone mount vodbridgeseries: /mnt/vod-bridge-series --allow-other --dir-cache-time 1m \
-  --vfs-cache-mode full --vfs-cache-max-age 10m &
-#    (INSTALL.md Step 7 turns these into systemd services)
-
-# 5. Add /mnt/vod-bridge as a Movies library in Plex
-#    (and /mnt/vod-bridge-series as a TV Shows library if you use series)
-
-# 6. Open http://your-bridge-ip:8585, create your account, fill in Settings,
-#    then pick categories in the Catalog tab
-```
+> [!IMPORTANT]
+> **Activate a few titles at a time. This app is not built for hoarding a large library.**
+> It works best for picking what you want to watch next: about **2–3 movies**, or **one
+> season of a series (10–15 episodes)**, at a time. Let Plex or Jellyfin finish scanning them
+> before you activate more.
+>
+> **Every activation, and every Plex or Jellyfin library scan of a new title, uses an open
+> active connection slot in Dispatcharr — the same slot a viewer uses to watch.**
+>
+> - **Activating a movie** reads its start and end once through Dispatcharr to check that it
+>   plays.
+> - **Plex reads the head and tail of every new file** when it scans it. For movies the bridge
+>   answers those reads from what it saved at activation, so most never reach Dispatcharr.
+>   Episodes have no saved copy, so **every new episode Plex scans opens a Dispatcharr
+>   connection**.
+> - **Jellyfin does the same.** Its library scan probes each new file (ffprobe), which reads
+>   the start of the file and often the end.
+> - **Redirect mode: use with caution.** It sends Plex and Jellyfin straight to Dispatcharr's
+>   proxy, so every scan read and every playback opens its own Dispatcharr connection; the
+>   bridge's saved start/end and its shared pipe don't apply. **Running a VPN on the
+>   Plex/Jellyfin machine is recommended** in this mode.
+>
+> Activate 50 episodes at once and the scan can fill every slot your provider allows, block
+> live viewing, and look like rapid reconnects to the provider, which can get titles
+> temporarily blocked or marked dead.
 
 ## AI-Assisted Setup
 
@@ -237,15 +228,18 @@ vod-plex-bridge/
 │   ├── connection.py         # Plex connection test
 │   ├── plex_libraries.py     # Plex library lookup / creation for series
 │   ├── plex_presence.py      # "In Plex" detection
+│   ├── setup_scripts.py      # Setup tab: per-host commands, agent uploads, reports
+│   ├── setup_templates/      # Command A / Command B shell script templates
 │   ├── tmdb_local.py, tmdb_store.py, tmdb_routes.py   # Local TMDB library
 │   ├── assets/
 │   │   └── bg.jpg            # Background image for error screens
 │   └── templates/
 │       └── index.html        # Single-page UI
 ├── setup/
-│   └── dump_mappings.sh      # Dispatcharr data extraction script
+│   └── dump_mappings.sh      # Dispatcharr data extraction script (installed by Command A)
 ├── docs/
-│   └── USER_GUIDE.md         # How to use every tab and setting
+│   ├── USER_GUIDE.md         # How to use every tab and setting
+│   └── images/               # Diagrams and screenshots used by the docs
 ├── Dockerfile
 ├── docker-compose.example.yml
 ├── .env.example
@@ -300,12 +294,11 @@ API keys, tokens and passwords saved in Settings are encrypted in the database w
 ## Updating
 
 ```bash
-cd vod-plex-bridge
-git pull
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
-Your database and settings persist in the `DATA_DIR` volume. The dump script keeps running on its own once the cron jobs from [INSTALL.md](INSTALL.md) Step 5 are in place.
+Your database and settings persist in the `DATA_DIR` volume. The agent on the Dispatcharr host and the mounts on the Plex/Jellyfin hosts keep running on their own; re-running Command A or B updates them in place.
 
 ## Troubleshooting
 
@@ -316,8 +309,9 @@ Your database and settings persist in the `DATA_DIR` volume. The dump script kee
 | Movies in bridge but not Plex | Check rclone mount shows `.mp4` files (`ls /mnt/vod-bridge/`). Scan the library in Plex. Verify Plex library points to the rclone mount path |
 | rclone mount is empty | No activated movies in the bridge, or bridge is unreachable. Test: `curl http://BRIDGE_IP:8585/vod/` |
 | rclone mount hangs | Bridge is down. Check `docker ps` and `curl http://BRIDGE_IP:8585/version` from the Plex host |
-| 0 categories showing | Run `setup/dump_mappings.sh` on the Dispatcharr host first. Select at least one provider. |
-| Daily Run report says the dump is stale | The trigger cron on the Dispatcharr host isn't running, or the bridge data folder isn't on that host (INSTALL.md Step 5) |
+| 0 categories showing | Command A hasn't reported yet: check the Dispatcharr light on the Setup tab and re-run Command A. Select at least one provider. |
+| Daily Run report says the dump is stale | The agent on the Dispatcharr host isn't checking in. Re-run Command A, and check `/etc/cron.d/vod-plex-bridge` exists there |
+| Mount missing / folder picker empty | `systemctl status rclone-vod-bridge-movies` on the media host, then re-run Command B. In an LXC, enable FUSE first (`pct set <id> --features fuse=1`) |
 | Every page sends you to sign-in | Expected: everything except the `/vod/`, `/vod-series/` and `/stream/` paths requires sign-in |
 | Stream stops after ~10 min | Check Dispatcharr nginx has `uwsgi_buffering off` and `uwsgi_read_timeout 300s` on the `/proxy/` location |
 | "Database is locked" | Should not occur in current versions. Restart the container if it does. |

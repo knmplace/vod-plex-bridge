@@ -77,8 +77,8 @@ def _validate(group: str, values: dict) -> str | None:
         if v.get(k) and not v[k].isdigit():
             return "Library IDs are numbers, e.g. 7"
     for k in ("PLEX_MOVIE_MOUNT_ROOT", "PLEX_SERIES_MOUNT_ROOT"):
-        if v.get(k) and not v[k].startswith("/"):
-            return "Mount paths start with /, e.g. /mnt/vod-bridge"
+        if v.get(k) and not re.match(r"/|[A-Za-z]:\\", v[k]):
+            return "Mount paths start with /, e.g. /mnt/vod-bridge (or a drive, e.g. V:\\ on Windows)"
     if group == "streaming":
         if not v["MAX_CONCURRENT_PER_TITLE"].isdigit() or not 1 <= int(v["MAX_CONCURRENT_PER_TITLE"]) <= 20:
             return "Players per title must be a number from 1 to 20"

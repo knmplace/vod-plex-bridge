@@ -18,5 +18,6 @@ app/cache.py
 /buffers/
 PICKUP.md
 SAFE_DEAD_DETECTION.md
-images/
+/images/
+.playwright-mcp/
 MCPECM/

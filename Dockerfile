@@ -10,6 +10,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ /app/
+COPY setup/dump_mappings.sh /app/setup_templates/dump_mappings.sh
 RUN mkdir -p /app/static
 
 COPY entrypoint.sh /entrypoint.sh

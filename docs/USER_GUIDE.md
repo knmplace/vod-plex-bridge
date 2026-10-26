@@ -1,6 +1,6 @@
 # VOD Plex Bridge — User Guide
 
-This guide covers VOD Plex Bridge **v0.39.0**. It explains what the app does, how to set it up, and how to use each tab. For a first-time install (Docker, compose, the mapping dump script), see [INSTALL.md](../INSTALL.md). Come back here once the container is running.
+This guide covers VOD Plex Bridge **v0.40.0**. It explains what the app does, how to set it up, and how to use each tab. For a first-time install (Docker compose, then the Setup tab's commands), see [INSTALL.md](../INSTALL.md). Come back here once the container is running.
 
 Placeholders used throughout:
 
@@ -34,85 +34,42 @@ No network share (NAS, SMB/CIFS, NFS) is involved. The only link between the bri
 
 ---
 
-## 2. rclone is required
+## 2. The Setup tab
 
-> **Important:** Plex cannot see anything from the bridge unless rclone is installed and mounted **on the Plex host**. This is not optional. Without it, your Plex library will stay empty no matter what you activate.
->
-> **Coming in a future release:** built-in rclone support, so the bridge can handle this step for you. Until then, set it up by hand as shown below.
+Plex and Jellyfin can only read folders on their own machine. So two small things run outside the bridge: an **agent on the Dispatcharr machine** that sends the bridge Dispatcharr's movie and series lists, and an **rclone mount on each Plex/Jellyfin machine** that shows the bridge's titles as folders. The **Setup** tab gives you one command for each machine and confirms that it worked. [INSTALL.md](../INSTALL.md) walks through it in full; this is the short version.
 
-Run all of the following **on the Plex host**, not the bridge host.
+The Setup tab opens by itself on first sign-in until every step is done. Each step has a light that turns green when the bridge confirms it.
 
-### Install
+![The Setup tab](images/setup-overview.png)
 
-```bash
-apt install rclone fuse3
-# or the latest build from https://rclone.org/install/
-```
+| Step | What you do | Green when |
+|---|---|---|
+| **1. Bridge address** | Check the address other machines use to reach the bridge (filled in from `BRIDGE_HOST`), then **Save**. `localhost`, `127.*` and `0.0.0.0` are refused. | The address is saved |
+| **2. Dispatcharr host** | Copy **Command A** and paste it on the machine where Dispatcharr runs. | The agent has reported and the first lists have arrived |
+| **3. Media server machines** | One card per Plex/Jellyfin machine. Fill it in, **Save**, copy **Command B** and paste it on that machine. | The machine reported that its mounts are readable |
+| **4. Libraries** | Press **Create Plex movie library**. Jellyfin libraries are added in Jellyfin. | A movie library ID is saved |
+| **5. Done** | A summary, plus a reminder of what to do day to day. | — |
 
-If Plex runs as a non-root user, allow FUSE mounts to be shared with other users:
+> **Tick Rclone Manager before you run Command B.** If you want the Rclone Manager web page for a machine, tick **"Also install Rclone Manager"** on its card and press **Save** *before* copying Command B. Command B installs it and reports it back, and that report is what adds the machine to **Maintenance → Rclone**. If you tick it afterwards, save and run Command B again on that machine.
 
-```bash
-sed -i 's/#user_allow_other/user_allow_other/' /etc/fuse.conf
-```
+### What the commands set up
 
-### Configure the remotes
+- **Command A** installs `/opt/vod-plex-bridge/` and `/etc/cron.d/vod-plex-bridge` on the Dispatcharr machine. Every minute it asks the bridge whether fresh lists are wanted (the Daily Run and **Run Now** ask for them). Every 12 hours it sends them anyway.
+- **Command B** installs rclone and FUSE, adds the `vodbridge-movies` and `vodbridge-series` remotes to `rclone.conf`, and starts `rclone-vod-bridge-movies.service` and `rclone-vod-bridge-series.service`. They mount `/mnt/vod-bridge` and `/mnt/vod-bridge-series` by default.
 
-Edit `/root/.config/rclone/rclone.conf`:
+Both commands are safe to run again. A second run updates what is there and leaves working parts alone. To read a script before running it, download it with `curl -o` instead of piping it to `bash`.
 
-```ini
-[vodbridge]
-type = http
-url = http://<bridge-host>:8585/vod/
+The commands contain a private setup link (`/setup/<token>/...`). If it leaks, use **make a new link** at the bottom of the Setup tab. Old commands stop working after that, so run Command A again (and Command B, to update a machine later).
 
-[vodbridge-series]
-type = http
-url = http://<bridge-host>:8585/vod-series/
-```
+### Libraries
 
-Test it with `rclone ls vodbridge:`. An empty result is fine if nothing is activated yet. An error means the Plex host can't reach the bridge.
+- **Plex:** **Create Plex movie library** makes a Movies library at the movie folder from your machine's card and saves its ID in Settings. Series libraries are created by the bridge, one per series category, when you activate episodes (see section 5.3).
+- **Jellyfin:** **Dashboard → Libraries → Add Media Library**. Use **Movies** on `/mnt/vod-bridge` and **Shows** on `/mnt/vod-bridge-series`. Untick trickplay and chapter image extraction, tick the **Nfo** metadata reader, and set **Scheduled Tasks → Scan Media Library** to every hour. Jellyfin's real-time monitoring doesn't notice changes on an rclone mount.
+- **On both:** turn off video preview thumbnails, intro and credits markers, and chapter thumbnails. Otherwise the server reads every movie in full through your provider.
 
-### Mount as a service (movies)
+The folders you use must match **Plex movie mount root** and **Plex series mount root** in Settings (defaults `/mnt/vod-bridge` and `/mnt/vod-bridge-series`).
 
-`/etc/systemd/system/rclone-vodbridge.service`:
-
-```ini
-[Unit]
-Description=rclone VOD Bridge FUSE mount
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=notify
-ExecStartPre=/bin/mkdir -p /mnt/vod-bridge
-ExecStart=/bin/rclone mount vodbridge: /mnt/vod-bridge --allow-other --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m
-ExecStop=/bin/fusermount -u /mnt/vod-bridge
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-systemctl daemon-reload
-systemctl enable --now rclone-vodbridge
-ls /mnt/vod-bridge/
-```
-
-For series, make a second unit the same way. Name it `rclone-vodbridge-series.service`, use `vodbridge-series:` as the remote, and `/mnt/vod-bridge-series` as the mount point.
-
-Tips:
-- Check the rclone path with `which rclone` and adjust `ExecStart` if it's somewhere else (often `/usr/bin/rclone`).
-- On fuse3-only systems, use `fusermount3` in `ExecStop`.
-- `--dir-cache-time 1m` means a newly activated title can take up to a minute to appear in the mount.
-
-### Point Plex at the mounts
-
-- Create a **Movies** library on `/mnt/vod-bridge`.
-- Create a **TV Shows** library on `/mnt/vod-bridge-series`, or one per series category (see section 5).
-- In each library's advanced settings, turn **off** video preview thumbnails, intro markers and credits markers. Otherwise Plex will try to read entire movies over the stream just to analyze them.
-
-The mount paths you use here must match **Plex movie mount root** and **Plex series mount root** in Settings (defaults `/mnt/vod-bridge` and `/mnt/vod-bridge-series`).
+If Plex or Jellyfin runs in Docker, the mount is made on the host. Add the volume lines the machine card shows (`/mnt/vod-bridge:/mnt/vod-bridge:ro,rslave`), and recreate the container *after* the mount is up. For Unraid, Windows, macOS and NAS boxes, the card shows filled-in manual steps instead of Command B. These are marked untested.
 
 ---
 
@@ -183,7 +140,7 @@ If you had an older XC server setting, it may show up as a read-only row in this
 |---|---|
 | Plex URL | e.g. `http://<plex-host>:32400` |
 | Plex token | Secret. In Plex Web, open any item, choose **Get Info > View XML**, and copy the `X-Plex-Token` value from the URL |
-| Movie library ID | The numeric section ID of your movie library (default `7`). It appears in the Plex Web URL: `.../library/sections/<id>/...` |
+| Movie library ID | The numeric section ID of your movie library. **Setup → 4. Libraries** creates the library and fills this in. If you made the library by hand, the ID appears in the Plex Web URL: `.../library/sections/<id>/...` |
 | Series library ID (fallback) | Used only for series categories that don't have their own library (see section 5) |
 | Plex movie mount root | Where rclone mounts movies on the Plex host (default `/mnt/vod-bridge`) |
 | Plex series mount root | Where rclone mounts series on the Plex host (default `/mnt/vod-bridge-series`) |
@@ -210,7 +167,7 @@ This section has no Test button.
 
 | Setting | Notes |
 |---|---|
-| Stream mode | **Redirect** or **Proxy**. Takes effect only after a container restart. Until then, the page shows a "restart pending" note |
+| Stream mode | **Redirect** or **Proxy**. Takes effect only after a container restart. Until then, the page shows a "restart pending" note. **Use redirect with caution:** Plex/Jellyfin connect to Dispatcharr directly for every scan and playback, and a VPN on the Plex/Jellyfin machine is recommended |
 | Max connections per title | 1–20, default 2. Applies in redirect mode only. When a title goes over the limit, the oldest connections are closed |
 
 The header badge shows which mode is currently running. See section 8 for how the two modes differ.
@@ -237,6 +194,32 @@ The header badge shows which mode is currently running. See section 8 for how th
 
 ## 5. Browsing and activating
 
+> [!IMPORTANT]
+> **Activate a few titles at a time. This app is not built for hoarding a large library.**
+> It works best for picking what you want to watch next: about **2–3 movies**, or **one
+> season of a series (10–15 episodes)**, at a time. Let Plex or Jellyfin finish scanning them
+> before you activate more.
+>
+> **Every activation, and every Plex or Jellyfin library scan of a new title, uses an open
+> active connection slot in Dispatcharr — the same slot a viewer uses to watch.**
+>
+> - **Activating a movie** reads its start and end once through Dispatcharr to check that it
+>   plays.
+> - **Plex reads the head and tail of every new file** when it scans it. For movies the bridge
+>   answers those reads from what it saved at activation, so most never reach Dispatcharr.
+>   Episodes have no saved copy, so **every new episode Plex scans opens a Dispatcharr
+>   connection**.
+> - **Jellyfin does the same.** Its library scan probes each new file (ffprobe), which reads
+>   the start of the file and often the end.
+> - **Redirect mode: use with caution.** It sends Plex and Jellyfin straight to Dispatcharr's
+>   proxy, so every scan read and every playback opens its own Dispatcharr connection; the
+>   bridge's saved start/end and its shared pipe don't apply. **Running a VPN on the
+>   Plex/Jellyfin machine is recommended** in this mode.
+>
+> Activate 50 episodes at once and the scan can fill every slot your provider allows, block
+> live viewing, and look like rapid reconnects to the provider, which can get titles
+> temporarily blocked or marked dead.
+
 The header bar shows catalog, activated and STRM counts. On the Series tab it shows series counts instead. It also has these buttons:
 
 | Button | What it does |
@@ -249,6 +232,8 @@ The header bar shows catalog, activated and STRM counts. On the Series tab it sh
 
 Start in **Catalog**.
 
+![Catalog tab](images/catalog.png)
+
 1. Use the **Providers** panel to pick which provider accounts to include (**All** / **None**).
 2. Use the **Categories** panel to pick categories. You can filter the list by language or search it. Right-click a category to hide it from browsing.
 3. Click **Sync Selected** to import. Click **Reload Categories** if the category list looks out of date.
@@ -258,6 +243,8 @@ Summary tables show counts **by provider** (fallback providers included), **by l
 > **Warning:** your provider and category selection also controls the Daily Run. If you un-select a category or provider, the next catalog refresh **removes its movies, including activated ones**. They are removed from Plex and their STRM folders are deleted.
 
 ### 5.2 Movies tab
+
+![Movies tab](images/movies.png)
 
 - **Search** by title, and **sort** by rating, year or name (ascending or descending).
 - **Filters**: activated or not, decade, genre, language, category, provider (the last four are multi-select). Use **Clear filters** to reset them. Page size can be 60, 100, 200 or 300.
@@ -273,6 +260,8 @@ What happens when you activate:
 Activation is the only action, besides actually playing, that connects to the provider. Activate in reasonable batches rather than thousands at once.
 
 ### 5.3 Series tab
+
+![Series tab](images/series.png)
 
 Series are activated **per episode** and grouped into **series categories**. Each category can have its own Plex library.
 
@@ -306,7 +295,7 @@ Because each category is its own folder under the series mount, one rclone serie
 
 ## 6. Maintenance
 
-The **Maintenance** tab has three sub-tabs: **Daily Updates**, **Dead Movies** and **Proxy Logs**.
+The **Maintenance** tab has the sub-tabs **Daily Updates**, **Dead Movies** and **Proxy Logs**, plus **Rclone** once a media machine runs Rclone Manager.
 
 ### 6.1 Daily Updates
 
@@ -319,7 +308,7 @@ What a run does, in order:
 
 | Step | What happens |
 |---|---|
-| 1. Dump refresh | Asks the host-side dump script for fresh mapping files, then waits up to 3 minutes. If nothing new arrives, the report shows a red **STALE dump** warning and the remaining steps use the older files. |
+| 1. Dump refresh | Asks the Dispatcharr-host agent (Command A) for fresh mapping files, then waits up to 3 minutes. If nothing new arrives, the report shows a red **STALE dump** warning and the remaining steps use the older files. |
 | 2. Categories | Reloads the category lists. |
 | 3. Catalog | Removes movies outside your selected categories and providers (activated ones too). Then it re-checks every stored movie against Dispatcharr. Movies Dispatcharr no longer has are removed completely: from Plex, from disk, and from the database. Dead movies that Dispatcharr still has get a "try restoring" note. New movies in your selected categories are added. |
 | 4. Stream mapping | Updates which provider stream each movie uses, including backup streams. Only real changes are counted. |
@@ -332,7 +321,7 @@ What a run does, in order:
 
 A Daily Run **never connects to your provider**, and it doesn't scan for dead streams.
 
-> **About the dump script:** the mapping files (`stream_mapping.json`, `category_mapping.json` and others) are produced by `setup/dump_mappings.sh`. It runs on the **Dispatcharr host** from cron (see INSTALL.md Step 5). The Daily Run asks for a fresh dump by creating a `.dump-trigger` file in the bridge's data folder; a small trigger-check script, run every minute by cron on the Dispatcharr host, sees that file and runs the dump. This only works when the bridge's data folder is on the Dispatcharr host. If you see STALE dump warnings day after day, the trigger check or the dump script isn't running or is failing. Check both cron entries and run the dump script by hand once to see any errors.
+> **About the mapping files:** `stream_mapping.json`, `category_mapping.json` and the others come from Dispatcharr's database, so they are made on the **Dispatcharr host** by the agent that Command A installs. The Daily Run and **Run Now** flag that fresh files are wanted; the agent checks every minute, makes them, and uploads them to the bridge. It also sends them every 12 hours on its own. If you see STALE dump warnings, check that `/etc/cron.d/vod-plex-bridge` exists on the Dispatcharr host and look at the Dispatcharr light on the Setup tab. Running Command A again fixes most problems. Older setups that still use the `.dump-trigger` file and their own cron lines keep working.
 
 ### 6.2 Dead Movies
 
@@ -354,6 +343,12 @@ Provider blocks are usually temporary. Many dead movies play fine after a restor
 - **Activity log**: live streaming and proxy events, with auto-refresh, a level filter and a **Refresh** button.
 - **Redirect mode**: each playback logs one line naming the account and stream it went to, for example "Redirecting to Dispatcharr proxy via Account A, stream 1234". The line says so when a fallback account was used because the primary was full, or when all accounts were full. Plex re-requests a title every minute or two while it buffers, and those repeats are not logged. A new line appears only after 15 minutes of quiet, or as "Redirect switched to …" when the stream changes.
 - **Archived logs**: older logs are archived automatically every 4 hours (change this with `LOG_ARCHIVE_INTERVAL`), and old archives are cleaned up. Click **Archive Now** to archive immediately, click an archive to view it, and select archives to **Delete** them.
+
+### 6.4 Rclone
+
+This sub-tab appears once a media machine reports that Rclone Manager is running. That happens when **Also install Rclone Manager** was ticked on the machine's Setup card *before* Command B ran (see section 2). Each machine gets a card with an **Open Rclone Manager** button. The page opens in a new tab, where you can check and restart the bridge mounts. Sign in as **admin**; the default password is `ChangeMeNow!` unless you set one while Command B ran, so change it right away. The Health tab shows the same link.
+
+![Rclone sub-tab](images/rclone.png)
 
 ### Other monitoring tabs
 
@@ -439,7 +434,7 @@ Changing the mode requires a container restart.
 ## 9. Troubleshooting FAQ
 
 **My Plex library is empty.**
-1. On the Plex host, run `ls /mnt/vod-bridge`. If it's empty or errors, rclone isn't mounted. Check `systemctl status rclone-vodbridge`.
+1. On the Plex host, run `ls /mnt/vod-bridge`. If it's empty or errors, rclone isn't mounted. Check `systemctl status rclone-vod-bridge-movies` (or Rclone Manager), and look at the machine's light on the Setup tab. Running Command B again fixes most mount problems. In a Proxmox LXC, the container needs FUSE turned on (`pct set <id> --features fuse=1` on the Proxmox host).
 2. Open `http://<bridge-host>:8585/vod/` in a browser. It should list your activated movies. If it does but the mount is empty, check the URL in `rclone.conf`.
 3. Make sure the Plex library points at the mount path, and that path matches **Plex movie mount root** in Settings.
 4. Wait about a minute (rclone's directory cache), then scan the library in Plex.
@@ -454,7 +449,7 @@ Check that day's Daily Run report. The usual causes:
 - you recently switched the primary Dispatcharr.
 
 **The Daily Run shows a red STALE dump warning.**
-The host dump script didn't produce new mapping files within 3 minutes. Check that the trigger-check cron job (INSTALL.md Step 5) is installed on the Dispatcharr host, that the bridge's data folder is on that host, and run `setup/dump_mappings.sh` by hand to see any errors.
+The Dispatcharr-host agent didn't upload new mapping files within 3 minutes. Check the Dispatcharr light on the Setup tab and that `/etc/cron.d/vod-plex-bridge` exists on the Dispatcharr host. Run Command A again; it runs a dump straight away and prints any error. If you made a new setup link, the old agent stops working until Command A is run again.
 
 **Settings test says "Dispatcharr refused the API key".**
 Create a new key in Dispatcharr (**Settings > API Keys**), paste it into the instance, and save. For redirect mode, the key needs admin rights.
@@ -478,7 +473,13 @@ A value saved in Settings overrides the environment. Clear the saved value in Se
 The card says why: dead, busy (too many sessions), or removed. If it says busy, wait a bit and try again. If it says dead, restore it later from Dead Movies.
 
 **Playback works, but Plex is slowly reading entire files.**
-Turn off video preview thumbnails, intro markers and credits markers for the bridge libraries in Plex.
+Turn off video preview thumbnails, intro markers and credits markers for the bridge libraries in Plex. In Jellyfin, untick trickplay and chapter image extraction.
+
+**Jellyfin doesn't pick up new titles.**
+Jellyfin's real-time monitoring doesn't notice changes on an rclone mount. Set **Dashboard → Scheduled Tasks → Scan Media Library** to every hour, or press **Scan All Libraries**.
+
+**The Rclone sub-tab is missing.**
+It only appears after a machine reports Rclone Manager. Tick **Also install Rclone Manager** on that machine's Setup card, press **Save**, and run Command B again on that machine.
 
 **I forgot my password.**
 There's no password reset in the UI. Back up the `/data` folder before you try anything, then ask in the project's issue tracker for the recovery steps.
@@ -489,19 +490,18 @@ There's no password reset in the UI. Back up the `/data` folder before you try a
 
 **Current limitations**
 
-- **rclone must be set up by hand** on the Plex host (section 2).
+- **Only Linux / Proxmox LXC media machines are tested.** Unraid, Windows, macOS and NAS get filled-in manual steps marked untested.
 - **One active Dispatcharr at a time.** Standby instances are stored but unused until made primary, and switching between different Dispatcharr servers removes movies the new one doesn't have.
 - **Dead is manual-restore only.** Nothing brings a dead movie back automatically. The "try restoring" note is a hint, not a retry.
 - **Scan Dead is disabled** while it's redesigned.
 - **There's no per-provider-account connection limit.** Only the global and per-title limits exist.
 - **Changing the stream mode needs a restart.**
 - **Single account.** No multiple users or roles.
-- **Jellyfin** isn't officially supported yet. The same rclone approach may work, but it isn't covered here.
+- **Jellyfin libraries are made by hand** in Jellyfin (section 2). The bridge creates Plex libraries only.
 - Dead Movies **Restore All / Delete All** have been unreliable in the past. The per-selection buttons are the dependable route.
 
 **Coming soon / planned**
 
-- **Built-in rclone** so Plex can see bridge content without manual mount setup.
 - **Provider (XC) accounts in Settings.** The section is visible now but locked as "Future — pending".
 - **Per-provider-account concurrency limits.**
 - A redesigned **dead-stream scan**.

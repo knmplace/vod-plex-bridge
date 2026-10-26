@@ -17,12 +17,13 @@ import auth
 from connection import router as connection_router
 import sources
 from tmdb_routes import router as tmdb_router
+import setup_scripts
 import tmdb_local
 import tmdb_store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-APP_VERSION = "0.39.0"
+APP_VERSION = "0.40.0"
 
 
 async def _restore_strm_files():
@@ -137,6 +138,8 @@ app.include_router(auth.router)
 app.include_router(connection_router)
 app.include_router(sources.router)
 app.include_router(tmdb_router)
+app.include_router(setup_scripts.open_router)
+app.include_router(setup_scripts.router)
 app.mount("/static", StaticFiles(directory="/app/static"), name="static")
 
 templates = Jinja2Templates(directory="/app/templates")

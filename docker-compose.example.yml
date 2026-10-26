@@ -1,6 +1,8 @@
 services:
   vod-plex-bridge:
-    build: .
+    image: ghcr.io/knmplace/vod-plex-bridge:latest
+    # Building from a clone of the repo instead? Replace the image line with:
+    # build: .
     container_name: vod-plex-bridge
     restart: unless-stopped
     ports:

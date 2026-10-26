@@ -193,6 +193,30 @@
         .conn-field em { font-style: normal; font-weight: 400; color: var(--text-secondary); }
         .conn-field input { padding: 0.45rem 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 0.85rem; }
         .conn-field input:focus { outline: none; border-color: var(--accent); }
+        .conn-field select { padding: 0.45rem 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); font-size: 0.85rem; }
+        .conn-field select:focus { outline: none; border-color: var(--accent); }
+        .setup-wrap { max-width: 900px; margin: 0 auto; padding: 1rem 0 2rem; display: flex; flex-direction: column; gap: 1rem; }
+        .setup-wrap .panel-body { padding: 0.9rem 1rem; }
+        .settings-layout .setup-wrap { max-width: none; margin: 0; padding-top: 0; }
+        .setup-light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); margin-right: 0.5rem; vertical-align: middle; }
+        .setup-light.ok { background: var(--success); }
+        .setup-light.warn { background: var(--warning); }
+        .setup-light.bad { background: var(--danger); }
+        .setup-check { flex-direction: row; align-items: center; gap: 0.45rem; font-weight: 400; }
+        .setup-cmd { display: flex; gap: 0.5rem; align-items: stretch; margin: 0.6rem 0 0.3rem; }
+        .setup-cmd code { flex: 1; min-width: 0; font-family: monospace; font-size: 0.8rem; padding: 0.55rem 0.7rem; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; overflow-x: auto; white-space: nowrap; }
+        .setup-pre { white-space: pre; overflow-x: auto; font-family: monospace; font-size: 0.78rem; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem 0.75rem; margin: 0.4rem 0 0.6rem; }
+        .setup-machine { border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 0.9rem; margin-bottom: 0.75rem; }
+        .setup-machine-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
+        .setup-toggle { cursor: pointer; user-select: none; }
+        .setup-toggle > span:first-child::before { content: '\25BE'; display: inline-block; width: 1rem; color: var(--text-muted); transition: transform 0.15s; }
+        .collapsed > .setup-toggle > span:first-child::before { transform: rotate(-90deg); }
+        .collapsed > .panel-body, .collapsed > .setup-machine-body { display: none; }
+        .setup-machine.collapsed .setup-machine-head { margin-bottom: 0; }
+        .setup-status { font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.75rem; line-height: 1.6; }
+        .setup-steps { font-size: 0.86rem; line-height: 1.55; padding-left: 1.2rem; margin: 0.5rem 0; }
+        .setup-steps li { margin-bottom: 0.5rem; }
+        .setup-untested { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: var(--warning); color: #000; margin-left: 0.4rem; }
         .conn-note { font-size: 0.86rem; color: var(--text-secondary); margin-top: 0.75rem; line-height: 1.5; }
         .settings-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.9rem; flex-wrap: wrap; }
         .settings-msg { font-size: 0.8rem; }
@@ -1079,6 +1103,7 @@
         <button class="sub-nav-btn" data-sub="dead" onclick="switchTab('dead')">Dead Movies <span class="badge" id="deadBadge" style="display:none;background:var(--danger);margin-left:0.3rem;">0</span></button>
         <button class="sub-nav-btn" data-sub="logs" onclick="switchTab('logs')">Proxy Logs</button>
         <button class="sub-nav-btn" data-sub="daily" onclick="switchTab('daily')">Daily Updates</button>
+        <button class="sub-nav-btn" data-sub="rclone" id="rcloneSubBtn" style="display:none;" onclick="switchTab('rclone')">Rclone</button>
     </div>
 
     <!-- BROWSE TAB -->
@@ -1520,6 +1545,7 @@
                     </div>
                 </div>
                 <div class="panel-body">
+                    <div id="healthSetupLinks" class="conn-note" style="margin:0 0 0.75rem;"></div>
                     <div id="healthStatusContainer" style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem;">
                         <div class="health-card">
                             <div class="health-title">Bridge</div>
@@ -1675,6 +1701,7 @@
     <div class="tab-content" id="tabSettings">
         <div class="settings-layout">
             <nav class="settings-side" id="settingsSide">
+                <button data-sec="setup" onclick="showSettingsSection('setup')">Setup</button>
                 <button data-sec="dispatcharr" onclick="showSettingsSection('dispatcharr')">Dispatcharr</button>
                 <button data-sec="providers" onclick="showSettingsSection('providers')">Providers (XC)<span class="src-pill future">Future</span></button>
                 <button data-sec="plex" onclick="showSettingsSection('plex')">Plex</button>
@@ -1694,6 +1721,78 @@
                     </div>
                     <div id="setResult"></div>
                 </div>
+            </div>
+            <div class="setup-wrap" id="setupPane" style="display:none;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                    <p class="set-intro" style="margin:0;flex:1;min-width:260px;">Connect the bridge to Dispatcharr and to your Plex or Jellyfin server. Answer a few questions, then paste one command on each machine. Each light turns green when that step worked. You only do this once.</p>
+                    <button class="btn btn-outline" onclick="skipSetup()">Skip for now</button>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header setup-toggle" onclick="toggleSetupSection(this)"><span><span class="setup-light" id="setupLight1"></span>1. Bridge address</span></div>
+                    <div class="panel-body">
+                        <p class="conn-note" style="margin-top:0;">The address your other machines use to reach this bridge, with its port. Not localhost or 0.0.0.0.</p>
+                        <div class="conn-fields">
+                            <label class="conn-field"><span>Bridge address</span><input id="setupBridgeUrl" placeholder="http://192.168.1.20:8585" oninput="setupDirty()"></label>
+                        </div>
+                        <p id="setupBridgeHint" class="conn-note" style="display:none;"></p>
+                        <div class="settings-actions">
+                            <button class="btn btn-primary" onclick="saveSetup(this)">Save</button>
+                            <span class="settings-msg setup-msg"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header setup-toggle" onclick="toggleSetupSection(this)"><span><span class="setup-light" id="setupLight2"></span>2. Dispatcharr host</span></div>
+                    <div class="panel-body">
+                        <div id="setupDispatcharrConn" class="conn-note" style="margin-top:0;"></div>
+                        <div class="conn-fields" style="margin-top:0.75rem;">
+                            <label class="conn-field"><span>Dispatcharr container name <em>(optional)</em></span><input id="setupDispatcharrContainer" placeholder="found automatically" oninput="setupDirty()"></label>
+                        </div>
+                        <div class="settings-actions">
+                            <button class="btn btn-primary" onclick="saveSetup(this)">Save</button>
+                            <span class="settings-msg setup-msg"></span>
+                        </div>
+                        <div id="setupCmdA"></div>
+                        <div id="setupAgentStatus" class="setup-status"></div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header setup-toggle" onclick="toggleSetupSection(this)"><span><span class="setup-light" id="setupLight3"></span>3. Media server machines</span></div>
+                    <div class="panel-body">
+                        <p class="conn-note" style="margin-top:0;">Add each machine that runs Plex, Jellyfin or Emby. Each one gets its own command. Only one machine can run Plex, because the bridge connects to one Plex server.</p>
+                        <div id="setupMachines"></div>
+                        <div class="settings-actions">
+                            <button class="btn btn-outline" id="setupAddMachine" onclick="addSetupMachine()">Add machine</button>
+                            <button class="btn btn-primary" onclick="saveSetup(this)">Save</button>
+                            <span class="settings-msg setup-msg"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header setup-toggle" onclick="toggleSetupSection(this)"><span><span class="setup-light" id="setupLight4"></span>4. Libraries</span></div>
+                    <div class="panel-body" id="setupLibraries"></div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header setup-toggle" onclick="toggleSetupSection(this)"><span><span class="setup-light" id="setupLight5"></span>5. Done</span></div>
+                    <div class="panel-body" id="setupDone"></div>
+                </div>
+
+                <p class="conn-note" style="margin:0;">The commands contain a private setup link. If one leaks, <a href="#" onclick="regenerateSetupToken();return false;" style="color:var(--accent);">make a new link</a>. Old commands stop working, and the Dispatcharr command must be run again.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- RCLONE TAB (Maintenance): shown once the media host reports Rclone Manager running -->
+    <div class="tab-content" id="tabRclone">
+        <div class="browse-section" style="padding-top:1rem;">
+            <div class="panel" style="max-width:900px;margin:0 auto;">
+                <div class="panel-header">Rclone Manager</div>
+                <div class="panel-body setup-status" id="rcloneBody"></div>
             </div>
         </div>
     </div>
@@ -1842,7 +1941,7 @@
         // --- Tabs ---
         let logRefreshTimer = null;
 
-        const MAINT_TABS = ['dead', 'logs', 'daily'];
+        const MAINT_TABS = ['dead', 'logs', 'daily', 'rclone'];
         let lastMaintTab = 'dead';
 
         // --- TMDB Local tab ---
@@ -2158,9 +2257,12 @@
         }
 
         function switchTab(tab) {
+            // Setup lives in Settings now; old links and the first-run opener still say 'setup'.
+            if (tab === 'setup') { settingsSection = 'setup'; tab = 'settings'; }
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             if (logRefreshTimer) { clearInterval(logRefreshTimer); logRefreshTimer = null; }
+            stopSetupTimer();
             clearTimeout(tmdbTimer);
             const isMaint = MAINT_TABS.includes(tab);
             if (isMaint) lastMaintTab = tab;
@@ -2206,6 +2308,7 @@
                 document.getElementById('tabHealth').classList.add('active');
                 loadHealthStatus();
                 loadStreamHealth();
+                loadHealthSetupLinks();
                 logRefreshTimer = setInterval(() => {
                     if (document.getElementById('healthAutoRefresh').checked) { loadHealthStatus(); loadStreamHealth(); }
                 }, 30000);
@@ -2222,11 +2325,597 @@
             } else if (tab === 'account') {
                 document.getElementById('tabAccount').classList.add('active');
                 loadAccount();
+            } else if (tab === 'rclone') {
+                document.getElementById('tabRclone').classList.add('active');
+                loadRcloneTab();
             } else {
                 document.getElementById('tabBrowse').classList.add('active');
                 refreshBrowseFilters();
                 loadMovies(currentPage);
             }
+        }
+
+        // --- Setup tab ---
+        let setupState = null;
+        let setupFormDirty = false;
+        let setupTimer = null;
+
+        function stopSetupTimer() {
+            if (setupTimer) { clearInterval(setupTimer); setupTimer = null; }
+        }
+
+        // The Maintenance → Rclone tab only appears once a media machine reports Rclone Manager.
+        function showRcloneSubBtn(s) {
+            const any = s && (s.machines || []).some(m => m.rclone_manager_url);
+            document.getElementById('rcloneSubBtn').style.display = any ? '' : 'none';
+        }
+
+        async function loadRcloneTab() {
+            const body = document.getElementById('rcloneBody');
+            const s = await fetchJSON('/api/setup/state');
+            if (s.error) { body.innerHTML = `<p class="conn-note" style="color:var(--danger)">${escapeHtml(s.error)}</p>`; return; }
+            showRcloneSubBtn(s);
+            const running = (s.machines || []).filter(m => m.rclone_manager_url);
+            if (!running.length) {
+                body.innerHTML = '<p class="conn-note">No media server machine has reported Rclone Manager. Install it from Settings → Setup, step 3.</p>';
+                return;
+            }
+            const answers = (s.answers && s.answers.machines) || [];
+            body.innerHTML = running.map(m => {
+                const mr = m.report || {};
+                const mounts = (mr.mounts || []).map(x =>
+                    `<li>${escapeHtml(x.path || '')}: ${x.readable && x.items >= 0 ? `<span style="color:var(--success)">mounted, ${x.items} items</span>` : '<span style="color:var(--danger)">not working</span>'}</li>`).join('');
+                // The default password only applies when this setup installed it.
+                const ours = (answers.find(x => x.id === m.id) || {}).rclone_manager;
+                return `<div class="setup-machine"><p style="margin-top:0;"><b>${escapeHtml(m.name)}</b> (${escapeHtml(mr.hostname || mr.from || '')}) runs Rclone Manager. Use it to check and restart the bridge mounts.</p>
+                    ${mounts ? `<ul class="conn-note" style="margin:0.5rem 0 0.8rem 1.2rem;">${mounts}</ul>` : ''}
+                    <p style="margin-bottom:0;"><a class="btn btn-primary" href="${escapeHtml(m.rclone_manager_url)}" target="_blank" rel="noopener">Open Rclone Manager</a>
+                    <span class="conn-note" style="margin-left:0.5rem;">${escapeHtml(m.rclone_manager_url)}</span></p>
+                    ${ours ? '<p class="conn-note">First sign-in is <b>admin</b> / <b>ChangeMeNow!</b>. Change that password if you have not yet.</p>' : ''}</div>`;
+            }).join('');
+        }
+        const SETUP_LINUX_MOUNTS = ['/mnt/vod-bridge', '/mnt/vod-bridge-series'];
+        const RCLONE_FLAGS = '--read-only --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m';
+        const SETUP_SERVERS = ['plex', 'jellyfin', 'emby'];
+        const SETUP_SERVER_NAMES = { plex: 'Plex', jellyfin: 'Jellyfin', emby: 'Emby' };
+        const SETUP_OS_OPTIONS = [['linux', 'Linux / Proxmox LXC'], ['unraid', 'Unraid'], ['windows', 'Windows'],
+            ['macos', 'macOS'], ['nas', 'Synology / QNAP / other NAS']];
+
+        function setupDirty() { setupFormDirty = true; }
+
+        function setupMountDefaults(os) {
+            return (setupState && setupState.default_mounts[os]) || SETUP_LINUX_MOUNTS;
+        }
+
+        // "Plex", "Plex and Jellyfin", "Plex, Jellyfin and Emby"
+        function setupServerList(servers) {
+            const names = (servers || []).map(k => SETUP_SERVER_NAMES[k] || k);
+            return names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : (names[0] || 'the media server');
+        }
+
+        // The bridge's view of a saved machine: name, command, report, Rclone Manager link.
+        function setupMachineState(id) {
+            return ((setupState && setupState.machines) || []).find(m => m.id === id) || {};
+        }
+
+        async function loadSetup(fillForm) {
+            const s = await fetchJSON('/api/setup/state');
+            if (s.error) {
+                document.querySelectorAll('.setup-msg').forEach(m => { m.textContent = s.error; m.style.color = 'var(--danger)'; });
+                return;
+            }
+            setupState = s;
+            showRcloneSubBtn(s);
+            if (fillForm || !setupFormDirty) fillSetupForm(s.answers);
+            renderSetup();
+        }
+
+        function fillSetupForm(a) {
+            document.getElementById('setupBridgeUrl').value = a.bridge_url || '';
+            document.getElementById('setupDispatcharrContainer').value = a.dispatcharr_container || '';
+            document.getElementById('setupMachines').innerHTML = (a.machines || []).map(setupMachineCard).join('');
+            setupFormDirty = false;
+            renderSetupFormHints();
+            renderBridgeHint(a.bridge_url);
+        }
+
+        function setupMachineCard(m) {
+            const v = x => escapeHtml(x == null ? '' : String(x));
+            const on = x => x ? ' checked' : '';
+            const changed = 'oninput="setupDirty();renderSetupFormHints()" onchange="setupDirty();renderSetupFormHints()"';
+            return `<div class="setup-machine" data-mid="${v(m.id)}">
+                <div class="setup-machine-head setup-toggle" onclick="toggleSetupSection(this)"><span><span class="setup-light"></span><b class="setup-machine-name"></b></span>
+                    <button class="btn btn-outline setup-machine-remove" onclick="event.stopPropagation();removeSetupMachine(this)">Remove</button></div>
+                <div class="setup-machine-body">
+                <div class="conn-fields">
+                    <label class="conn-field"><span>Name (optional)</span><input data-f="label" maxlength="40" placeholder="Living room server" value="${v(m.label)}" ${changed}></label>
+                    <label class="conn-field"><span>It runs on</span>
+                        <span style="display:flex;gap:0.4rem;">
+                            <select data-f="os" style="flex:1;" onchange="setupOsChanged(this)">${SETUP_OS_OPTIONS.map(([k, t]) => `<option value="${k}"${k === m.os ? ' selected' : ''}>${t}</option>`).join('')}</select>
+                            <button class="btn btn-outline setup-detect" onclick="detectPlexOs(this)" title="Ask Plex which system it runs on">Detect</button>
+                        </span></label>
+                </div>
+                <div style="display:flex; flex-wrap:wrap; gap:0.25rem 1.5rem; margin-top:0.6rem;">
+                    ${SETUP_SERVERS.map(k => `<label class="conn-field setup-check"><input type="checkbox" data-server="${k}"${on((m.servers || []).includes(k))} ${changed}><span>${SETUP_SERVER_NAMES[k]}</span></label>`).join('')}
+                </div>
+                <div class="conn-fields" style="margin-top:0.6rem;">
+                    <label class="conn-field setup-check"><input type="checkbox" data-f="docker"${on(m.docker)} ${changed}><span>It runs in Docker</span></label>
+                    <label class="conn-field" data-show="docker"><span>Container name</span><input data-f="container" value="${v(m.container)}" ${changed}></label>
+                </div>
+                <div class="conn-fields" style="margin-top:0.6rem;">
+                    <label class="conn-field setup-check"><input type="checkbox" data-f="want_movies"${on(m.want_movies)} ${changed}><span>Movies</span></label>
+                    <label class="conn-field setup-check"><input type="checkbox" data-f="want_series"${on(m.want_series)} ${changed}><span>Series</span></label>
+                </div>
+                <div class="conn-fields" style="margin-top:0.6rem;">
+                    <label class="conn-field" data-show="want_movies"><span>Movies folder on that machine</span><input data-f="movie_mount" value="${v(m.movie_mount)}" ${changed}></label>
+                    <label class="conn-field" data-show="want_series"><span>Series folder on that machine</span><input data-f="series_mount" value="${v(m.series_mount)}" ${changed}></label>
+                </div>
+                <div class="conn-fields" style="margin-top:0.6rem;" data-show="rcm">
+                    <label class="conn-field setup-check"><input type="checkbox" data-f="rclone_manager"${on(m.rclone_manager)} ${changed}><span>Also install Rclone Manager, a web page for checking and restarting the mounts</span></label>
+                    <p class="conn-note">Tick this before you run the command below. If you tick it later, click Save and run the command again.</p>
+                </div>
+                <p class="conn-note" data-show="rcm-note">Rclone Manager is running on this machine. Open it from <a href="#" onclick="switchTab('rclone');return false;" style="color:var(--accent);">Maintenance → Rclone</a>.</p>
+                <div class="setup-machine-out"></div>
+                <div class="setup-machine-status setup-status"></div>
+                </div>
+            </div>`;
+        }
+
+        // Steps and machine cards fold up once their light is green, unless opened by hand.
+        const setupOpen = {};
+
+        function setupSectionKey(el) {
+            const box = el.closest('.setup-machine') || el.closest('.panel');
+            return [box, box.dataset.mid ? 'm:' + box.dataset.mid : box.querySelector('.setup-light').id];
+        }
+
+        function toggleSetupSection(head) {
+            const [box, key] = setupSectionKey(head);
+            setupOpen[key] = box.classList.contains('collapsed');
+            box.classList.toggle('collapsed', !setupOpen[key]);
+        }
+
+        function applySetupCollapse() {
+            document.querySelectorAll('#setupPane .setup-toggle').forEach(head => {
+                const [box, key] = setupSectionKey(head);
+                const green = head.querySelector('.setup-light').classList.contains('ok');
+                box.classList.toggle('collapsed', key in setupOpen ? !setupOpen[key] : green);
+            });
+        }
+
+        function setupCards() {
+            return [...document.querySelectorAll('#setupMachines .setup-machine')];
+        }
+
+        function setupCardAnswers(card) {
+            const f = name => card.querySelector(`[data-f="${name}"]`);
+            return {
+                id: card.dataset.mid, label: f('label').value.trim(), os: f('os').value,
+                servers: SETUP_SERVERS.filter(k => card.querySelector(`[data-server="${k}"]`).checked),
+                docker: f('docker').checked, container: f('container').value.trim(),
+                want_movies: f('want_movies').checked, want_series: f('want_series').checked,
+                movie_mount: f('movie_mount').value.trim(), series_mount: f('series_mount').value.trim(),
+                rclone_manager: f('rclone_manager').checked,
+            };
+        }
+
+        function addSetupMachine() {
+            // Skip ids the bridge still has a report for until the next save drops it.
+            const used = new Set(setupCards().map(c => c.dataset.mid).concat(((setupState && setupState.machines) || []).map(m => m.id)));
+            let n = 1;
+            while (used.has('m' + n)) n++;
+            const hasPlex = setupFormAnswers().machines.some(m => m.servers.includes('plex'));
+            const [movie, series] = setupMountDefaults('linux');
+            document.getElementById('setupMachines').insertAdjacentHTML('beforeend', setupMachineCard({
+                id: 'm' + n, label: '', servers: [hasPlex ? 'jellyfin' : 'plex'], os: 'linux', docker: false, container: '',
+                want_movies: true, want_series: true, movie_mount: movie, series_mount: series, rclone_manager: false,
+            }));
+            setupDirty();
+            renderSetupFormHints();
+            renderSetup();
+        }
+
+        function removeSetupMachine(btn) {
+            const card = btn.closest('.setup-machine');
+            const name = card.querySelector('.setup-machine-name').textContent;
+            if (!confirm(`Remove ${name}? To take the mounts off that machine too, run its command there with --uninstall first.`)) return;
+            card.remove();
+            setupDirty();
+            renderSetupFormHints();
+            renderSetup();
+        }
+
+        // A saved address can go stale when the bridge moves to another machine.
+        function renderBridgeHint(saved) {
+            const hint = document.getElementById('setupBridgeHint');
+            const here = location.origin, host = location.hostname;
+            const local = host === 'localhost' || host.startsWith('127.');
+            if (!saved || local || saved.replace(/\/+$/, '') === here) { hint.style.display = 'none'; return; }
+            hint.innerHTML = `You opened this page at <strong>${escapeHtml(here)}</strong>, which is different. `
+                + `<a href="#" style="color:var(--accent);" onclick="useBrowserBridgeUrl();return false;">Use this address</a>`;
+            hint.style.display = '';
+        }
+
+        function useBrowserBridgeUrl() {
+            document.getElementById('setupBridgeUrl').value = location.origin;
+            document.getElementById('setupBridgeHint').style.display = 'none';
+            setupDirty();
+        }
+
+        function setupFormAnswers() {
+            return {
+                bridge_url: document.getElementById('setupBridgeUrl').value.trim(),
+                dispatcharr_container: document.getElementById('setupDispatcharrContainer').value.trim(),
+                machines: setupCards().map(setupCardAnswers),
+            };
+        }
+
+        // Show only the fields that apply to each machine's answers.
+        function renderSetupFormHints() {
+            const cards = setupCards();
+            cards.forEach((card, i) => {
+                const m = setupCardAnswers(card);
+                const show = (key, visible) => card.querySelectorAll(`[data-show="${key}"]`).forEach(el => { el.style.display = visible ? '' : 'none'; });
+                card.querySelector('.setup-machine-name').textContent = m.label || `Machine ${i + 1}`;
+                show('docker', m.docker);
+                show('want_movies', m.want_movies);
+                show('want_series', m.want_series);
+                // Once it's running there, offer the Maintenance link instead of the install box.
+                const running = !!(setupMachineState(m.id).report || {}).rclone_manager;
+                show('rcm', m.os === 'linux' && !running);
+                show('rcm-note', running);
+                card.querySelector('.setup-detect').style.display = m.servers.includes('plex') ? '' : 'none';
+                card.querySelector('.setup-machine-remove').style.display = cards.length > 1 ? '' : 'none';
+                card.querySelector('[data-f="container"]').placeholder = m.servers[0] || 'plex';
+            });
+            const max = (setupState && setupState.max_machines) || 8;
+            document.getElementById('setupAddMachine').style.display = cards.length < max ? '' : 'none';
+        }
+
+        function setupOsChanged(select) {
+            const card = select.closest('.setup-machine');
+            const os = select.value;
+            const movie = card.querySelector('[data-f="movie_mount"]');
+            const series = card.querySelector('[data-f="series_mount"]');
+            // Swap in the new system's default folders unless the user typed their own.
+            const defaults = Object.values(setupState ? setupState.default_mounts : {}).concat([SETUP_LINUX_MOUNTS]);
+            if (!movie.value || defaults.some(d => d[0] === movie.value)) movie.value = setupMountDefaults(os)[0];
+            if (!series.value || defaults.some(d => d[1] === series.value)) series.value = setupMountDefaults(os)[1];
+            setupDirty();
+            renderSetupFormHints();
+        }
+
+        async function detectPlexOs(btn) {
+            btn.disabled = true;
+            const r = await fetchJSON('/api/setup/plex-detect');
+            btn.disabled = false;
+            const msg = btn.closest('.panel-body').querySelector('.setup-msg');
+            if (!r.ok) {
+                msg.textContent = 'Could not ask Plex. Check the Plex URL and token in Settings.';
+                msg.style.color = 'var(--danger)';
+                return;
+            }
+            if (r.os) {
+                const select = btn.closest('.setup-machine').querySelector('[data-f="os"]');
+                select.value = r.os;
+                setupOsChanged(select);
+            }
+            msg.textContent = `Plex at ${r.host} reports ${r.platform || 'an unknown system'}.` +
+                (r.os === 'linux' ? ' Pick Unraid or NAS instead if that is what it runs on.' : '');
+            msg.style.color = 'var(--text-secondary)';
+        }
+
+        async function saveSetup(btn) {
+            const msg = btn.parentElement.querySelector('.setup-msg');
+            btn.disabled = true;
+            const r = await fetchJSON('/api/setup/answers', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(setupFormAnswers()),
+            });
+            btn.disabled = false;
+            document.querySelectorAll('.setup-msg').forEach(m => { m.textContent = ''; });
+            if (r.error) {
+                msg.textContent = r.error;
+                msg.style.color = 'var(--danger)';
+                return;
+            }
+            msg.textContent = 'Saved. If you already ran a command, run it again to apply the change.';
+            msg.style.color = 'var(--success)';
+            setupState = r;
+            showRcloneSubBtn(r);
+            fillSetupForm(r.answers);
+            renderSetup();
+        }
+
+        async function regenerateSetupToken() {
+            if (!confirm('Make a new setup link? Commands you already copied stop working, and the Dispatcharr host must run its command again.')) return;
+            const r = await fetchJSON('/api/setup/token/regenerate', { method: 'POST' });
+            if (r.error) { alert(r.error); return; }
+            setupState = r;
+            renderSetup();
+        }
+
+        function skipSetup() {
+            try { localStorage.setItem('setupSkipped', '1'); } catch (e) {}
+            switchTab('browse');
+        }
+
+        // Plain-HTTP pages have no navigator.clipboard, so fall back to a hidden textarea.
+        function copyText(text, btn) {
+            const done = () => { const t = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = t; }, 1500); };
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(done);
+                return;
+            }
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); done(); } catch (e) {}
+            ta.remove();
+        }
+
+        function setupCmdBlock(cmd) {
+            const url = (cmd.match(/curl -fsSL (\S+)/) || [])[1] || '';
+            return `<div class="setup-cmd"><code>${escapeHtml(cmd)}</code>` +
+                `<button class="btn btn-primary" onclick="copyText(this.parentElement.querySelector('code').textContent, this)">Copy</button></div>` +
+                `<div class="conn-note" style="margin-top:0.2rem;"><a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="color:var(--accent);">View the script</a> before you run it, or remove everything later with <code style="word-break:break-all;">${escapeHtml(cmd.replace('| sudo bash', '| sudo bash -s -- --uninstall'))}</code></div>`;
+        }
+
+        function setupPre(text) {
+            return `<div style="position:relative;"><pre class="setup-pre">${escapeHtml(text)}</pre>` +
+                `<button class="btn btn-outline" style="position:absolute;top:0.35rem;right:0.35rem;font-size:0.75rem;padding:0.2rem 0.5rem;" onclick="copyText(this.parentElement.querySelector('pre').textContent, this)">Copy</button></div>`;
+        }
+
+        function setupAgo(ts) {
+            if (!ts) return 'never';
+            const secs = Math.max(0, Date.now() / 1000 - ts);
+            if (secs < 90) return 'just now';
+            if (secs < 3600) return Math.round(secs / 60) + ' min ago';
+            if (secs < 86400) return Math.round(secs / 3600) + ' h ago';
+            return new Date(ts * 1000).toLocaleString();
+        }
+
+        function setLight(n, cls) {
+            document.getElementById('setupLight' + n).className = 'setup-light' + (cls ? ' ' + cls : '');
+        }
+
+        // The mounts each answer set asks for: [label, folder on the media host, bridge URL].
+        function setupMounts(a) {
+            const out = [];
+            if (a.want_movies) out.push(['movies', a.movie_mount, a.bridge_url + '/vod/']);
+            if (a.want_series) out.push(['series', a.series_mount, a.bridge_url + '/vod-series/']);
+            return out;
+        }
+
+        function setupDockerLines(a) {
+            return setupMounts(a).map(([, path]) => `      - ${path}:${path}:ro,rslave`).join('\n');
+        }
+
+        function setupManualSteps(a) {
+            const mounts = setupMounts(a);
+            const untested = '<span class="setup-untested">untested</span>';
+            if (a.os === 'unraid') {
+                const script = '#!/bin/bash\n# VOD Plex Bridge mounts. User Scripts schedule: At Startup of Array\n' +
+                    mounts.map(([, path, url]) =>
+                        `mkdir -p ${path}\nfusermount -uz ${path} 2>/dev/null\n` +
+                        `rclone mount :http: ${path} --http-url ${url} --allow-other ${RCLONE_FLAGS} \\\n    --uid 99 --gid 100 --umask 002 --daemon`).join('\n');
+                return `<p class="conn-note">Unraid steps ${untested}</p><ol class="setup-steps">
+                    <li>In <b>Apps</b>, install the <b>rclone</b> plugin and the <b>User Scripts</b> plugin.</li>
+                    <li>In <b>Settings → User Scripts</b>, add a script named <code>vod-bridge-mount</code>, paste this in, set the schedule to <b>At Startup of Array</b>, then click <b>Run in background</b> once.${setupPre(script)}
+                        Keep these folders under <code>/mnt/addons</code>. Never put them under <code>/mnt/user</code>.</li>
+                    <li>Edit the Plex (or Jellyfin) container and add a <b>Path</b> for each folder: the same path for container and host, access mode <b>Read/Write - Slave</b>. Then apply.</li>
+                    <li>After a reboot, the mount must be up before the media container starts. If the library looks empty, restart the container.</li></ol>`;
+            }
+            if (a.os === 'windows') {
+                const tasks = mounts.map(([, path, url]) =>
+                    `C:\\rclone\\rclone.exe mount :http: ${path.replace(/\\$/, '')} --http-url ${url} ${RCLONE_FLAGS} --no-console`).join('\n');
+                return `<p class="conn-note">Windows steps ${untested}</p><ol class="setup-steps">
+                    <li>Install <b>WinFsp</b> from winfsp.dev. Download <b>rclone</b> from rclone.org and put <code>rclone.exe</code> in <code>C:\\rclone</code>.</li>
+                    <li>Open <b>Task Scheduler → Create Task</b>, once for each line below. Run it as the Windows user that Plex runs as, choose <b>Run only when user is logged on</b>, and set the trigger to <b>At log on</b>. The action starts the program <code>C:\\rclone\\rclone.exe</code> with the rest of the line as its arguments.${setupPre(tasks)}
+                        Plex for Windows runs in the user's session, so a drive mounted as SYSTEM can be invisible to it.</li>
+                    <li>Run the tasks once. The drives (${mounts.map(m => escapeHtml(m[1])).join(', ')}) should then show folders.</li></ol>`;
+            }
+            if (a.os === 'macos') {
+                const plists = mounts.map(([name, path, url]) => {
+                    const args = ['/usr/local/bin/rclone', 'mount', ':http:', path, '--http-url', url].concat(RCLONE_FLAGS.split(' '));
+                    return `<!-- ~/Library/LaunchAgents/com.vodbridge.${name}.plist -->\n<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n  <key>Label</key><string>com.vodbridge.${name}</string>\n  <key>ProgramArguments</key><array>\n` +
+                        args.map(x => `    <string>${x}</string>`).join('\n') +
+                        `\n  </array>\n  <key>RunAtLoad</key><true/>\n  <key>KeepAlive</key><true/>\n</dict></plist>`;
+                }).join('\n\n');
+                return `<p class="conn-note">macOS steps ${untested}</p><ol class="setup-steps">
+                    <li>Install <b>FUSE-T</b> (fuse-t.org) or <b>macFUSE</b>. Install rclone from rclone.org with <code>sudo -v ; curl https://rclone.org/install.sh | sudo bash</code>. The Homebrew rclone can't mount.</li>
+                    <li>Make the folders: <code>${mounts.map(m => `sudo mkdir -p ${escapeHtml(m[1])}`).join(' &amp;&amp; ')}</code>, then give them to your user with <code>sudo chown "$USER"</code> on each.</li>
+                    <li>Save each block below as the file named in its first line, then load it with <code>launchctl load -w</code> and the file's path.${setupPre(plists)}</li></ol>`;
+            }
+            // NAS: no host rclone, so a small rclone container does the mount.
+            const cmd = mounts.map(([name, , url], i) =>
+                `${i === mounts.length - 1 ? 'exec ' : ''}rclone mount :http: /mnt/${name} --http-url ${url} --allow-other ${RCLONE_FLAGS}${i === mounts.length - 1 ? '' : ' --daemon &&'}`);
+            const compose = `  vod-bridge-rclone:
+    image: rclone/rclone:1.68.2
+    container_name: vod-bridge-rclone
+    restart: unless-stopped
+    cap_add: [SYS_ADMIN]
+    devices: [/dev/fuse:/dev/fuse]
+    security_opt: [apparmor:unconfined]
+    volumes:
+${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n')}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        ${mounts.map(([name]) => `fusermount3 -uz /mnt/${name} 2>/dev/null;`).join(' ')}
+        ${cmd.join('\n        ')}`;
+            return `<p class="conn-note">NAS / Docker steps ${untested}</p><ol class="setup-steps">
+                <li>Make the folders on the NAS: ${mounts.map(m => `<code>${escapeHtml(m[1])}</code>`).join(', ')}.</li>
+                <li>Add this service to the stack or compose file next to your media server and start it.${setupPre(compose)}</li>
+                <li>Give the Plex or Jellyfin container these volume lines, then recreate it. The <code>rslave</code> part lets the container see the mount.${setupPre(setupDockerLines(a))}</li></ol>`;
+        }
+
+        function renderSetup() {
+            const s = setupState;
+            if (!s) return;
+            const a = s.answers;
+            const now = Date.now() / 1000;
+            setLight(1, s.saved && a.bridge_url ? 'ok' : '');
+
+            // Step 2: Dispatcharr
+            document.getElementById('setupDispatcharrConn').innerHTML = s.dispatcharr.configured
+                ? `Connected to Dispatcharr at <b>${escapeHtml(s.dispatcharr.url)}</b>. Run the command below on the machine where Dispatcharr's container runs. It sends Dispatcharr's movie and series lists to the bridge, and never talks to the provider.`
+                : `Add Dispatcharr's address and API key first. <button class="btn btn-outline" style="margin-left:0.4rem;" onclick="switchTab('settings');showSettingsSection('dispatcharr')">Open Settings → Dispatcharr</button>`;
+            document.getElementById('setupCmdA').innerHTML = s.saved && s.commands.dispatcharr
+                ? `<div class="conn-note">Paste this on the Dispatcharr host:</div>` + setupCmdBlock(s.commands.dispatcharr)
+                : '<div class="conn-note">Save the bridge address to get the command.</div>';
+            const ar = s.agent_report;
+            const dumpFresh = s.last_dump && now - s.last_dump.at < 13 * 3600;
+            setLight(2, ar && !ar.ok ? 'bad' : (dumpFresh ? 'ok' : (s.last_dump ? 'warn' : '')));
+            const agentLines = [];
+            if (ar) agentLines.push(`Installed on <b>${escapeHtml(ar.hostname || ar.from || '?')}</b>${ar.container ? ` for container <b>${escapeHtml(ar.container)}</b>` : ''}: ${ar.ok ? '<span style="color:var(--success)">worked</span>' : '<span style="color:var(--danger)">the first dump failed, see the command output</span>'} (${setupAgo(ar.received_at)}).`);
+            if (s.agent_seen_at) agentLines.push(`Agent last checked in ${setupAgo(s.agent_seen_at)}.`);
+            agentLines.push(s.last_dump ? `Last lists received ${setupAgo(s.last_dump.at)}.${dumpFresh ? '' : ' <span style="color:var(--warning)">That is over 12 hours old. Is the agent still installed?</span>'}` : 'No lists received yet.');
+            if (ar && ar.old_cron) agentLines.push('<span style="color:var(--warning)">When this was installed, that host also had older cron lines that run the dump. Remove them with crontab -e. This note clears by itself within a minute after that.</span>');
+            document.getElementById('setupAgentStatus').innerHTML = agentLines.join('<br>');
+
+            // Step 3: one block of steps and one status per machine
+            const machines = a.machines || [];
+            setupCards().forEach(card => {
+                const m = machines.find(x => x.id === card.dataset.mid);
+                const st = setupMachineState(card.dataset.mid);
+                const out = card.querySelector('.setup-machine-out');
+                const status = card.querySelector('.setup-machine-status');
+                const light = card.querySelector('.setup-light');
+                if (!s.saved || !m || !st.command) {
+                    out.innerHTML = '<div class="conn-note">Save to get the steps for this machine.</div>';
+                    status.innerHTML = '';
+                    light.className = 'setup-light';
+                    return;
+                }
+                const ma = { ...m, bridge_url: a.bridge_url };
+                const where = setupServerList(m.servers);
+                if (m.os === 'linux') {
+                    let html = `<div class="conn-note">Paste this on the machine where ${where} ${m.servers.length > 1 ? 'run' : 'runs'}. If it runs in a Proxmox LXC, paste it inside the LXC. It installs rclone, mounts the bridge's folders, and checks that ${SETUP_SERVER_NAMES[m.servers[0]] || 'the media server'} can read them. A folder that is already mounted and working is left as it is.</div>` + setupCmdBlock(st.command);
+                    if (m.docker) html += `<div class="conn-note">Then give the <b>${escapeHtml(m.container || 'media server')}</b> container these volume lines and recreate it. Mount first, then recreate, or the container sees an empty folder.</div>` + setupPre(setupDockerLines(ma));
+                    out.innerHTML = html;
+                } else {
+                    out.innerHTML = setupManualSteps(ma);
+                }
+                if (setupFormDirty) out.innerHTML = '<div class="conn-note" style="color:var(--warning)">You changed an answer. Save to update the steps below.</div>' + out.innerHTML;
+                const mr = st.report;
+                light.className = 'setup-light' + (mr ? (mr.ok ? ' ok' : ' bad') : '');
+                if (mr) {
+                    const mounts = (mr.mounts || []).map(x =>
+                        `<code>${escapeHtml(x.path)}</code>: ${x.readable ? `<span style="color:var(--success)">readable</span>, ${x.items} item${x.items === 1 ? '' : 's'}` : '<span style="color:var(--danger)">not readable</span>'}`).join('<br>');
+                    status.innerHTML =
+                        `Ran on <b>${escapeHtml(mr.hostname || mr.from || '?')}</b> ${setupAgo(mr.received_at)}: ${mr.ok ? '<span style="color:var(--success)">worked</span>' : '<span style="color:var(--danger)">something failed, see the command output</span>'}.` +
+                        (mr.read_as ? ` Checked as user <b>${escapeHtml(mr.read_as)}</b>.` : '') + (mounts ? '<br>' + mounts : '') +
+                        (m.docker && !mr.docker_ok ? '<br><span style="color:var(--warning)">The container can\'t see the folders yet. Add the volume lines and recreate it.</span>' : '');
+                } else {
+                    status.innerHTML = m.os === 'linux' ? 'Waiting for the command to report back.' : '';
+                }
+            });
+            // Machines without Linux have no command, so only the ones with one need a report.
+            const reports = machines.map(m => setupMachineState(m.id).report);
+            const mediaBad = reports.some(r => r && !r.ok);
+            const mediaOk = s.saved && machines.length > 0 && machines.every((m, i) => m.os !== 'linux' || (reports[i] && reports[i].ok));
+            setLight(3, mediaBad ? 'bad' : (mediaOk ? 'ok' : ''));
+
+            // Step 4: libraries
+            const named = m => `<b>${escapeHtml(setupMachineState(m.id).name || '')}</b>`;
+            const onMachine = (m, server) => (setupMachineState(m.id).name || '').toLowerCase() === server ? '' : ` on ${named(m)}`;
+            const plexM = machines.find(m => m.servers.includes('plex'));
+            let lib = '';
+            if (plexM && plexM.want_movies) {
+                if (s.plex.movie_library_id) {
+                    lib += `<p class="conn-note" style="margin-top:0;">Plex movie library: ID <b>${escapeHtml(String(s.plex.movie_library_id))}</b>. Change it in Settings → Plex.</p>`;
+                } else if (!s.plex.configured) {
+                    lib += `<p class="conn-note" style="margin-top:0;">Add the Plex URL and token first. <button class="btn btn-outline" style="margin-left:0.4rem;" onclick="switchTab('settings');showSettingsSection('plex')">Open Settings → Plex</button></p>`;
+                } else {
+                    lib += `<p class="conn-note" style="margin-top:0;">Create a Plex movie library at <code>${escapeHtml(plexM.movie_mount)}</code> on ${named(plexM)}. The bridge turns off preview thumbnails and credits detection for it, because each of those passes opens a stream.</p>
+                        <div class="conn-fields"><label class="conn-field"><span>Library name</span><input id="setupMovieLibName" value="Bridge Movies"></label></div>
+                        <div class="settings-actions"><button class="btn btn-primary" onclick="createSetupMovieLibrary(this)">Create Plex movie library</button><span class="settings-msg" id="setupLibMsg"></span></div>`;
+                }
+            }
+            if (plexM && plexM.want_series) lib += `<p class="conn-note">Series: the bridge makes one Plex TV library per series category when you activate episodes on the Series tab.</p>`;
+            if (plexM) lib += `<p class="conn-note">In Plex, open <b>Settings → Library</b> and set <b>Generate video preview thumbnails</b>, <b>intro markers</b>, <b>credits markers</b> and <b>chapter thumbnails</b> to <b>never</b>.</p>`;
+            machines.forEach(m => {
+                const folders = (m.want_movies ? ` For movies, pick <b>Movies</b> and the folder <code>${escapeHtml(m.movie_mount)}</code>.` : '') +
+                    (m.want_series ? ` For series, pick <b>Shows</b> and <code>${escapeHtml(m.series_mount)}</code>.` : '');
+                if (m.servers.includes('jellyfin')) lib += `<p class="conn-note"><b>Jellyfin</b>${onMachine(m, 'jellyfin')}: open <b>Dashboard → Libraries → Add Media Library</b>.${folders} Untick <b>Enable trickplay image extraction</b> and <b>Extract chapter images</b>, then click OK.</p>`;
+                if (m.servers.includes('emby')) lib += `<p class="conn-note"><b>Emby</b>${onMachine(m, 'emby')}: open <b>Settings → Library → New Library</b>.${folders.replace('<b>Shows</b>', '<b>TV shows</b>')} Turn off <b>thumbnail image extraction</b> and <b>chapter image extraction</b>, then click OK.</p>`;
+            });
+            if (!lib) lib = '<p class="conn-note" style="margin-top:0;">Add a media server machine in step 3 first.</p>';
+            document.getElementById('setupLibraries').innerHTML = lib;
+            const libOk = machines.length > 0 && (!(plexM && plexM.want_movies) || !!s.plex.movie_library_id);
+            setLight(4, s.saved && libOk ? 'ok' : '');
+
+            // Step 5: done
+            const allOk = s.saved && dumpFresh && mediaOk && libOk;
+            setLight(5, allOk ? 'ok' : '');
+            const allServers = SETUP_SERVERS.filter(k => machines.some(m => m.servers.includes(k)));
+            let done = allOk
+                ? '<p class="conn-note" style="margin-top:0;color:var(--success);font-weight:600;">Setup is complete.</p>'
+                : '<p class="conn-note" style="margin-top:0;">This turns green when the steps above are green.</p>';
+            done += `<ul class="setup-steps">
+                <li>Activate movies on the <b>Movies</b> tab. They show up in ${setupServerList(allServers)} within about a minute.</li>
+                <li>The 6:00 AM Daily Run asks the Dispatcharr agent for fresh lists. There's nothing to run by hand.</li>
+                <li>If you change an answer here, run that machine's command again. It updates what's there.</li></ul>`;
+            machines.forEach(m => {
+                const st = setupMachineState(m.id);
+                const mr = st.report;
+                if (st.rclone_manager_url) {
+                    // The default password only applies when this setup installed it.
+                    done += `<p class="conn-note">Rclone Manager is running on <b>${escapeHtml(st.name)}</b>. Its link is under
+                        <a href="#" onclick="switchTab('rclone');return false;" style="color:var(--accent);">Maintenance → Rclone</a>.
+                        ${m.rclone_manager ? 'Sign in as <b>admin</b> with <b>ChangeMeNow!</b> and change that password right away.' : ''}</p>`;
+                } else if (m.os === 'linux' && mr) {
+                    const units = (mr.mounts || []).map(x => x.unit).filter(Boolean).join(' ');
+                    if (units) done += `<p class="conn-note">To check or restart the mounts on <b>${escapeHtml(st.name)}</b>:</p>` + setupPre(`systemctl status ${units}\nsystemctl restart ${units}`);
+                }
+            });
+            document.getElementById('setupDone').innerHTML = done;
+            applySetupCollapse();
+        }
+
+        async function createSetupMovieLibrary(btn) {
+            const msg = document.getElementById('setupLibMsg');
+            btn.disabled = true;
+            msg.textContent = 'Creating...';
+            msg.style.color = 'var(--text-secondary)';
+            const r = await fetchJSON('/api/setup/plex-movie-library', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: document.getElementById('setupMovieLibName').value }),
+            });
+            btn.disabled = false;
+            if (r.error) {
+                msg.textContent = r.error;
+                msg.style.color = 'var(--danger)';
+                return;
+            }
+            loadSetup(false);
+        }
+
+        // Health tab: each machine's mount status and Rclone Manager link, once it has reported.
+        async function loadHealthSetupLinks() {
+            const el = document.getElementById('healthSetupLinks');
+            const s = await fetchJSON('/api/setup/state');
+            if (s && !s.error) showRcloneSubBtn(s);
+            const reported = s && !s.error ? (s.machines || []).filter(m => m.report) : [];
+            el.innerHTML = reported.map(m => {
+                const mr = m.report;
+                return `${escapeHtml(m.name)} mounts (${escapeHtml(mr.hostname || mr.from || '?')}, checked ${setupAgo(mr.received_at)}): ` +
+                    (mr.ok ? '<span style="color:var(--success)">OK</span>' : '<span style="color:var(--danger)">problem, see Settings → Setup</span>') +
+                    (m.rclone_manager_url ? ` · <a href="${escapeHtml(m.rclone_manager_url)}" target="_blank" rel="noopener" style="color:var(--accent);">Open Rclone Manager</a>` : '');
+            }).join('<br>');
+        }
+
+        // First sign-in: open Setup until something is configured, unless the user skipped it.
+        async function setupAutoOpen() {
+            const s = await fetchJSON('/api/setup/state');
+            if (!s.error) showRcloneSubBtn(s);
+            try { if (localStorage.getItem('setupSkipped') === '1') return; } catch (e) {}
+            if (s.error || s.saved || s.plex.movie_library_id) return;
+            if (document.querySelector('.tab-btn.active[data-tab="browse"]')) switchTab('setup');
         }
 
         // --- Status ---
@@ -4034,6 +4723,8 @@
                 return;
             }
             settingsData = data;
+            // Setup doesn't use the settings data, and it's already showing (or about to).
+            if (settingsSection === 'setup') { if (!setupTimer) showSettingsSection('setup'); return; }
             showSettingsSection(settingsSection);
         }
 
@@ -4058,11 +4749,20 @@
         }
 
         function showSettingsSection(sec) {
-            if (!SETTINGS_SECTIONS[sec]) sec = 'dispatcharr';
+            if (sec !== 'setup' && !SETTINGS_SECTIONS[sec]) sec = 'dispatcharr';
             settingsSection = sec;
             try { localStorage.setItem('settingsSection', sec); } catch (e) {}
             settingsReset.clear();
             document.querySelectorAll('#settingsSide button').forEach(b => b.classList.toggle('active', b.dataset.sec === sec));
+            const isSetup = sec === 'setup';
+            document.querySelector('.settings-main').style.display = isSetup ? 'none' : '';
+            document.getElementById('setupPane').style.display = isSetup ? '' : 'none';
+            stopSetupTimer();
+            if (isSetup) {
+                loadSetup(true);
+                setupTimer = setInterval(() => loadSetup(false), 5000);
+                return;
+            }
             const def = SETTINGS_SECTIONS[sec];
             const vals = settingsData?.[sec] || {};
             document.getElementById('setTitle').innerHTML = escapeHtml(def.title)
@@ -4782,6 +5482,7 @@
         refreshStreamBadge();
         setInterval(refreshStreamBadge, 10000);
         loadMovies(1);
+        setupAutoOpen();
     </script>
 </body>
 </html>

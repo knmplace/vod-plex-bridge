@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 500" width="1040" height="500" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#374151"/>
+    </marker>
+  </defs>
+  <rect width="1040" height="500" fill="#ffffff"/>
+
+  <!-- First run -->
+  <text x="40" y="44" font-size="20" font-weight="700" fill="#111827">First run</text>
+  <text x="150" y="44" font-size="14" fill="#6b7280">once, about 15 minutes</text>
+
+  <g font-size="14" fill="#111827">
+    <rect x="40" y="66" width="420" height="58" rx="8" fill="#f0fdf4" stroke="#16a34a"/>
+    <circle cx="70" cy="95" r="15" fill="#16a34a"/><text x="70" y="100" text-anchor="middle" fill="#fff" font-weight="700">1</text>
+    <text x="96" y="91" font-weight="600">Start the bridge</text>
+    <text x="96" y="111" fill="#4b5563" font-size="13">docker compose up -d on the bridge host</text>
+
+    <rect x="40" y="138" width="420" height="58" rx="8" fill="#f0fdf4" stroke="#16a34a"/>
+    <circle cx="70" cy="167" r="15" fill="#16a34a"/><text x="70" y="172" text-anchor="middle" fill="#fff" font-weight="700">2</text>
+    <text x="96" y="163" font-weight="600">Sign in and open the Setup tab</text>
+    <text x="96" y="183" fill="#4b5563" font-size="13">Create the admin account, save the bridge address</text>
+
+    <rect x="40" y="210" width="420" height="58" rx="8" fill="#eff6ff" stroke="#2563eb"/>
+    <circle cx="70" cy="239" r="15" fill="#2563eb"/><text x="70" y="244" text-anchor="middle" fill="#fff" font-weight="700">3</text>
+    <text x="96" y="235" font-weight="600">Paste Command A on the Dispatcharr host</text>
+    <text x="96" y="255" fill="#4b5563" font-size="13">Sends the movie and series lists to the bridge</text>
+
+    <rect x="40" y="282" width="420" height="58" rx="8" fill="#faf5ff" stroke="#9333ea"/>
+    <circle cx="70" cy="311" r="15" fill="#9333ea"/><text x="70" y="316" text-anchor="middle" fill="#fff" font-weight="700">4</text>
+    <text x="96" y="307" font-weight="600">Paste Command B on each Plex / Jellyfin host</text>
+    <text x="96" y="327" fill="#4b5563" font-size="13">Tick Rclone Manager first if you want it</text>
+
+    <rect x="40" y="354" width="420" height="58" rx="8" fill="#faf5ff" stroke="#9333ea"/>
+    <circle cx="70" cy="383" r="15" fill="#9333ea"/><text x="70" y="388" text-anchor="middle" fill="#fff" font-weight="700">5</text>
+    <text x="96" y="379" font-weight="600">Create the libraries</text>
+    <text x="96" y="399" fill="#4b5563" font-size="13">Plex: one click. Jellyfin: Add Media Library.</text>
+  </g>
+  <text x="40" y="444" font-size="13" fill="#6b7280">Every light on the Setup tab turns green as each step reports back.</text>
+
+  <!-- Divider and hand-off -->
+  <line x1="520" y1="40" x2="520" y2="460" stroke="#d1d5db" stroke-width="2" stroke-dasharray="6 6"/>
+  <line x1="470" y1="240" x2="568" y2="240" stroke="#374151" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Every day -->
+  <text x="580" y="44" font-size="20" font-weight="700" fill="#111827">Every day</text>
+  <text x="690" y="44" font-size="14" fill="#6b7280">nothing to run by hand</text>
+
+  <g font-size="14" fill="#111827">
+    <rect x="580" y="80" width="200" height="110" rx="10" fill="#f0fdf4" stroke="#16a34a"/>
+    <text x="680" y="112" text-anchor="middle" font-weight="600">Activate</text>
+    <text x="680" y="134" text-anchor="middle" font-size="13" fill="#4b5563">movies or episodes on</text>
+    <text x="680" y="152" text-anchor="middle" font-size="13" fill="#4b5563">the Movies / Series tabs</text>
+
+    <rect x="820" y="80" width="200" height="110" rx="10" fill="#faf5ff" stroke="#9333ea"/>
+    <text x="920" y="112" text-anchor="middle" font-weight="600">Appears in Plex</text>
+    <text x="920" y="134" text-anchor="middle" font-size="13" fill="#4b5563">and Jellyfin within</text>
+    <text x="920" y="152" text-anchor="middle" font-size="13" fill="#4b5563">about a minute</text>
+
+    <rect x="820" y="290" width="200" height="110" rx="10" fill="#faf5ff" stroke="#9333ea"/>
+    <text x="920" y="322" text-anchor="middle" font-weight="600">Watch</text>
+    <text x="920" y="344" text-anchor="middle" font-size="13" fill="#4b5563">the bridge streams it</text>
+    <text x="920" y="362" text-anchor="middle" font-size="13" fill="#4b5563">through Dispatcharr</text>
+
+    <rect x="580" y="290" width="200" height="110" rx="10" fill="#eff6ff" stroke="#2563eb"/>
+    <text x="680" y="322" text-anchor="middle" font-weight="600">6:00 AM Daily Run</text>
+    <text x="680" y="344" text-anchor="middle" font-size="13" fill="#4b5563">the agent sends fresh</text>
+    <text x="680" y="362" text-anchor="middle" font-size="13" fill="#4b5563">lists; catalog updates</text>
+  </g>
+  <line x1="784" y1="135" x2="816" y2="135" stroke="#374151" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="920" y1="194" x2="920" y2="286" stroke="#374151" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="816" y1="345" x2="784" y2="345" stroke="#374151" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="680" y1="286" x2="680" y2="194" stroke="#374151" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="800" y="444" text-anchor="middle" font-size="13" fill="#6b7280">A new series category gets its own Plex TV library automatically.</text>
+</svg>

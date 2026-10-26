@@ -29,6 +29,40 @@ The three minor bumps each mark a major feature:
 
 ---
 
+## [0.40.0] — 2026-10-25
+
+### Added
+- **Setup tab.** A five-step guide that opens on first sign-in: bridge address, Dispatcharr host, media server machines, libraries, done. Each step has a light that turns green when the bridge confirms it worked.
+- **Command A for the Dispatcharr host.** One pasted command installs a small agent with `/etc/cron.d/vod-plex-bridge`. The agent makes the mapping files and uploads them to the bridge.
+  - It checks every minute whether the Daily Run or **Run Now** wants fresh files, and sends them every 12 hours anyway.
+  - It no longer matters whether the bridge's data folder is on the Dispatcharr host. The old `.dump-trigger` file and hand-made cron lines still work.
+- **Command B for each Plex/Jellyfin machine.** One pasted command per machine card does the rclone setup that used to be done by hand. It:
+  - installs rclone and FUSE,
+  - adds the `vodbridge-movies` and `vodbridge-series` remotes,
+  - starts `rclone-vod-bridge-movies.service` and `rclone-vod-bridge-series.service`,
+  - checks the mounts as the Plex/Jellyfin user and reports back.
+  - Notes:
+    - Working older mounts are left alone.
+    - In a Proxmox LXC without FUSE, it says how to turn FUSE on.
+    - Safe to run again.
+- **Optional Rclone Manager** per machine, installed by Command B when ticked on the card first. A new **Maintenance → Rclone** sub-tab and the Health tab link to it.
+- **Create Plex movie library** in Setup step 4. It makes the Movies library at the movie folder and saves its ID in Settings.
+- **Filled-in manual steps** for Unraid, Windows, macOS and NAS media machines, and for Plex/Jellyfin in Docker. They are marked untested.
+- **Private setup link.** The commands contain a link that can be replaced from the Setup tab; old commands then stop working.
+- Screenshots and diagrams in the docs.
+
+### Changed
+- **INSTALL.md rewritten** around the Setup tab, with step-by-step Plex and Jellyfin library instructions and troubleshooting. The README quick start and the User Guide follow it.
+- **Docs now say plainly that the bridge is for a few titles at a time** (2–3 movies, or one season of 10–15 episodes), and that every activation and every Plex/Jellyfin scan of a new title uses a Dispatcharr connection slot. Redirect mode is marked "use with caution", with a VPN on the Plex/Jellyfin machine recommended.
+- **The compose example uses the published image** (`ghcr.io/knmplace/vod-plex-bridge`) instead of building from a clone.
+- Mount roots in Settings can be Windows drive paths (for example `V:\`).
+- Deleting a Plex library waits up to 60 seconds, since Plex can be slow to drop one.
+
+### Removed
+- The "rclone must be set up by hand" requirement. A manual setup is still described in INSTALL.md for anyone who'd rather not paste a command.
+
+---
+
 ## [0.39.0] — 2026-10-25
 
 ### Added

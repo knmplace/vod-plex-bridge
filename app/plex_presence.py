@@ -10,6 +10,7 @@ import httpx
 from config import PLEX_URL, PLEX_TOKEN, PLEX_MOVIE_MOUNT_ROOT, PLEX_SERIES_MOUNT_ROOT
 from database import get_db
 from generator import parse_title
+from plex_libraries import join_mount
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,11 @@ def _headers() -> dict:
     # Built per call so a token saved in Settings applies without a restart.
     return {"X-Plex-Token": PLEX_TOKEN, "Accept": "application/json"}
 _PAGE = 1000
-# Files the bridge itself serves to Plex; those titles already show as ACTIVE.
-_BRIDGE_ROOTS = tuple(r + "/" for r in (PLEX_MOVIE_MOUNT_ROOT, PLEX_SERIES_MOUNT_ROOT) if r)
+def _bridge_roots() -> tuple:
+    """Folders the bridge itself serves to Plex; those titles already show as ACTIVE."""
+    return tuple(join_mount(r, "") for r in (PLEX_MOVIE_MOUNT_ROOT, PLEX_SERIES_MOUNT_ROOT) if r)
+
+
 _lock = asyncio.Lock()
 
 
@@ -52,7 +56,8 @@ def _guids(md: dict) -> dict:
 
 def _from_bridge(md: dict) -> bool:
     files = [p.get("file", "") for m in md.get("Media", []) or [] for p in m.get("Part", []) or []]
-    return bool(files) and all(f.startswith(_BRIDGE_ROOTS) for f in files)
+    roots = _bridge_roots()
+    return bool(files) and all(f.startswith(roots) for f in files)
 
 
 class _Index:

@@ -12,29 +12,47 @@ def _headers() -> dict:
     return {"X-Plex-Token": PLEX_TOKEN, "Accept": "application/json"}
 SHOW_AGENT = "tv.plex.agents.series"
 SHOW_SCANNER = "Plex TV Series"
+MOVIE_AGENT = "tv.plex.agents.movie"
+MOVIE_SCANNER = "Plex Movie"
+_KINDS = {"show": (SHOW_AGENT, SHOW_SCANNER), "movie": (MOVIE_AGENT, MOVIE_SCANNER)}
 
 
 def configured() -> bool:
     return bool(PLEX_URL and PLEX_TOKEN)
 
 
+def is_windows_path(root: str) -> bool:
+    return "\\" in root or (len(root) >= 2 and root[1] == ":")
+
+
+def join_mount(root: str, name: str) -> str:
+    """A folder under a mount root, as the Plex host spells it (V:\\Show on Windows)."""
+    sep = "\\" if is_windows_path(root) else "/"
+    return f"{root.rstrip(sep)}{sep}{name}"
+
+
 def category_location(strm_folder: str) -> str:
-    return f"{PLEX_SERIES_MOUNT_ROOT}/{strm_folder}"
+    return join_mount(PLEX_SERIES_MOUNT_ROOT, strm_folder)
 
 
 async def list_show_sections() -> list[dict]:
+    return await list_sections("show")
+
+
+async def list_sections(kind: str) -> list[dict]:
+    agent, scanner = _KINDS[kind]
     async with httpx.AsyncClient(timeout=10, headers=_headers()) as client:
         resp = await client.get(f"{PLEX_URL}/library/sections")
         resp.raise_for_status()
     sections = []
     for d in resp.json().get("MediaContainer", {}).get("Directory", []):
-        if d.get("type") != "show":
+        if d.get("type") != kind:
             continue
         sections.append({
             "id": int(d["key"]),
             "title": d.get("title", ""),
-            "agent": d.get("agent", SHOW_AGENT),
-            "scanner": d.get("scanner", SHOW_SCANNER),
+            "agent": d.get("agent", agent),
+            "scanner": d.get("scanner", scanner),
             "language": d.get("language", "en-US"),
             "locations": [loc["path"] for loc in d.get("Location", [])],
         })
@@ -94,11 +112,13 @@ async def remove_location(section_id: int, path: str, delete_if_empty: bool = Fa
     logger.info("Plex: removed %s from library %s (%s)", path, section_id, section["title"])
 
 
-async def create_section(name: str, path: str) -> int:
+async def create_section(name: str, path: str, kind: str = "show", prefs: dict | None = None) -> int:
+    agent, scanner = _KINDS[kind]
     params = [
-        ("name", name), ("type", "show"), ("agent", SHOW_AGENT),
-        ("scanner", SHOW_SCANNER), ("language", "en-US"), ("location", path),
+        ("name", name), ("type", kind), ("agent", agent),
+        ("scanner", scanner), ("language", "en-US"), ("location", path),
     ]
+    params += [(f"prefs[{k}]", v) for k, v in (prefs or {}).items()]
     dirs = []
     try:
         async with httpx.AsyncClient(timeout=60, headers=_headers()) as client:
@@ -112,7 +132,7 @@ async def create_section(name: str, path: str) -> int:
         section_id = int(dirs[0]["key"])
     else:
         # Empty body or slow reply; find the new library by its folder.
-        match = [s for s in await list_show_sections() if path in s["locations"]]
+        match = [s for s in await list_sections(kind) if path in s["locations"]]
         if not match:
             raise RuntimeError("Plex created the library but it could not be found")
         section_id = match[0]["id"]
@@ -121,7 +141,8 @@ async def create_section(name: str, path: str) -> int:
 
 
 async def delete_section(section_id: int):
-    async with httpx.AsyncClient(timeout=15, headers=_headers()) as client:
+    # Plex can take well over 15s to drop a library (seen live), like it does to create one.
+    async with httpx.AsyncClient(timeout=60, headers=_headers()) as client:
         resp = await client.delete(f"{PLEX_URL}/library/sections/{section_id}")
         resp.raise_for_status()
     logger.info("Plex: deleted library %s", section_id)
