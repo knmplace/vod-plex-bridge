@@ -1075,8 +1075,8 @@
             <span class="label">STRM</span>
         </div>
         <button class="btn btn-outline" disabled style="opacity:0.5;cursor:not-allowed;" title="Disabled pending redesign">Scan Dead</button>
-        <button class="btn btn-danger" onclick="clearCatalog()">Clear Catalog</button>
-        <button class="btn btn-danger" onclick="clearStrm()">Clear STRMs</button>
+        <button class="btn btn-danger catalog-only" onclick="clearCatalog()" style="display:none;">Clear Catalog</button>
+        <button class="btn btn-danger catalog-only" onclick="clearStrm()" style="display:none;">Clear STRMs</button>
         </div>
         <div id="seriesStats" style="display:none;">
         <div class="stat-inline">
@@ -2276,6 +2276,7 @@
             document.querySelectorAll('.sub-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.sub === tab));
             document.getElementById('movieStats').style.display = tab === 'series' ? 'none' : 'contents';
             document.getElementById('seriesStats').style.display = tab === 'series' ? 'contents' : 'none';
+            document.querySelectorAll('.catalog-only').forEach(b => b.style.display = tab === 'catalog' ? '' : 'none');
             if (tab === 'catalog') {
                 document.getElementById('tabCatalog').classList.add('active');
                 loadCatalogSummary();
