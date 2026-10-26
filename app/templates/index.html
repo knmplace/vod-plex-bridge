@@ -291,12 +291,14 @@
             transform: rotate(-90deg);
         }
         .panel.collapsed .panel-body,
-        .panel.collapsed .panel-footer {
-            display: none;
+        .panel.collapsed .panel-footer,
+        .panel.collapsed > :not(.panel-header) {
+            display: none !important;
         }
         .panel.collapsed .panel-header {
             border-bottom: none;
         }
+        .panel.collapsed { align-self: start; }
 
         .panel-body { padding: 0.5rem; }
 
@@ -1339,7 +1341,7 @@
                         <button class="btn" style="font-size:0.78rem;padding:0.25rem 0.6rem;" title="Re-add every category folder to its Plex library" onclick="syncSeriesCategoriesToPlex()">Sync Plex Folders</button>
                     </div>
                     <table class="summary-table compact" id="seriesCategoryTable">
-                        <thead><tr><th>Name</th><th>STRM Folder</th><th>Plex Library</th><th style="text-align:right">Series</th><th style="text-align:right">Active</th><th></th></tr></thead>
+                        <thead><tr><th>Name</th><th>STRM Folder</th><th>Plex Library</th><th style="text-align:right" title="Shows in this category with at least one episode activated">Active Shows</th><th style="text-align:right" title="Episodes activated across all shows in this category">Active Episodes</th><th></th></tr></thead>
                         <tbody id="seriesCategoryBody"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
                     </table>
                 </div>
@@ -1969,17 +1971,56 @@
         };
 
         // --- Collapsible Panels ---
+        // Sections start collapsed; each browser remembers what was opened.
+        function panelState(key, value) {
+            try {
+                if (value === undefined) return localStorage.getItem('panel_' + key);
+                localStorage.setItem('panel_' + key, value);
+            } catch (e) { return null; }
+        }
         function togglePanel(panelId) {
             const panel = document.getElementById(panelId);
             panel.classList.toggle('collapsed');
-            localStorage.setItem('panel_' + panelId, panel.classList.contains('collapsed') ? '1' : '0');
+            panelState(panelId, panel.classList.contains('collapsed') ? '1' : '0');
         }
-        ['providerPanel', 'categoryPanel'].forEach(id => {
-            if (localStorage.getItem('panel_' + id) === '1') {
-                const el = document.getElementById(id);
-                if (el) el.classList.add('collapsed');
-            }
-        });
+        function initCollapsiblePanels() {
+            // Tabs with a single main panel, Settings panes and Setup steps keep their own layout.
+            const skip = '#tabBrowse, #tabSeries > .browse-section > .panel:not(#seriesCategoryPanel), #tabDead, #tabSettings, #tabAccount';
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                const all = [...tab.querySelectorAll('.panel')].filter(p => p.querySelector(':scope > .panel-header'));
+                if (all.length < 2) return;
+                const panels = all.filter(p => !p.closest(skip));
+                panels.forEach((panel, i) => {
+                    const head = panel.querySelector(':scope > .panel-header');
+                    if (!panel.id) {
+                        const first = [...head.childNodes].find(c => c.textContent.trim());
+                        const label = first ? first.textContent.trim() : '';
+                        panel.id = tab.id + '_' + (label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || i);
+                    }
+                    if (!head.classList.contains('collapsible')) {
+                        head.classList.add('collapsible');
+                        const arrow = document.createElement('span');
+                        arrow.className = 'collapse-arrow';
+                        arrow.innerHTML = '&#9660;';
+                        // Keep the arrow and the title together as one flex item.
+                        let title = [...head.childNodes].find(c => c.nodeType === 1 || c.textContent.trim());
+                        if (!title || title.nodeType !== 1 || title.tagName !== 'SPAN') {
+                            const wrap = document.createElement('span');
+                            if (title) head.insertBefore(wrap, title), wrap.appendChild(title);
+                            else head.appendChild(wrap);
+                            title = wrap;
+                        }
+                        title.insertBefore(arrow, title.firstChild);
+                        head.addEventListener('click', e => {
+                            if (e.target.closest('button, input, select, a, label, textarea')) return;
+                            togglePanel(panel.id);
+                        });
+                    }
+                    panel.classList.toggle('collapsed', panelState(panel.id) !== '0');
+                });
+            });
+        }
+        initCollapsiblePanels();
 
         // --- Tabs ---
         let logRefreshTimer = null;
@@ -3527,8 +3568,8 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                         <td>${(c.name||'').replace(/</g,'&lt;')}</td>
                         <td>${(c.strm_folder||'').replace(/</g,'&lt;')}</td>
                         <td>${plexLibraryLabel(c.plex_library_section)}</td>
-                        <td style="text-align:right">${c.series_count || 0}</td>
-                        <td style="text-align:right">${c.active_series_count || 0}</td>
+                        <td style="text-align:right">${(c.active_series_count || 0).toLocaleString()}</td>
+                        <td style="text-align:right">${(c.active_episode_count || 0).toLocaleString()}</td>
                         <td style="text-align:right">
                             <button class="btn btn-danger" style="padding:0.15rem 0.5rem;font-size:0.74rem;" onclick="event.stopPropagation();deleteSeriesCategory(${c.id})">Delete</button>
                         </td>
