@@ -42,7 +42,7 @@ The three minor bumps each mark a major feature:
 - The series category table shows **Active Shows** and **Active Episodes** instead of the total series count.
 
 ### Upgrade notes
-- **Run Command B again** on each Plex/Jellyfin machine (Setup tab). It adds the third rclone mount, `/mnt/vod-bridge-movies`, that category libraries point at. Existing mounts are left as they are.
+- **Run Command B again** on each Plex/Jellyfin machine (Setup tab). It adds the third rclone mount, `/mnt/vod-bridge-movies`, that category libraries point at. Existing mounts are left as they are. If Plex or Jellyfin runs in Docker, also add the `/mnt/vod-bridge-movies:/mnt/vod-bridge-movies:ro,rslave` volume line and recreate the container. See "Upgrading from 0.40 or earlier" in INSTALL.md.
 - Movies that were active before the upgrade stay in the Default library. Nothing moves until you use **Move**.
 - Jellyfin libraries for movie categories are still added by hand. Point a Movies library at the category's sub-folder of `/mnt/vod-bridge-movies`.
 
