@@ -363,6 +363,18 @@ of the volume line from step 5 (`/mnt/vod-bridge` with the lines above).
 
    ![Series tab](docs/images/series.png)
 
+4. **Optional: split movies into categories** (for example Kids or 4K, each its own Plex
+   library). Skip this to keep every movie in one library.
+   1. On the **Catalog** tab, open **Movie Categories**. Enter a name (the folder defaults to
+      it), leave **+ Create new Plex library** selected, and pick the provider categories that
+      belong in it (Ctrl/Cmd-click for several). Press **Add Category**.
+   2. The bridge creates a Plex Movies library at `/mnt/vod-bridge-movies/<folder>`. For
+      Jellyfin, add a Movies library at that folder yourself (step 6).
+   3. On the **Movies** tab, activate with the picker on **Auto category**: movies from those
+      provider categories go to the new library, everything else to the Default one. Pick a
+      category by name to send movies there, or use **Move** for movies that are already
+      active. A movie is only ever in one library.
+
 **Setup → 5. Done** turns green when every step above is green.
 
 ![Step 5, Done](docs/images/setup-done.png)
@@ -391,6 +403,19 @@ After setup you don't run anything by hand:
 - **Regenerate** on the Setup tab makes a new private link. Commands you already copied stop
   working, so run Command A on the Dispatcharr machine again afterwards (and Command B, if you
   want to re-run it later).
+
+## Upgrading from 0.40 or earlier
+
+1. Pull the new image and redeploy the bridge. The database updates itself on start.
+2. **Run Command B again** on every Plex/Jellyfin machine (Setup tab). It adds the third
+   mount, `/mnt/vod-bridge-movies`, for movie categories, and leaves your existing mounts as
+   they are. Plex or Jellyfin in Docker: also add the
+   `/mnt/vod-bridge-movies:/mnt/vod-bridge-movies:ro,rslave` volume line and recreate the
+   container.
+3. Your active movies stay in the Default library. Add movie categories when you want them
+   (step 7.4) and use **Move** to put existing movies in them.
+
+---
 
 ## Prefer to see a script before you run it?
 
@@ -594,6 +619,14 @@ from the Dispatcharr container directly.
   tab.
 - It stops after about 10 minutes: Dispatcharr's nginx `/proxy/` location needs
   `uwsgi_buffering off` and `uwsgi_read_timeout 300s`.
+
+**A movie category library is empty**
+- `ls /mnt/vod-bridge-movies/<folder>` on the media machine. If `/mnt/vod-bridge-movies` is
+  missing, run Command B again; it adds the `rclone-vod-bridge-movies-cat` service.
+- From the media machine, `curl -I http://BRIDGE_IP:8585/vod-movies/` must answer `200`. A
+  redirect to `/login` means the bridge is older than 0.41.0; update it.
+- The movie was activated into another category or the Default library. Its card shows where
+  it is; use **Move**.
 
 **Mounts after a reboot**
 - `systemctl status rclone-vod-bridge-movies`. If the bridge was down when the machine booted,

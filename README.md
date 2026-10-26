@@ -168,7 +168,8 @@ See **[INSTALL.md](INSTALL.md)** for the full step-by-step guide with explanatio
 2. **Sign in.** Open `http://BRIDGE_IP:8585`. The first visit creates your admin account and opens the **Setup** tab. Fill in **Settings** for Dispatcharr, Plex and TMDB.
 3. **Paste Command A on the Dispatcharr host.** The Setup tab shows it with a copy button. It installs a small agent that sends the movie and series lists to the bridge and refreshes them every day.
 4. **Paste Command B on each Plex or Jellyfin host.** It installs rclone and FUSE, mounts `/mnt/vod-bridge`, `/mnt/vod-bridge-movies` (movie categories) and `/mnt/vod-bridge-series`, and checks that Plex or Jellyfin can read them. If you want the Rclone Manager web UI, tick it on that machine's card *before* you run the command.
-5. **Create the libraries.** For Plex, one click on the Setup tab. For Jellyfin, add two libraries by hand; [INSTALL.md](INSTALL.md) has the exact steps.
+5. **Create the libraries.** For Plex, one click on the Setup tab. For Jellyfin, add two libraries by hand (plus one per movie category); [INSTALL.md](INSTALL.md) has the exact steps.
+6. **Optional: movie categories.** On the Catalog tab, add a category in **Movie Categories** and the bridge creates its own Plex library. Activate with **Auto category** and movies from its provider categories land there. Upgrading from 0.40? Run Command B again for the new mount ([INSTALL.md](INSTALL.md#upgrading-from-040-or-earlier)).
 6. **Pick categories** in the Catalog tab, then activate titles on the Movies and Series tabs.
 
 Each step on the Setup tab turns green once the bridge confirms it worked. Platforms without systemd (Unraid, Windows, macOS, NAS) have manual steps in [INSTALL.md](INSTALL.md).
