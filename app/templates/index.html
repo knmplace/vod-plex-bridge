@@ -14,6 +14,7 @@
 <meta name="theme-color" content="#0a0e17">
     <style>
         :root {
+            --z: 1; /* page zoom from applyDisplaySize(); viewport units below divide by it */
             --bg-primary: #0a0e17;
             --bg-secondary: #111827;
             --bg-card: #1a2236;
@@ -36,7 +37,7 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
-            min-height: 100vh;
+            min-height: calc(100vh / var(--z));
         }
 
         .header {
@@ -657,8 +658,8 @@
             z-index: 10001;
         }
         .trailer-modal iframe {
-            width: 80vw;
-            height: 45vw;
+            width: calc(80vw / var(--z));
+            height: calc(45vw / var(--z));
             max-width: 960px;
             max-height: 540px;
             border: none;
@@ -740,7 +741,7 @@
         .tab-content.active { display: block; }
 
         .log-container {
-            max-height: 75vh;
+            max-height: calc(75vh / var(--z));
             overflow-y: auto;
             font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
             font-size: 0.84rem;
@@ -1011,6 +1012,10 @@
             .summary-grid-3 { grid-template-columns: 1fr; }
             .stream-segments { grid-template-columns: 1fr; }
             .plex-session { grid-template-columns: 1fr; }
+            .header { flex-wrap: wrap; gap: 0.5rem; padding: 0.6rem 1rem; }
+            .header-left { flex-wrap: wrap; gap: 0.5rem; min-width: 0; }
+            .tab-nav { flex-wrap: wrap; }
+            .status-bar { flex-wrap: wrap; gap: 0.5rem; }
         }
     </style>
 </head>
@@ -1374,7 +1379,7 @@
 
     <!-- SERIES DETAIL MODAL -->
     <div class="trailer-modal" id="seriesDetailModal" onclick="closeSeriesDetail(event)">
-        <div onclick="event.stopPropagation()" style="background:var(--bg-panel);border-radius:8px;max-width:900px;width:90%;max-height:85vh;overflow-y:auto;margin:5vh auto;padding:1.25rem;">
+        <div onclick="event.stopPropagation()" style="background:var(--bg-panel);border-radius:8px;max-width:900px;width:90%;max-height:calc(85vh / var(--z));overflow-y:auto;margin:calc(5vh / var(--z)) auto;padding:1.25rem;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
                 <div style="display:flex;align-items:center;gap:0.6rem;min-width:0;">
                     <h2 id="seriesDetailTitle" style="margin:0;font-size:1.1rem;"></h2>
@@ -1436,7 +1441,7 @@
 
     <!-- LOGS TAB -->
     <div class="tab-content" id="tabLogs">
-        <div style="display:flex;gap:1rem;padding-top:1rem;padding-left:1rem;padding-right:1rem;height:calc(100vh - 180px);">
+        <div style="display:flex;gap:1rem;padding-top:1rem;padding-left:1rem;padding-right:1rem;height:calc(100vh / var(--z) - 180px);">
             <!-- Left: Current Activity Log (wider) -->
             <div style="flex:2;display:flex;flex-direction:column;min-width:0;">
                 <div class="panel" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
@@ -1485,7 +1490,7 @@
 
     <!-- Archive Log Modal -->
     <div id="archiveModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;justify-content:center;align-items:center;">
-        <div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;width:80%;max-width:1100px;height:80vh;display:flex;flex-direction:column;">
+        <div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;width:80%;max-width:1100px;height:calc(80vh / var(--z));display:flex;flex-direction:column;">
             <div style="display:flex;justify-content:space-between;align-items:center;padding:0.8rem 1rem;border-bottom:1px solid var(--border);">
                 <span id="archiveModalTitle" style="font-weight:600;color:var(--text-primary);"></span>
                 <button onclick="closeArchiveModal()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.2rem;padding:0.2rem 0.5rem;">&times;</button>
@@ -1707,6 +1712,7 @@
                 <button data-sec="plex" onclick="showSettingsSection('plex')">Plex</button>
                 <button data-sec="tmdb" onclick="showSettingsSection('tmdb')">TMDB</button>
                 <button data-sec="streaming" onclick="showSettingsSection('streaming')">Streaming</button>
+                <button data-sec="display" onclick="showSettingsSection('display')">Display</button>
             </nav>
             <div class="panel settings-main">
                 <div class="panel-header" id="setTitle"></div>
@@ -1783,6 +1789,26 @@
                 </div>
 
                 <p class="conn-note" style="margin:0;">The commands contain a private setup link. If one leaks, <a href="#" onclick="regenerateSetupToken();return false;" style="color:var(--accent);">make a new link</a>. Old commands stop working, and the Dispatcharr command must be run again.</p>
+            </div>
+            <div class="panel" id="displayPane" style="display:none;">
+                <div class="panel-header">Display</div>
+                <div class="panel-body">
+                    <div class="set-field">
+                        <label class="set-label" for="displaySize">Display size</label>
+                        <select id="displaySize" onchange="setDisplaySize(this.value)">
+                            <option value="auto">Auto (fits the screen)</option>
+                            <option value="0.8">80%</option>
+                            <option value="0.9">90%</option>
+                            <option value="1">100%</option>
+                            <option value="1.1">110%</option>
+                            <option value="1.25">125%</option>
+                            <option value="1.5">150%</option>
+                            <option value="1.75">175%</option>
+                            <option value="2">200%</option>
+                        </select>
+                        <div class="set-help">Auto makes the app larger on screens wider than 1920 pixels, so it fills big monitors the same way it fills a normal one. Phones and small screens stay at 100%. This choice is saved in this browser only, so each device can have its own.</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -1865,7 +1891,7 @@
     </div>
 
     <div id="runDetailOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;" onclick="if(event.target===this) closeRunDetail()">
-        <div style="background:var(--bg-card,#161b22);border:1px solid var(--border,#30363d);border-radius:10px;padding:1.5rem;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;">
+        <div style="background:var(--bg-card,#161b22);border:1px solid var(--border,#30363d);border-radius:10px;padding:1.5rem;max-width:600px;width:90%;max-height:calc(80vh / var(--z));overflow-y:auto;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
                 <div style="font-weight:600;font-size:1rem;" id="runDetailTitle">Run Details</div>
                 <button class="btn" onclick="closeRunDetail()" style="font-size:0.8rem;">Close</button>
@@ -1875,6 +1901,23 @@
     </div>
 
     <script>
+        // Page zoom: Auto scales up past a 1920px-wide window; a saved choice overrides it (per browser).
+        function displaySize() {
+            try { return localStorage.getItem('displaySize') || 'auto'; } catch (e) { return 'auto'; }
+        }
+        function applyDisplaySize() {
+            const v = displaySize();
+            const z = v === 'auto' ? Math.min(2, Math.max(1, window.innerWidth / 1920)) : (parseFloat(v) || 1);
+            document.documentElement.style.zoom = z;
+            document.documentElement.style.setProperty('--z', z);
+        }
+        function setDisplaySize(v) {
+            try { localStorage.setItem('displaySize', v); } catch (e) {}
+            applyDisplaySize();
+        }
+        applyDisplaySize();
+        window.addEventListener('resize', () => { if (displaySize() === 'auto') applyDisplaySize(); });
+
         let allProviders = [];
         let allCategories = [];
         let selectedMovies = new Set();
@@ -4750,15 +4793,20 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
         }
 
         function showSettingsSection(sec) {
-            if (sec !== 'setup' && !SETTINGS_SECTIONS[sec]) sec = 'dispatcharr';
+            if (sec !== 'setup' && sec !== 'display' && !SETTINGS_SECTIONS[sec]) sec = 'dispatcharr';
             settingsSection = sec;
             try { localStorage.setItem('settingsSection', sec); } catch (e) {}
             settingsReset.clear();
             document.querySelectorAll('#settingsSide button').forEach(b => b.classList.toggle('active', b.dataset.sec === sec));
-            const isSetup = sec === 'setup';
-            document.querySelector('.settings-main').style.display = isSetup ? 'none' : '';
+            const isSetup = sec === 'setup', isDisplay = sec === 'display';
+            document.querySelector('.settings-main').style.display = isSetup || isDisplay ? 'none' : '';
             document.getElementById('setupPane').style.display = isSetup ? '' : 'none';
+            document.getElementById('displayPane').style.display = isDisplay ? '' : 'none';
             stopSetupTimer();
+            if (isDisplay) {
+                document.getElementById('displaySize').value = displaySize();
+                return;
+            }
             if (isSetup) {
                 loadSetup(true);
                 setupTimer = setInterval(() => loadSetup(false), 5000);
