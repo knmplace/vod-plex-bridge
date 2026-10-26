@@ -29,6 +29,17 @@ The three minor bumps each mark a major feature:
 
 ---
 
+## [0.40.1] — 2026-10-26
+
+### Added
+- **Display size (Settings → Display).** Auto, the default, scales the whole app up on windows wider than 1920 pixels, up to 200%. Phones and normal screens stay at 100%. A fixed size from 80% to 200% can be chosen instead. The choice is saved per browser.
+
+### Changed
+- **Clear Catalog** and **Clear STRMs** now appear only on the Catalog tab.
+- On phones the header wraps onto several lines, so the page no longer scrolls sideways.
+
+---
+
 ## [0.40.0] — 2026-10-25
 
 ### Added
