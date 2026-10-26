@@ -3600,7 +3600,9 @@ async def list_series_categories():
     rows = await db.execute(
         "SELECT c.*, (SELECT COUNT(*) FROM series s WHERE s.category_id = c.id) as series_count, "
         "(SELECT COUNT(DISTINCT e.series_id) FROM episodes e JOIN series s ON s.id = e.series_id "
-        " WHERE s.category_id = c.id AND e.activated = 1) as active_series_count "
+        " WHERE s.category_id = c.id AND e.activated = 1) as active_series_count, "
+        "(SELECT COUNT(*) FROM episodes e JOIN series s ON s.id = e.series_id "
+        " WHERE s.category_id = c.id AND e.activated = 1) as active_episode_count "
         "FROM series_categories c ORDER BY c.name"
     )
     return {"results": [dict(r) for r in await rows.fetchall()]}
