@@ -112,6 +112,22 @@ async def write_tvshow_and_season_dirs(series, category) -> str:
     return series_path
 
 
+async def rewrite_tvshow_nfo(series_id) -> bool:
+    """Rewrite an existing tvshow.nfo in place (same folder) after its metadata changed."""
+    db = await get_db()
+    row = await (await db.execute(
+        "SELECT s.*, c.strm_folder AS category_folder FROM series s "
+        "JOIN series_categories c ON c.id = s.category_id WHERE s.id = ?", (series_id,))).fetchone()
+    if row is None or not row["strm_folder"]:
+        return False
+    nfo_path = os.path.join(STRM_SERIES_OUTPUT_DIR, row["category_folder"], row["strm_folder"], "tvshow.nfo")
+    if not os.path.exists(nfo_path):
+        return False
+    with open(nfo_path, "w", encoding="utf-8") as f:
+        f.write(build_tvshow_nfo(row))
+    return True
+
+
 async def write_episode_nfo_batch(series, category, episodes: list, overwrite: bool = False) -> int:
     """Write Season NN/ dirs + .nfo files for the given episodes, batched to avoid
     triggering a Plex-scan-burst provider connection storm on large activations."""

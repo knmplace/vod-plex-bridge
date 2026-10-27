@@ -164,7 +164,7 @@ Enter **either** of these:
 
 Get them from your TMDB account under **Settings > API**.
 
-**Test** checks the credential against TMDB. Without TMDB, the app still works, but posters, genres and descriptions come only from the provider. The TMDB title search and enrichment steps of the Daily Run are also skipped.
+**Test** checks the credential against TMDB. Without TMDB, the app still works, but titles, posters, genres and descriptions come only from the provider. The TMDB title search and enrichment steps of the Daily Run are also skipped.
 
 ### 4.5 Streaming
 
@@ -354,7 +354,8 @@ What a run does, in order:
 | 4. Stream mapping | Updates which provider stream each movie uses, including backup streams. Only real changes are counted. |
 | 5. Provider info | Fills in missing details from Dispatcharr (up to 500 per run). |
 | 5a. TMDB title search | Looks up a TMDB ID for titles that don't have one (up to 2000 per run). Reports found, not found and skipped. Needs TMDB credentials. |
-| 5b. TMDB enrichment | Refreshes posters, genres, descriptions and so on. NFOs are rewritten when something changed. The report says how much came from the local TMDB library versus live TMDB calls, and which fields changed. Needs TMDB credentials. |
+| 5b. TMDB enrichment | Refreshes movie titles, posters, genres, descriptions and so on. TMDB's title replaces the provider's. NFOs are rewritten when something changed. The report says how much came from the local TMDB library versus live TMDB calls, and which fields changed. Needs TMDB credentials. |
+| 5c. Series TMDB titles/posters | Gives series with a TMDB ID TMDB's title, poster, description, genre and year. Each series is checked once, then again only when the provider changes it. Existing `tvshow.nfo` files are rewritten; show folders keep their names. Needs TMDB credentials. |
 | 6. Activated stream refresh | Keeps activated movies pointing at their current stream. |
 | 7. Plex presence | Marks titles already in Plex (only if Plex is configured). |
 | 8. Language detection | Runs in the background, for new movies only. |
@@ -446,7 +447,7 @@ Some titles will never match TMDB, such as local-language releases or oddly name
 - **State**: unlocked, locked or all
 - **Category**, plus a search box
 
-Select titles (on this page, or **all matching**) and click **Lock to provider data**. Locked titles keep the provider's poster and details. They're skipped by TMDB search, TMDB updates and language lookup. They can still be browsed and activated as usual. Use **Unlock** to reverse it.
+Select titles (on this page, or **all matching**) and click **Lock to provider data**. Locked titles keep the provider's title, poster and details. They're skipped by TMDB search, TMDB updates and language lookup. They can still be browsed and activated as usual. Use **Unlock** to reverse it.
 
 ---
 

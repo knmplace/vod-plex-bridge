@@ -130,6 +130,8 @@ async def init_db():
         "ALTER TABLE movies ADD COLUMN dispatcharr_hash TEXT",
         "ALTER TABLE movies ADD COLUMN tmdb_check INTEGER DEFAULT 0",
         "ALTER TABLE movies ADD COLUMN tmdb_locked INTEGER DEFAULT 0",
+        "ALTER TABLE movies ADD COLUMN provider_info_at TEXT",
+        "ALTER TABLE movies ADD COLUMN lang_checked_at TEXT",
     ]:
         try:
             await db.execute(col)
@@ -300,6 +302,9 @@ async def init_db():
         "ALTER TABLE series_categories ADD COLUMN plex_library_created INTEGER DEFAULT 0",
         "ALTER TABLE series ADD COLUMN in_plex TEXT",
         "ALTER TABLE series ADD COLUMN tmdb_locked INTEGER DEFAULT 0",
+        "ALTER TABLE series ADD COLUMN dispatcharr_hash TEXT",
+        "ALTER TABLE series ADD COLUMN tmdb_check INTEGER DEFAULT 0",
+        "ALTER TABLE series ADD COLUMN tmdb_enriched_at TEXT",
         "ALTER TABLE episodes ADD COLUMN in_plex TEXT",
         "ALTER TABLE movies ADD COLUMN category_id INTEGER",
     ]:

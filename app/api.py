@@ -22,7 +22,7 @@ from generator import generate_strm_files, sanitize_filename, write_strm_for_mov
 from stream_mapper import apply_stream_mapping_to_db, load_stream_mapping, pick_stream_for_account
 from proxy import probe_file_size, get_proxy_log, get_all_pipes, _log_event, archive_proxy_log, cleanup_old_archives, list_log_archives, get_log_archive, delete_log_archive
 from health import run_health_checks, get_health_status, get_health_log, health_check_scheduler
-from series_scraper import scrape_series_catalog, fetch_series_episodes
+from series_scraper import scrape_series_catalog, fetch_series_episodes, enrich_series_from_tmdb
 from series_generator import write_tvshow_and_season_dirs, write_episode_nfo_batch
 from redirect import _pick_episode_relation_with_capacity
 
@@ -1302,7 +1302,10 @@ _CONTAINER_CONTENT_TYPE = {
 
 
 async def _fetch_provider_info(movie_id: int):
-    """Fetch rich metadata from Dispatcharr's provider-info endpoint (no provider calls).
+    """Fetch rich metadata from Dispatcharr's provider-info endpoint. Dispatcharr answers
+    from its own copy when it refreshed the title in the last 24h, otherwise it asks the
+    provider — so any answer (even a non-200) stamps provider_info_at and the batch
+    pass won't ask again until Dispatcharr's data for the movie changes.
     Pulls: bitrate, duration, genre, description, director, actors, country, release_date,
     container_extension, backdrop, cover URLs, original name."""
     try:
@@ -1313,6 +1316,10 @@ async def _fetch_provider_info(movie_id: int):
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code != 200:
+                db = await get_db()
+                await db.execute("UPDATE movies SET provider_info_at = ? WHERE id = ?",
+                                 (datetime.now(timezone.utc).isoformat(), movie_id))
+                await db.commit()
                 return None
             data = resp.json()
             bitrate = data.get("bitrate")
@@ -1362,11 +1369,12 @@ async def _fetch_provider_info(movie_id: int):
                     "content_type = CASE WHEN ? != '' THEN ? ELSE content_type END, "
                     "backdrop_url = CASE WHEN backdrop_url IS NULL OR backdrop_url = '' THEN ? ELSE backdrop_url END, "
                     "original_name = CASE WHEN original_name IS NULL OR original_name = '' THEN ? ELSE original_name END, "
-                    "poster_url = CASE WHEN poster_url IS NULL OR poster_url = '' THEN COALESCE(NULLIF(?, ''), NULLIF(?, '')) ELSE poster_url END "
+                    "poster_url = CASE WHEN poster_url IS NULL OR poster_url = '' THEN COALESCE(NULLIF(?, ''), NULLIF(?, '')) ELSE poster_url END, "
+                    "provider_info_at = ? "
                     "WHERE id = ?",
                     (bitrate, duration, genre, description, director, actors, country, release_date,
                      added_at, container_ext, content_type, content_type, backdrop_url, original_name,
-                     cover_big, movie_image, movie_id),
+                     cover_big, movie_image, datetime.now(timezone.utc).isoformat(), movie_id),
                 )
                 await db.commit()
             finally:
@@ -2034,7 +2042,8 @@ async def _bulk_detect_languages():
     try:
         rows = await db.execute(
             "SELECT id, tmdb_id FROM movies WHERE tmdb_id IS NOT NULL AND tmdb_id != '' "
-            "AND (language = '' OR language IS NULL) AND name != '' AND COALESCE(tmdb_locked, 0) = 0"
+            "AND (language = '' OR language IS NULL) AND lang_checked_at IS NULL AND name != '' "
+            "AND COALESCE(tmdb_locked, 0) = 0 ORDER BY activated DESC, id DESC"
         )
         movies = await rows.fetchall()
         total = len(movies)
@@ -2072,6 +2081,8 @@ async def _bulk_detect_languages():
                 try:
                     data, local = await tmdb_local.fetch_title("movie", tmdb_id)
                 except tmdb_local.TmdbNotFoundError:
+                    await db.execute("UPDATE movies SET lang_checked_at = ? WHERE id = ?",
+                                     (datetime.now(timezone.utc).isoformat(), movie["id"]))
                     skipped += 1
                     return False
                 if data is None:
@@ -2081,8 +2092,10 @@ async def _bulk_detect_languages():
                     skipped += 1
                     return False
                 lang = data.get("original_language", "")
+                # stamped either way: a title TMDB answered without a language isn't asked again
+                await db.execute("UPDATE movies SET language = ?, lang_checked_at = ? WHERE id = ?",
+                                 (lang, datetime.now(timezone.utc).isoformat(), movie["id"]))
                 if lang:
-                    await db.execute("UPDATE movies SET language = ? WHERE id = ?", (lang, movie["id"]))
                     detected += 1
                 else:
                     skipped += 1
@@ -2393,14 +2406,29 @@ async def _run_catalog_sync(max_movies: int = 0, category_ids: list = None, acco
                 await _append_sync_message(f", {pruned} removed (not in selected categories/providers)")
         if not is_cancelled():
             await apply_stream_mapping_to_db()
+        db = await get_db()
+        row = await (await db.execute("SELECT status, message FROM sync_state WHERE id = 1")).fetchone()
+        if row is None or row["status"] == "error":
+            return
+        sync_msg = row["message"] or "Sync complete"
+        summary = []
         if not is_cancelled():
             await _set_status("enriching", "Enriching metadata from Dispatcharr...")
             enriched = await _enrich_from_provider_info(batch_size=1000)
             logger.info("Post-sync provider-info enrichment: %d movies", enriched)
+            summary.append(f"{enriched} filled from Dispatcharr")
         if not is_cancelled():
-            await search_tmdb_for_missing()
+            await _set_status("enriching", "Searching TMDB for titles without a TMDB ID...")
+            ts = await search_tmdb_for_missing()
+            if ts.get("found"):
+                summary.append(f"{ts['found']} matched on TMDB")
         if not is_cancelled() and tmdb_local.has_credentials():
-            await enrich_from_tmdb()
+            await _set_status("enriching", "Enriching metadata from TMDB...")
+            te = await enrich_from_tmdb()
+            summary.append(f"{te['changed']} updated from TMDB")
+            if te.get("remaining"):
+                summary.append(f"{te['remaining']} queued for the next run")
+        await _set_status("idle", f"{sync_msg} · Metadata: {', '.join(summary)}" if summary else sync_msg)
 
         if not is_cancelled() and tmdb_local.has_credentials():
             asyncio.create_task(_bulk_detect_languages())
@@ -3146,19 +3174,15 @@ async def _set_status(status: str, message: str):
 
 
 async def _enrich_from_provider_info(batch_size: int = 200):
-    """Batch-enrich movies with metadata from Dispatcharr provider-info endpoint.
-    Fills bitrate, duration, genre, description, director, actors, country,
-    container_extension, content_type, backdrop, poster fallback.
-    All Dispatcharr API — no provider connections."""
+    """Trickle provider-info over movies not asked yet (new, or Dispatcharr data changed),
+    activated first, then newest. Each call can reach the provider through Dispatcharr,
+    so a movie is asked once and the batch moves on through the backlog; activation
+    still fetches on demand. Fills bitrate, duration, genre, description, director,
+    actors, country, container_extension, content_type, backdrop, poster fallback."""
     db = await get_db()
     rows = await db.execute(
-        "SELECT id FROM movies WHERE ("
-        "genre IS NULL OR genre = '' OR description IS NULL OR description = '' "
-        "OR stream_bitrate_kbps IS NULL OR duration_seconds IS NULL "
-        "OR container_extension IS NULL OR container_extension = '' "
-        "OR backdrop_url IS NULL OR backdrop_url = '' "
-        "OR director IS NULL OR director = '' "
-        ") AND name != '' LIMIT ?",
+        "SELECT id FROM movies WHERE provider_info_at IS NULL AND name != '' "
+        "ORDER BY activated DESC, id DESC LIMIT ?",
         (batch_size,),
     )
     movie_ids = [r["id"] for r in await rows.fetchall()]
@@ -3167,17 +3191,22 @@ async def _enrich_from_provider_info(batch_size: int = 200):
 
     enriched = 0
     for mid in movie_ids:
+        if is_cancelled():
+            break
         result = await _fetch_provider_info(mid)
         if result:
             enriched += 1
         await asyncio.sleep(0.05)
-    logger.info("Provider-info enrichment: %d/%d movies enriched", enriched, len(movie_ids))
+    left = (await (await db.execute(
+        "SELECT COUNT(*) AS cnt FROM movies WHERE provider_info_at IS NULL AND name != ''")).fetchone())["cnt"]
+    logger.info("Provider-info enrichment: %d/%d movies enriched, %d not asked yet", enriched, len(movie_ids), left)
     return enriched
 
 
 async def _run_scheduled_refresh():
     """Daily run cycle: dump regen → categories → catalog refresh → apply mapping → provider-info enrichment → TMDB title search (titles without a TMDB ID, each tried once) → TMDB enrichment (local library first) → activated stream_id update → language detection (new movies only, background).
-    NO provider calls. NO dead scan. All data comes from the Dispatcharr API and TMDB (local library first)."""
+    NO dead scan. Data comes from the Dispatcharr API and TMDB (local library first); provider-info
+    is the only step that can reach a provider, and it only asks movies not asked before."""
     import time
     start = time.time()
     report = []
@@ -3260,13 +3289,24 @@ async def _run_scheduled_refresh():
                               f"({te['local_changed']} changed), {te['api']} needed a TMDB API call "
                               f"({te['api_changed']} changed), {te['not_found']} not found on TMDB")
                 if te["fields"]:
-                    labels = {"genre": "genre", "description": "description", "poster_url": "poster",
+                    labels = {"name": "title", "genre": "genre", "description": "description", "poster_url": "poster",
                               "imdb_id": "IMDb ID", "cast_info": "cast", "year": "year",
                               "duration_seconds": "runtime"}
                     report.append("TMDB changes: " + ", ".join(
                         f"{labels.get(k, k)} {n}" for k, n in sorted(te["fields"].items(), key=lambda kv: -kv[1])))
             except Exception as e:
                 report.append(f"TMDB enrichment: FAILED ({e})")
+
+        # 5c. Series TMDB titles/posters — Dispatcharr never renames a series after import
+        if tmdb_local.has_credentials():
+            await _set_status("refreshing", "Daily run: enriching series from TMDB...")
+            try:
+                se = await enrich_series_from_tmdb()
+                report.append(f"Series TMDB enrichment: {se['enriched']} checked, {se['changed']} changed, "
+                              f"{se['nfo_rewritten']} NFOs rewritten, {se['not_found']} not found, "
+                              f"{se['remaining']} still pending")
+            except Exception as e:
+                report.append(f"Series TMDB enrichment: FAILED ({e})")
 
         # 6. Activated stream_id refresh (DB only, no provider calls)
         await _set_status("refreshing", "Daily run: checking activated movies for stream_id changes...")

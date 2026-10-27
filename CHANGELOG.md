@@ -29,6 +29,20 @@ The three minor bumps each mark a major feature:
 
 ---
 
+## [0.42.0] — 2026-10-27
+
+### Added
+- **Titles and posters come from TMDB, for movies and series.** Dispatcharr keeps the name a title had when it was first imported, so a title imported under another language's name (for example "30 Monedas (es)") kept that name in Plex. The bridge now uses TMDB's title for anything with a TMDB ID, so names are consistent whatever languages your categories allow. Lookups use the local TMDB library first and call TMDB only on a miss. Locked titles, and titles without a TMDB ID, keep Dispatcharr's data. Show folder names never change. A renamed movie gets a new file name under the same `{tmdb-<id>}` hint, so Plex matches it to the same item on its next scan.
+- **Series TMDB enrichment.** Series now get TMDB's title, poster, plot, genre and year, the same as movies. It runs after a series catalog sync and in the daily run. Every series with a TMDB ID is checked once, and again only when Dispatcharr's data for it changes. Re-syncing no longer reverts a TMDB title. An existing `tvshow.nfo` is rewritten in place when its metadata changes.
+
+### Fixed
+- **Provider posters that no longer load were kept.** A TMDB title-search match now replaces the provider's poster instead of only filling a missing one. Series on dead provider image links get TMDB's poster from series enrichment.
+- **Status stuck on "Enriching..." after a catalog sync.** The sync now finishes as idle with a summary, for example `Synced … · Metadata: 120 filled from Dispatcharr, 85 updated from TMDB, 4,200 queued for the next run`.
+- **Most movies never got TMDB metadata.** TMDB enrichment only checked movies whose Dispatcharr data had changed, so movies imported before that change tracking existed were never enriched. Every movie with a TMDB ID that hasn't been checked is now queued. Each run works through up to 5,000, answered from the local TMDB library first. A TMDB ID that returns 404 is checked once and not asked again. A temporary TMDB error leaves the movie queued.
+- **Each sync re-asked the same 1,000 movies for provider metadata.** The provider-info pass picked movies by missing fields, and most stayed "missing" because the provider doesn't supply some of them (backdrops, for example). Each call can reach the provider through Dispatcharr, so the same movies were re-fetched on every sync. Each movie is now asked once (activated movies first, then newest), and asked again only when Dispatcharr's data for it changes. Activating a movie still fetches its stream details on demand.
+- **Language detection retried the same titles every run.** Titles that TMDB doesn't have, or that have no language, are now checked once. The language is also taken from the TMDB metadata pass, so most movies don't need a separate lookup.
+- TMDB title search now works through activated and newest movies first instead of in arbitrary order.
+
 ## [0.41.2] — 2026-10-26
 
 ### Added

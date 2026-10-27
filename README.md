@@ -41,7 +41,7 @@ graph LR
 - **Pipe Streaming** (default) — Single persistent connection to Dispatcharr with adaptive bitrate throttling and local disk buffering
 - **Redirect Mode** (optional) — Sends Plex straight to Dispatcharr's VOD proxy with a 302, with a per-title session cap
 - **Head/Tail Caching** — Caches the first 8 MB and last 256 KB of each activated movie so Plex can probe metadata without opening a provider connection
-- **TMDB Enrichment** — Automatically fills in genres, descriptions, posters, runtime, director, country, and cast from [The Movie Database](https://www.themoviedb.org/), checking a local TMDB library first (TMDB Local tab) before calling the API
+- **TMDB Enrichment** — Automatically fills in titles, genres, descriptions, posters, runtime, director, country, and cast for movies and series from [The Movie Database](https://www.themoviedb.org/), checking a local TMDB library first (TMDB Local tab) before calling the API. TMDB's title wins over the provider's, so names stay the same whatever languages or countries the provider uses
 - **Multi-Provider Support** — Works with multiple M3U accounts, shows which providers carry each movie
 - **Language Detection** — Background detection of audio language via TMDB, with filters in the browse UI
 - **Now Playing Dashboard** — Real-time view of all Plex sessions (bridge content and local/live TV) with codec, resolution, bandwidth, and transcode details, plus Jellyfin and Emby sessions when they are set up

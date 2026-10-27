@@ -93,7 +93,7 @@ async def save_dispatcharr_movie(db, movie, poster_url, cast_info, extra, fill_b
         sets["dispatcharr_hash"] = fingerprint  # baseline for rows from before fingerprinting
     elif existing["dispatcharr_hash"] != fingerprint:
         sets.update({k: v for k, v in meta.items() if k != "tmdb_id" or v})
-        sets.update(dispatcharr_hash=fingerprint, tmdb_check=1)
+        sets.update(dispatcharr_hash=fingerprint, tmdb_check=1, provider_info_at=None)
     sql = [f"{k} = ?" for k in sets] + [f"{k} = CASE WHEN COALESCE({k}, '') = '' THEN ? ELSE {k} END" for k in fill_blank]
     await db.execute(
         f"UPDATE movies SET {', '.join(sql)} WHERE id = ?", (*sets.values(), *fill_blank.values(), movie_id))
@@ -384,12 +384,12 @@ async def scrape_catalog(max_movies: int = 0, category_ids: list = None, account
 
 async def enrich_from_tmdb(limit: int = 5000) -> dict:
     """Checks movies flagged by a Dispatcharr data change (or a store refresh of a title
-    already applied): local store first, TMDB on a miss. TMDB wins for genre,
+    already applied): local store first, TMDB on a miss. TMDB wins for title, genre,
     description, poster, IMDb ID, cast and year; runtime only fills a blank duration,
     since the provider's real length drives the proxy throttle."""
     global _cancel
     result = {"enriched": 0, "changed": 0, "nfo_rewritten": 0, "store_refreshed": 0, "remaining": 0,
-              "not_found": 0, "fields": {},
+              "not_found": 0, "failed": 0, "fields": {},
               # per source: answered from the local TMDB library vs a TMDB API call
               "local": 0, "local_changed": 0, "api": 0, "api_changed": 0}
     if not tmdb_local.has_credentials():
@@ -414,11 +414,13 @@ async def enrich_from_tmdb(limit: int = 5000) -> dict:
             result["store_refreshed"] += cur.rowcount
         await db.commit()
 
-    pending = ("tmdb_check = 1 AND tmdb_id IS NOT NULL AND tmdb_id != '' AND name != '' "
-               "AND COALESCE(tmdb_locked, 0) = 0")
+    # Never-checked titles queue too, not just flagged ones: rows from before the
+    # Dispatcharr fingerprint baseline were never flagged and so never enriched.
+    pending = ("(tmdb_check = 1 OR tmdb_enriched_at IS NULL) AND tmdb_id IS NOT NULL AND tmdb_id != '' "
+               "AND name != '' AND COALESCE(tmdb_locked, 0) = 0")
     rows = await db.execute(
-        f"SELECT id, tmdb_id, genre, description, imdb_id, poster_url, cast_info, year, duration_seconds, activated "
-        f"FROM movies WHERE {pending} ORDER BY activated DESC LIMIT ?", (limit,),
+        f"SELECT id, tmdb_id, name, genre, description, imdb_id, poster_url, cast_info, year, duration_seconds, "
+        f"language, activated FROM movies WHERE {pending} ORDER BY activated DESC, tmdb_check DESC, id DESC LIMIT ?", (limit,),
     )
     movies = await rows.fetchall()
 
@@ -428,14 +430,21 @@ async def enrich_from_tmdb(limit: int = 5000) -> dict:
             logger.info("TMDB enrichment cancelled by user")
             break
         try:
-            tmdb_data, local = await tmdb_local.movie_details(movie["tmdb_id"])
-            if tmdb_data is None:
+            try:
+                tmdb_data, local = await tmdb_local.fetch_title("movie", movie["tmdb_id"])
+            except tmdb_local.TmdbNotFoundError:
+                # checked off (stamped) so a dead id isn't asked again every run
                 result["not_found"] += 1
-                await db.execute("UPDATE movies SET tmdb_check = 0 WHERE id = ?", (movie["id"],))
+                await db.execute("UPDATE movies SET tmdb_check = 0, tmdb_enriched_at = ? WHERE id = ?",
+                                 (datetime.now(timezone.utc).isoformat(), movie["id"]))
+                continue
+            if tmdb_data is None:
+                result["failed"] += 1  # transient: stays queued
                 continue
             poster_path = tmdb_data.get("poster_path")
             runtime_min = tmdb_data.get("runtime")
             new = {
+                "name": tmdb_data.get("title") or "",
                 "genre": ", ".join(g["name"] for g in tmdb_data.get("genres", [])),
                 "description": tmdb_data.get("overview") or "",
                 "imdb_id": tmdb_data.get("imdb_id") or "",
@@ -448,6 +457,8 @@ async def enrich_from_tmdb(limit: int = 5000) -> dict:
                 changes["year"] = int(year)
             if runtime_min and not movie["duration_seconds"]:
                 changes["duration_seconds"] = runtime_min * 60
+            if tmdb_data.get("original_language") and not movie["language"]:
+                changes["language"] = tmdb_data["original_language"]
             sets = "".join(f"{k} = ?, " for k in changes)
             await db.execute(
                 f"UPDATE movies SET {sets}tmdb_enriched = 1, tmdb_check = 0, tmdb_enriched_at = ? WHERE id = ?",
@@ -522,7 +533,7 @@ async def search_tmdb_for_missing(batch_size: int = 50) -> dict:
     rows = await db.execute(
         "SELECT id, name, year FROM movies "
         "WHERE (tmdb_id IS NULL OR tmdb_id = '') AND tmdb_searched = 0 AND name != '' "
-        "AND COALESCE(tmdb_locked, 0) = 0 LIMIT ?",
+        "AND COALESCE(tmdb_locked, 0) = 0 ORDER BY activated DESC, id DESC LIMIT ?",
         (batch_size,),
     )
     movies = [dict(r) for r in await rows.fetchall()]
@@ -575,7 +586,7 @@ async def search_tmdb_for_missing(batch_size: int = 50) -> dict:
 
                 await db.execute(
                     "UPDATE movies SET tmdb_id = ?, tmdb_searched = 1, "
-                    "poster_url = CASE WHEN poster_url IS NULL THEN ? ELSE poster_url END, "
+                    "poster_url = COALESCE(?, poster_url), "
                     "description = CASE WHEN description = '' OR description IS NULL THEN ? ELSE description END, "
                     "language = CASE WHEN language = '' OR language IS NULL THEN ? ELSE language END "
                     "WHERE id = ?",

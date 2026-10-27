@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -43,18 +44,33 @@ async def _upsert_series(db, series):
             custom = {}
     trailer_key = custom.get("youtube_trailer") or custom.get("trailer") or None
 
-    await db.execute("""
+    meta = (series.get("name", ""), series.get("year"), series.get("genre", ""),
+            series.get("description", ""), series.get("tmdb_id"), poster_url)
+    fingerprint = hashlib.sha1(json.dumps([str(v or "") for v in meta]).encode()).hexdigest()
+
+    # Once TMDB has filled a series, its title/poster/plot/genre/year survive resyncs while
+    # the TMDB id is unchanged; a Dispatcharr data change only re-queues the TMDB check.
+    keep = ("series.tmdb_enriched_at IS NOT NULL "
+            "AND COALESCE(series.tmdb_id, '') = COALESCE(excluded.tmdb_id, '')")
+    await db.execute(f"""
         INSERT INTO series (id, uuid, name, year, rating, genre, description,
-                           tmdb_id, poster_url, episode_count, synced_at, trailer_key)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           tmdb_id, poster_url, episode_count, synced_at, trailer_key, dispatcharr_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
-            uuid=excluded.uuid, name=excluded.name, year=excluded.year,
-            rating=excluded.rating, genre=excluded.genre,
+            uuid=excluded.uuid,
+            name = CASE WHEN {keep} THEN series.name ELSE excluded.name END,
+            year = CASE WHEN {keep} THEN series.year ELSE excluded.year END,
+            rating=excluded.rating,
+            genre = CASE WHEN {keep} THEN series.genre ELSE excluded.genre END,
             description = CASE WHEN series.description IS NULL OR series.description = '' THEN excluded.description ELSE series.description END,
             tmdb_id=excluded.tmdb_id,
             poster_url = CASE WHEN series.poster_url IS NULL OR series.poster_url = '' THEN excluded.poster_url ELSE series.poster_url END,
             synced_at=excluded.synced_at,
-            trailer_key = COALESCE(excluded.trailer_key, series.trailer_key)
+            trailer_key = COALESCE(excluded.trailer_key, series.trailer_key),
+            tmdb_check = CASE WHEN COALESCE(series.tmdb_id, '') != COALESCE(excluded.tmdb_id, '')
+                              OR series.dispatcharr_hash != excluded.dispatcharr_hash THEN 1
+                              ELSE series.tmdb_check END,
+            dispatcharr_hash=excluded.dispatcharr_hash
     """, (
         series["id"],
         series["uuid"],
@@ -68,7 +84,80 @@ async def _upsert_series(db, series):
         series.get("episode_count", 0),
         datetime.now(timezone.utc).isoformat(),
         trailer_key,
+        fingerprint,
     ))
+
+
+async def enrich_series_from_tmdb(limit: int = 5000) -> dict:
+    """TMDB (local store first, API on a miss) for series flagged by a Dispatcharr change
+    or never checked: TMDB wins for title, poster, plot, genre and year. Locked series and
+    series without a TMDB id keep Dispatcharr's data; folder names never change."""
+    import tmdb_local
+    result = {"enriched": 0, "changed": 0, "nfo_rewritten": 0, "not_found": 0, "failed": 0,
+              "remaining": 0, "local": 0, "api": 0, "fields": {}}
+    if not tmdb_local.has_credentials():
+        return result
+
+    db = await get_db()
+    pending = ("(tmdb_check = 1 OR tmdb_enriched_at IS NULL) AND tmdb_id IS NOT NULL AND tmdb_id != '' "
+               "AND COALESCE(tmdb_locked, 0) = 0")
+    rows = await (await db.execute(
+        f"SELECT id, tmdb_id, name, poster_url, description, genre, year FROM series "
+        f"WHERE {pending} ORDER BY tmdb_check DESC, id DESC LIMIT ?", (limit,))).fetchall()
+
+    rewrite = []
+    for s in rows:
+        if _cancel:
+            break
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            try:
+                data, local = await tmdb_local.fetch_title("tv", s["tmdb_id"])
+            except tmdb_local.TmdbNotFoundError:
+                result["not_found"] += 1
+                await db.execute("UPDATE series SET tmdb_check = 0, tmdb_enriched_at = ? WHERE id = ?", (now, s["id"]))
+                continue
+            if data is None:
+                result["failed"] += 1  # transient: stays queued
+                continue
+            poster_path = data.get("poster_path")
+            new = {
+                "name": data.get("name") or "",
+                "poster_url": f"https://image.tmdb.org/t/p/w600_and_h900_bestv2{poster_path}" if poster_path else "",
+                "description": data.get("overview") or "",
+                "genre": ", ".join(g["name"] for g in data.get("genres", [])),
+            }
+            changes = {k: v for k, v in new.items() if v and v != (s[k] or "")}
+            year = (data.get("first_air_date") or "")[:4]
+            if year.isdigit() and str(s["year"] or "") != year:
+                changes["year"] = int(year)
+            sets = "".join(f"{k} = ?, " for k in changes)
+            await db.execute(f"UPDATE series SET {sets}tmdb_check = 0, tmdb_enriched_at = ? WHERE id = ?",
+                             (*changes.values(), now, s["id"]))
+            result["enriched"] += 1
+            result["local" if local else "api"] += 1
+            if changes:
+                result["changed"] += 1
+                for k in changes:
+                    result["fields"][k] = result["fields"].get(k, 0) + 1
+                rewrite.append(s["id"])
+            if not local:
+                await asyncio.sleep(0.25)
+        except Exception as e:
+            logger.error(f"TMDB enrichment failed for series {s['id']}: {e}")
+    await db.commit()
+
+    from series_generator import rewrite_tvshow_nfo
+    for series_id in rewrite:
+        try:
+            if await rewrite_tvshow_nfo(series_id):
+                result["nfo_rewritten"] += 1
+        except Exception as e:
+            logger.error(f"tvshow.nfo rewrite failed for series {series_id}: {e}")
+
+    result["remaining"] = (await (await db.execute(f"SELECT COUNT(*) FROM series WHERE {pending}")).fetchone())[0]
+    logger.info("Series TMDB enrichment: %s", result)
+    return result
 
 
 async def _prune_removed_series(db, seen_ids: set) -> int:
@@ -192,6 +281,11 @@ async def scrape_series_catalog(max_series: int = 0):
     await db.commit()
     logger.info(f"Series catalog scrape {status_msg}: {total_synced} series synced, {count} total in DB")
     _cancel = False
+    if not error:
+        try:
+            await enrich_series_from_tmdb()
+        except Exception as e:
+            logger.error(f"Series TMDB enrichment after catalog sync failed: {e}")
     return total_synced
 
 
