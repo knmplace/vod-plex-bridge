@@ -210,6 +210,16 @@ Once a server is set up, **Streams → Now Playing** lists its sessions, tagged 
 
 **Display size** scales the whole app. **Auto**, the default, scales it up on windows wider than 1920 pixels, up to 200%. Phones and normal screens stay at 100%. You can pick a fixed size from 80% to 200% instead. The choice is saved per browser.
 
+### 4.9 Sync schedule
+
+Sets how often the **movie catalog** and the **series catalog** sync from Dispatcharr during the day: **Off** (the default), or every 1, 2, 3, 4, 6, 8, 12 or 24 hours. Each one has its own setting and saves as soon as you pick it.
+
+- A scheduled sync does the same work as the **Sync** button on that tab, including metadata enrichment. The movie sync uses your selected providers and categories.
+- It reads Dispatcharr's catalog, so it picks up what Dispatcharr's own VOD refresh has found. Shorter intervals don't make Dispatcharr refresh from the provider more often.
+- A sync is skipped while the same sync or the Daily Run is running. It starts on the next check (once a minute) after that finishes.
+- Saving a new interval restarts its clock. The first sync runs one interval after you save, and the next expected time is shown under each setting.
+- The 6:00 AM Daily Run still syncs both catalogs, whatever this is set to.
+
 ---
 
 ## 5. Browsing and activating

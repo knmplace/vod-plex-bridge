@@ -307,6 +307,10 @@ async def init_db():
         "ALTER TABLE series ADD COLUMN tmdb_enriched_at TEXT",
         "ALTER TABLE episodes ADD COLUMN in_plex TEXT",
         "ALTER TABLE movies ADD COLUMN category_id INTEGER",
+        "ALTER TABLE sync_state ADD COLUMN catalog_interval_hours INTEGER DEFAULT 0",
+        "ALTER TABLE sync_state ADD COLUMN last_auto_catalog_sync TEXT",
+        "ALTER TABLE series_sync_state ADD COLUMN catalog_interval_hours INTEGER DEFAULT 0",
+        "ALTER TABLE series_sync_state ADD COLUMN last_auto_catalog_sync TEXT",
     ]:
         try:
             await db.execute(series_col)

@@ -1791,6 +1791,7 @@
                 <button data-sec="media" onclick="showSettingsSection('media')">Media servers</button>
                 <button data-sec="tmdb" onclick="showSettingsSection('tmdb')">TMDB</button>
                 <button data-sec="streaming" onclick="showSettingsSection('streaming')">Streaming</button>
+                <button data-sec="schedule" onclick="showSettingsSection('schedule')">Sync schedule</button>
                 <button data-sec="display" onclick="showSettingsSection('display')">Display</button>
             </nav>
             <div class="panel settings-main">
@@ -1887,6 +1888,23 @@
                         </select>
                         <div class="set-help">Auto makes the app larger on screens wider than 1920 pixels, so it fills big monitors the same way it fills a normal one. Phones and small screens stay at 100%. This choice is saved in this browser only, so each device can have its own.</div>
                     </div>
+                </div>
+            </div>
+            <div class="panel" id="schedulePane" style="display:none;">
+                <div class="panel-header">Sync schedule</div>
+                <div class="panel-body">
+                    <p class="set-intro">Sync the catalogs from Dispatcharr during the day, so new, removed and renamed titles show up without waiting for the 6:00 AM Daily Run. Each sync does the same work as its Sync button. A sync is skipped while the same sync or the Daily Run is already running, and starts on the next check once that finishes.</p>
+                    <div class="set-field">
+                        <label class="set-label" for="schedMovies">Movie catalog sync</label>
+                        <select id="schedMovies" onchange="saveCatalogSchedule()"></select>
+                        <div class="set-help" id="schedMoviesLast"></div>
+                    </div>
+                    <div class="set-field">
+                        <label class="set-label" for="schedSeries">Series catalog sync</label>
+                        <select id="schedSeries" onchange="saveCatalogSchedule()"></select>
+                        <div class="set-help" id="schedSeriesLast"></div>
+                    </div>
+                    <span id="schedMsg" style="font-size:0.81rem;color:var(--text-muted);"></span>
                 </div>
             </div>
         </div>
@@ -5236,18 +5254,23 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
         }
 
         function showSettingsSection(sec) {
-            if (sec !== 'setup' && sec !== 'display' && !SETTINGS_SECTIONS[sec]) sec = 'dispatcharr';
+            if (!['setup', 'display', 'schedule'].includes(sec) && !SETTINGS_SECTIONS[sec]) sec = 'dispatcharr';
             settingsSection = sec;
             try { localStorage.setItem('settingsSection', sec); } catch (e) {}
             settingsReset.clear();
             document.querySelectorAll('#settingsSide button').forEach(b => b.classList.toggle('active', b.dataset.sec === sec));
-            const isSetup = sec === 'setup', isDisplay = sec === 'display';
-            document.querySelector('.settings-main').style.display = isSetup || isDisplay ? 'none' : '';
+            const isSetup = sec === 'setup', isDisplay = sec === 'display', isSchedule = sec === 'schedule';
+            document.querySelector('.settings-main').style.display = isSetup || isDisplay || isSchedule ? 'none' : '';
             document.getElementById('setupPane').style.display = isSetup ? '' : 'none';
             document.getElementById('displayPane').style.display = isDisplay ? '' : 'none';
+            document.getElementById('schedulePane').style.display = isSchedule ? '' : 'none';
             stopSetupTimer();
             if (isDisplay) {
                 document.getElementById('displaySize').value = displaySize();
+                return;
+            }
+            if (isSchedule) {
+                loadCatalogSchedule();
                 return;
             }
             if (isSetup) {
@@ -5636,6 +5659,38 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             });
             const label = hours ? 'On — 6:00 AM daily' : 'Off';
             msg.textContent = `Daily Run: ${label}`;
+            setTimeout(() => { msg.textContent = ''; }, 3000);
+        }
+
+        const CATALOG_SYNC_HOURS = [0, 1, 2, 3, 4, 6, 8, 12, 24];
+
+        function _renderCatalogSchedule(data) {
+            for (const [kind, id] of [['movies', 'schedMovies'], ['series', 'schedSeries']]) {
+                const sel = document.getElementById(id), hours = data[`${kind}_hours`] || 0;
+                sel.innerHTML = CATALOG_SYNC_HOURS.map(h =>
+                    `<option value="${h}">${h === 0 ? 'Off' : h === 1 ? 'Every hour' : `Every ${h} hours`}</option>`).join('');
+                sel.value = hours;
+                const last = data[`${kind}_last`];
+                const next = hours && last ? new Date(new Date(last).getTime() + hours * 3600000) : null;
+                document.getElementById(id + 'Last').textContent = next ? `Next sync: about ${next.toLocaleString()}` : '';
+            }
+        }
+
+        async function loadCatalogSchedule() {
+            _renderCatalogSchedule(await fetchJSON('/api/schedule/catalog'));
+        }
+
+        async function saveCatalogSchedule() {
+            const msg = document.getElementById('schedMsg');
+            const r = await fetchJSON('/api/schedule/catalog', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({movies_hours: parseInt(document.getElementById('schedMovies').value),
+                                      series_hours: parseInt(document.getElementById('schedSeries').value)})
+            });
+            if (!r || r.error) { msg.style.color = 'var(--danger)'; msg.textContent = r?.error || 'Save failed'; return; }
+            _renderCatalogSchedule(r);
+            msg.style.color = 'var(--success)';
+            msg.textContent = 'Saved';
             setTimeout(() => { msg.textContent = ''; }, 3000);
         }
 

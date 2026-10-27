@@ -2277,17 +2277,9 @@ async def clear_catalog():
         pass
 
 
-@router.post("/sync/catalog")
-async def trigger_catalog_sync(request: Request):
-    data = {}
-    try:
-        data = await request.json()
-    except Exception:
-        pass
-    max_movies = data.get("max_movies", 0)
-    category_ids = data.get("category_ids", [])
-    account_ids = data.get("account_ids", [])
-
+async def _sync_scope(category_ids: list = None, account_ids: list = None) -> tuple[list, list]:
+    """Categories/providers to sync; none given means the user's selections."""
+    category_ids, account_ids = category_ids or [], account_ids or []
     db = await get_db()
 
     if not category_ids and not account_ids:
@@ -2296,9 +2288,6 @@ async def trigger_catalog_sync(request: Request):
         sel_cat_rows = await db.execute("SELECT category_id FROM selected_categories WHERE enabled = 1")
         category_ids = [r["category_id"] for r in await sel_cat_rows.fetchall()]
 
-    if not category_ids:
-        return JSONResponse(status_code=400, content={"error": "No categories selected. Select at least one category before syncing."})
-
     # If all providers are selected, skip provider filter (it's redundant)
     if account_ids:
         all_acct_rows = await db.execute("SELECT id FROM m3u_accounts")
@@ -2306,6 +2295,20 @@ async def trigger_catalog_sync(request: Request):
         if set(account_ids) >= all_acct_ids:
             account_ids = []
             logger.info("All providers selected — skipping provider filter")
+    return category_ids, account_ids
+
+
+@router.post("/sync/catalog")
+async def trigger_catalog_sync(request: Request):
+    data = {}
+    try:
+        data = await request.json()
+    except Exception:
+        pass
+    max_movies = data.get("max_movies", 0)
+    category_ids, account_ids = await _sync_scope(data.get("category_ids", []), data.get("account_ids", []))
+    if not category_ids:
+        return JSONResponse(status_code=400, content={"error": "No categories selected. Select at least one category before syncing."})
 
     asyncio.create_task(_run_catalog_sync(max_movies, category_ids, account_ids))
     return {"status": "started", "message": f"Catalog sync started ({len(category_ids)} categories, {len(account_ids) if account_ids else 'all'} providers)"}
@@ -2542,6 +2545,90 @@ async def set_schedule(request: Request):
         return {"status": "ok", "refresh_interval_hours": hours}
     finally:
         pass
+
+
+CATALOG_SYNC_INTERVALS = (0, 1, 2, 3, 4, 6, 8, 12, 24)
+_CATALOG_STATE = {"movies": "sync_state", "series": "series_sync_state"}
+
+
+@router.get("/schedule/catalog")
+async def get_catalog_schedule():
+    db = await get_db()
+    out = {}
+    for kind, table in _CATALOG_STATE.items():
+        row = await (await db.execute(
+            f"SELECT catalog_interval_hours, last_auto_catalog_sync FROM {table} WHERE id = 1")).fetchone()
+        out[f"{kind}_hours"] = (row["catalog_interval_hours"] if row else 0) or 0
+        out[f"{kind}_last"] = row["last_auto_catalog_sync"] if row else None
+    return out
+
+
+async def save_catalog_schedule(movies_hours: int, series_hours: int, now: datetime = None):
+    """Saving restarts each interval's clock, so the first automatic sync is one interval from now."""
+    if movies_hours not in CATALOG_SYNC_INTERVALS or series_hours not in CATALOG_SYNC_INTERVALS:
+        raise ValueError(f"interval must be one of {CATALOG_SYNC_INTERVALS} hours")
+    stamp = (now or datetime.now()).isoformat(timespec="seconds")
+    db = await get_db()
+    for table, hours in ((_CATALOG_STATE["movies"], movies_hours), (_CATALOG_STATE["series"], series_hours)):
+        await db.execute(
+            f"UPDATE {table} SET last_auto_catalog_sync = CASE WHEN catalog_interval_hours = ? "
+            f"THEN COALESCE(last_auto_catalog_sync, ?) ELSE ? END, catalog_interval_hours = ? WHERE id = 1",
+            (hours, stamp, stamp, hours))
+    await db.commit()
+    logger.info("Catalog sync schedule: movies every %sh, series every %sh (0 = off)", movies_hours, series_hours)
+
+
+@router.post("/schedule/catalog")
+async def set_catalog_schedule(request: Request):
+    data = await request.json()
+    try:
+        await save_catalog_schedule(int(data.get("movies_hours", 0)), int(data.get("series_hours", 0)))
+    except (TypeError, ValueError) as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+    return await get_catalog_schedule()
+
+
+def _catalog_sync_due(hours: int, last: str | None, now: datetime) -> bool:
+    if not hours or not last:
+        return False
+    return now - datetime.fromisoformat(last) >= timedelta(hours=hours)
+
+
+async def run_due_catalog_syncs(now: datetime = None) -> list[str]:
+    """Run whichever catalog syncs are due, one after the other. Skips a sync that is already running."""
+    now = now or datetime.now()
+    sched = await get_catalog_schedule()
+    db = await get_db()
+    ran = []
+    for kind, table in _CATALOG_STATE.items():
+        if not _catalog_sync_due(sched[f"{kind}_hours"], sched[f"{kind}_last"], now):
+            continue
+        status = (await (await db.execute(f"SELECT status FROM {table} WHERE id = 1")).fetchone())["status"]
+        if _refresh_running or status in ("scraping", "enriching", "refreshing"):
+            continue
+        await db.execute(f"UPDATE {table} SET last_auto_catalog_sync = ? WHERE id = 1",
+                         (now.isoformat(timespec="seconds"),))
+        await db.commit()
+        logger.info("Scheduled %s catalog sync starting", kind)
+        if kind == "movies":
+            category_ids, account_ids = await _sync_scope()
+            if not category_ids:
+                logger.info("Scheduled movie catalog sync skipped — no categories selected")
+                continue
+            await _run_catalog_sync(0, category_ids, account_ids)
+        else:
+            await scrape_series_catalog()
+        ran.append(kind)
+    return ran
+
+
+async def start_catalog_sync_scheduler():
+    while True:
+        await asyncio.sleep(60)
+        try:
+            await run_due_catalog_syncs()
+        except Exception as e:
+            logger.error(f"Scheduled catalog sync failed: {e}")
 
 
 @router.post("/schedule/reports/delete")

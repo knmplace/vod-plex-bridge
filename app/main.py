@@ -9,7 +9,7 @@ from fastapi.requests import Request
 
 from database import init_db
 from proxy import router as proxy_router, start_pipe_manager
-from api import router as api_router, start_dead_scan_scheduler, start_log_archive_scheduler
+from api import router as api_router, start_dead_scan_scheduler, start_log_archive_scheduler, start_catalog_sync_scheduler
 from health import health_check_scheduler
 from error_screens import generate_error_screens
 from config import REDIRECT_STREAMING
@@ -23,7 +23,7 @@ import tmdb_store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-APP_VERSION = "0.42.0"
+APP_VERSION = "0.43.0"
 
 
 async def _restore_strm_files():
@@ -110,6 +110,7 @@ async def lifespan(app: FastAPI):
     dead_scan_task = asyncio.create_task(start_dead_scan_scheduler())
     health_task = asyncio.create_task(health_check_scheduler())
     log_archive_task = asyncio.create_task(start_log_archive_scheduler())
+    catalog_sched_task = asyncio.create_task(start_catalog_sync_scheduler())
     await asyncio.to_thread(tmdb_store.init_db)
     tmdb_task = asyncio.create_task(tmdb_local.fill_loop())
     sweep_task = None
@@ -120,6 +121,7 @@ async def lifespan(app: FastAPI):
     dead_scan_task.cancel()
     health_task.cancel()
     log_archive_task.cancel()
+    catalog_sched_task.cancel()
     tmdb_task.cancel()
     if sweep_task:
         sweep_task.cancel()

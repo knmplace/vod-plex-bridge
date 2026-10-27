@@ -48,6 +48,7 @@ graph LR
 - **Health Dashboard** — Real-time status of Bridge, Dispatcharr, Plex, and Jellyfin/Emby with response times
 - **Tidy UI** — Every section collapses (closed by default, remembered per browser), and a Display size setting scales the app for large screens
 - **Daily Run** — Every day at 6am (plus a manual Run Now) the bridge refreshes mappings, categories and the catalog, enriches metadata and detects languages; each run's report is kept under Maintenance → Daily Updates
+- **Sync schedule** — Optional movie and series catalog syncs every 1–24 hours during the day (Settings → Sync schedule), so new and renamed titles don't wait for the Daily Run
 - **Settings in the App** — Dispatcharr instances, Plex, TMDB and streaming options are set in the Settings tab, with a Test button per service; secrets are stored encrypted
 - **Sign-in** — The web UI requires an account, created on first start
 - **Maintenance** — Dead movies, proxy log archives and run history in one tab

@@ -29,6 +29,11 @@ The three minor bumps each mark a major feature:
 
 ---
 
+## [0.43.0] — 2026-10-27
+
+### Added
+- **Scheduled catalog syncs.** **Settings → Sync schedule** sets how often the movie catalog and the series catalog sync from Dispatcharr: Off, or every 1, 2, 3, 4, 6, 8, 12 or 24 hours, each on its own. New, removed and renamed titles then show up during the day instead of waiting for the 6:00 AM Daily Run. A scheduled sync does the same work as the **Sync** button, including metadata enrichment. It is skipped while the same sync or the Daily Run is running, and starts on the next minute's check once that finishes. Saving a new interval restarts its clock, so the first sync runs one interval after you save. Both are Off by default.
+
 ## [0.42.0] — 2026-10-27
 
 ### Added
