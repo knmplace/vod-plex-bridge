@@ -21,3 +21,6 @@ SAFE_DEAD_DETECTION.md
 /images/
 .playwright-mcp/
 MCPECM/
+
+# Unused local asset
+app/assets/preroll_src.mp4
