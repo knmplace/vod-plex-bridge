@@ -1569,7 +1569,8 @@ async def vod_series_file(subpath: str, request: Request):
     if m:
         episode_id = int(m.group(1))
         row = await db.execute(
-            "SELECT id, uuid, container_extension, file_size, activated FROM episodes WHERE id = ?",
+            "SELECT id, uuid, name, container_extension, file_size, activated, header_data, header_size, "
+            "tail_data, tail_size, tail_offset FROM episodes WHERE id = ?",
             (episode_id,),
         )
         episode = await row.fetchone()
@@ -1588,6 +1589,43 @@ async def vod_series_file(subpath: str, request: Request):
                     "content-length": str(file_size),
                 },
             )
+
+        # Head/tail reads (Plex adding, scanning or analysing the file) come from the cache
+        # cache_fill.py stored, with no provider connection. Only with a real file size, so
+        # Content-Range matches the file the provider would send.
+        if episode["file_size"] and (episode["header_size"] or episode["tail_size"]):
+            range_start, range_end = 0, None
+            rm = re.match(r"bytes=(\d+)-(\d*)", request.headers.get("range", ""))
+            if rm:
+                range_start = int(rm.group(1))
+                if rm.group(2):
+                    range_end = int(rm.group(2))
+            if range_end is None or range_end >= file_size:
+                range_end = file_size - 1
+            chunk, part = None, None
+            head_size = episode["header_size"] or 0
+            tail_size = episode["tail_size"] or 0
+            tail_offset = episode["tail_offset"] or 0
+            if episode["header_data"] and head_size and range_start < head_size:
+                chunk = episode["header_data"][range_start:min(range_end, head_size - 1) + 1]
+                part = "header"
+            elif episode["tail_data"] and tail_size and tail_offset <= range_start < tail_offset + tail_size:
+                chunk = episode["tail_data"][range_start - tail_offset:min(range_end - tail_offset, tail_size - 1) + 1]
+                part = "tail"
+            if chunk:
+                serve_end = range_start + len(chunk) - 1
+                _log_event("info", None, f"Episode served from cache ({part})", movie_name=episode["name"],
+                           episode_id=episode_id, bytes=len(chunk), range_start=range_start, range_end=serve_end)
+                return Response(
+                    status_code=206,
+                    headers={
+                        "accept-ranges": "bytes",
+                        "content-type": content_type,
+                        "content-length": str(len(chunk)),
+                        "content-range": f"bytes {range_start}-{serve_end}/{file_size}",
+                    },
+                    content=chunk,
+                )
 
         from redirect import get_episode_redirect_url
         redirect_url, redirect_err, _fresh = await get_episode_redirect_url(episode_id)

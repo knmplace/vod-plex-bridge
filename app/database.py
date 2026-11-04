@@ -294,6 +294,27 @@ async def init_db():
             vod_category_id INTEGER NOT NULL,
             PRIMARY KEY (user_category_id, vod_category_id)
         );
+        -- Movies waiting to be activated (app/activation_queue.py). A row is deleted once the
+        -- movie is activated or fails. status: pending | waiting (no free provider slot) | running.
+        -- category: "auto" | "default" | a user_movie_categories id; NULL = auto only if unset.
+        CREATE TABLE IF NOT EXISTS activation_queue (
+            movie_id INTEGER PRIMARY KEY,
+            category TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            queued_at REAL NOT NULL,
+            next_check_at REAL NOT NULL DEFAULT 0,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            note TEXT
+        );
+        -- Shows waiting to have episodes added (app/activation_queue.py). No provider
+        -- connection is used; the row is deleted once its episodes are written.
+        CREATE TABLE IF NOT EXISTS series_activation_queue (
+            series_id INTEGER PRIMARY KEY,
+            category_id INTEGER NOT NULL,
+            episode_ids TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            queued_at REAL NOT NULL
+        );
     """)
     await db.commit()
 
@@ -306,11 +327,22 @@ async def init_db():
         "ALTER TABLE series ADD COLUMN tmdb_check INTEGER DEFAULT 0",
         "ALTER TABLE series ADD COLUMN tmdb_enriched_at TEXT",
         "ALTER TABLE episodes ADD COLUMN in_plex TEXT",
+        # Head/tail cache for episodes (cache_fill.py): Plex scans and analysis read these
+        # instead of the provider. cache_account_id is the account the bytes came from.
+        "ALTER TABLE episodes ADD COLUMN header_data BLOB",
+        "ALTER TABLE episodes ADD COLUMN header_size INTEGER DEFAULT 0",
+        "ALTER TABLE episodes ADD COLUMN tail_data BLOB",
+        "ALTER TABLE episodes ADD COLUMN tail_size INTEGER DEFAULT 0",
+        "ALTER TABLE episodes ADD COLUMN tail_offset INTEGER DEFAULT 0",
+        "ALTER TABLE episodes ADD COLUMN cache_account_id INTEGER",
         "ALTER TABLE movies ADD COLUMN category_id INTEGER",
         "ALTER TABLE sync_state ADD COLUMN catalog_interval_hours INTEGER DEFAULT 0",
         "ALTER TABLE sync_state ADD COLUMN last_auto_catalog_sync TEXT",
         "ALTER TABLE series_sync_state ADD COLUMN catalog_interval_hours INTEGER DEFAULT 0",
         "ALTER TABLE series_sync_state ADD COLUMN last_auto_catalog_sync TEXT",
+        "ALTER TABLE series ADD COLUMN account_names TEXT",
+        "ALTER TABLE series ADD COLUMN language TEXT",
+        "ALTER TABLE series ADD COLUMN lang_checked INTEGER DEFAULT 0",
     ]:
         try:
             await db.execute(series_col)

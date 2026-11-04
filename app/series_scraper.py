@@ -54,8 +54,8 @@ async def _upsert_series(db, series):
             "AND COALESCE(series.tmdb_id, '') = COALESCE(excluded.tmdb_id, '')")
     await db.execute(f"""
         INSERT INTO series (id, uuid, name, year, rating, genre, description,
-                           tmdb_id, poster_url, episode_count, synced_at, trailer_key, dispatcharr_hash)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           tmdb_id, poster_url, episode_count, synced_at, trailer_key, dispatcharr_hash, language)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             uuid=excluded.uuid,
             name = CASE WHEN {keep} THEN series.name ELSE excluded.name END,
@@ -70,7 +70,8 @@ async def _upsert_series(db, series):
             tmdb_check = CASE WHEN COALESCE(series.tmdb_id, '') != COALESCE(excluded.tmdb_id, '')
                               OR series.dispatcharr_hash != excluded.dispatcharr_hash THEN 1
                               ELSE series.tmdb_check END,
-            dispatcharr_hash=excluded.dispatcharr_hash
+            dispatcharr_hash=excluded.dispatcharr_hash,
+            language = COALESCE(NULLIF(excluded.language, ''), series.language)
     """, (
         series["id"],
         series["uuid"],
@@ -85,6 +86,7 @@ async def _upsert_series(db, series):
         datetime.now(timezone.utc).isoformat(),
         trailer_key,
         fingerprint,
+        (series.get("language") or "").strip().lower()[:8],
     ))
 
 
@@ -99,10 +101,12 @@ async def enrich_series_from_tmdb(limit: int = 5000) -> dict:
         return result
 
     db = await get_db()
-    pending = ("(tmdb_check = 1 OR tmdb_enriched_at IS NULL) AND tmdb_id IS NOT NULL AND tmdb_id != '' "
+    # lang_checked = 0 also re-queues series enriched before the language column existed.
+    pending = ("(tmdb_check = 1 OR tmdb_enriched_at IS NULL OR COALESCE(lang_checked, 0) = 0) "
+               "AND tmdb_id IS NOT NULL AND tmdb_id != '' "
                "AND COALESCE(tmdb_locked, 0) = 0")
     rows = await (await db.execute(
-        f"SELECT id, tmdb_id, name, poster_url, description, genre, year FROM series "
+        f"SELECT id, tmdb_id, name, poster_url, description, genre, year, language FROM series "
         f"WHERE {pending} ORDER BY tmdb_check DESC, id DESC LIMIT ?", (limit,))).fetchall()
 
     rewrite = []
@@ -115,7 +119,8 @@ async def enrich_series_from_tmdb(limit: int = 5000) -> dict:
                 data, local = await tmdb_local.fetch_title("tv", s["tmdb_id"])
             except tmdb_local.TmdbNotFoundError:
                 result["not_found"] += 1
-                await db.execute("UPDATE series SET tmdb_check = 0, tmdb_enriched_at = ? WHERE id = ?", (now, s["id"]))
+                await db.execute("UPDATE series SET tmdb_check = 0, lang_checked = 1, tmdb_enriched_at = ? WHERE id = ?",
+                                 (now, s["id"]))
                 continue
             if data is None:
                 result["failed"] += 1  # transient: stays queued
@@ -132,8 +137,13 @@ async def enrich_series_from_tmdb(limit: int = 5000) -> dict:
             if year.isdigit() and str(s["year"] or "") != year:
                 changes["year"] = int(year)
             sets = "".join(f"{k} = ?, " for k in changes)
-            await db.execute(f"UPDATE series SET {sets}tmdb_check = 0, tmdb_enriched_at = ? WHERE id = ?",
-                             (*changes.values(), now, s["id"]))
+            # Dispatcharr's language (from the category) wins; TMDB's original language fills a gap.
+            # Not part of tvshow.nfo, so it never triggers a rewrite.
+            lang = "" if s["language"] else (data.get("original_language") or "").strip().lower()
+            sets += "language = ?, " if lang else ""
+            vals = (*changes.values(), lang) if lang else tuple(changes.values())
+            await db.execute(f"UPDATE series SET {sets}tmdb_check = 0, lang_checked = 1, tmdb_enriched_at = ? WHERE id = ?",
+                             (*vals, now, s["id"]))
             result["enriched"] += 1
             result["local" if local else "api"] += 1
             if changes:
@@ -194,6 +204,61 @@ def _enabled_category_series_ids() -> set | None:
     for c in cats:
         ids.update(c.get("series_ids", []))
     return ids or None
+
+
+async def tag_series_accounts() -> dict:
+    """Store which provider accounts carry each series (series.account_names, comma list),
+    shown as provider tags on the series cards. Dispatcharr API only: one count request per
+    account, and a full id listing only for an account that carries some but not all series."""
+    headers = _auth_headers()
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(f"{DISPATCHARR_URL}/api/m3u/accounts/", headers=headers)
+        resp.raise_for_status()
+        accounts = resp.json()
+        if isinstance(accounts, dict):
+            accounts = accounts.get("results", [])
+
+        async def count(extra: str) -> int:
+            r = await client.get(f"{DISPATCHARR_URL}/api/vod/series/?page_size=1{extra}", headers=headers)
+            r.raise_for_status()
+            return int(r.json().get("count") or 0)
+
+        total = await count("")
+        everywhere, partial = [], {}
+        for a in sorted(accounts, key=lambda a: (a.get("name") or "").lower()):
+            name = (a.get("name") or "").strip() or f"account {a.get('id')}"
+            n = await count(f"&m3u_account={a['id']}")
+            if n == 0:
+                continue
+            if n >= total:
+                everywhere.append(name)
+                continue
+            ids, page = set(), 1
+            while True:
+                r = await client.get(f"{DISPATCHARR_URL}/api/vod/series/?m3u_account={a['id']}"
+                                     f"&page={page}&page_size={PAGE_SIZE}", headers=headers)
+                r.raise_for_status()
+                data = r.json()
+                ids.update(x["id"] for x in data.get("results", []))
+                if not data.get("next"):
+                    break
+                page += 1
+                await asyncio.sleep(0.05)
+            partial[name] = ids
+
+    db = await get_db()
+    rows = await (await db.execute("SELECT id, account_names FROM series")).fetchall()
+    updates = []
+    for r in rows:
+        names = everywhere + [n for n, ids in partial.items() if r["id"] in ids]
+        value = ", ".join(sorted(names, key=str.lower)) or None
+        if value != r["account_names"]:
+            updates.append((value, r["id"]))
+    await db.executemany("UPDATE series SET account_names = ? WHERE id = ?", updates)
+    await db.commit()
+    result = {"accounts": len(everywhere) + len(partial), "updated": len(updates)}
+    logger.info("Series provider tags: %s", result)
+    return result
 
 
 async def scrape_series_catalog(max_series: int = 0):
@@ -281,6 +346,11 @@ async def scrape_series_catalog(max_series: int = 0):
     await db.commit()
     logger.info(f"Series catalog scrape {status_msg}: {total_synced} series synced, {count} total in DB")
     _cancel = False
+    if completed:
+        try:
+            await tag_series_accounts()
+        except Exception as e:
+            logger.error(f"Series provider tagging after catalog sync failed: {e}")
     if not error:
         try:
             await enrich_series_from_tmdb()
@@ -341,7 +411,15 @@ async def _upsert_episode(db, ep):
             account_name = CASE WHEN excluded.account_id IS NOT NULL THEN excluded.account_name ELSE episodes.account_name END,
             container_extension = CASE WHEN excluded.account_id IS NOT NULL THEN excluded.container_extension ELSE episodes.container_extension END,
             alt_streams = CASE WHEN excluded.account_id IS NOT NULL THEN excluded.alt_streams ELSE episodes.alt_streams END,
-            synced_at=excluded.synced_at
+            synced_at=excluded.synced_at,
+            -- A new uuid is a different file in Dispatcharr: drop the cached head/tail and size.
+            header_data = CASE WHEN episodes.uuid != excluded.uuid THEN NULL ELSE episodes.header_data END,
+            header_size = CASE WHEN episodes.uuid != excluded.uuid THEN 0 ELSE episodes.header_size END,
+            tail_data = CASE WHEN episodes.uuid != excluded.uuid THEN NULL ELSE episodes.tail_data END,
+            tail_size = CASE WHEN episodes.uuid != excluded.uuid THEN 0 ELSE episodes.tail_size END,
+            tail_offset = CASE WHEN episodes.uuid != excluded.uuid THEN 0 ELSE episodes.tail_offset END,
+            file_size = CASE WHEN episodes.uuid != excluded.uuid THEN NULL ELSE episodes.file_size END,
+            cache_account_id = CASE WHEN episodes.uuid != excluded.uuid THEN NULL ELSE episodes.cache_account_id END
     """, (
         ep["id"],
         ep["uuid"],

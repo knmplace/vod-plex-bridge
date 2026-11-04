@@ -226,6 +226,27 @@ curl -fsSL http://192.168.1.20:8585/setup/<your-private-link>/media/m1.sh | sudo
    `ChangeMeNow!`, and change it on first sign-in.
 7. **Checks the mounts** as the Plex/Jellyfin user, then reports back. The light on the card
    turns green.
+8. **Installs a disk report timer** that sends this machine's free disk space and rclone cache
+   size to the bridge every 5 minutes, for the gauge on the Health and Setup tabs.
+
+> **Disk space: the rclone cache.** The mounts use rclone's `--vfs-cache-mode full`, which
+> keeps a copy of what is playing on the Plex/Jellyfin machine's disk. That is what lets Plex
+> seek without opening a new provider connection each time, so it stays on. Copies are removed
+> 10 minutes after playback stops, and the cache is capped by **Cache limit (GB)** on the
+> machine's card (default 20 GB, shared by its mounts; the oldest copies go first). A title
+> that is still playing is never removed, so the cache can go over the limit while several
+> streams play at once: allow roughly one full copy per stream (a 4K movie can be 20-60 GB).
+> With rclone 1.64 or newer, Command B also keeps at least 5 GB of the disk free.
+>
+> **Changing the limit:** set it on the card, press **Save**, then **run Command B again** on
+> that machine. The limit is written into the mount services, so nothing changes until you do.
+> Until then the Setup and Health tabs say the machine still uses the old limit. Mounts that
+> Command B left alone (a working hand-made unit) don't get the limit; Command B says so, and
+> `| sudo bash -s -- --replace` swaps them for the bridge's own.
+>
+> **Disk gauge:** Command B also installs a small timer (`vod-bridge-disk-report.timer`) that
+> sends the machine's free disk space and the cache size to the bridge every 5 minutes. Both
+> show as a gauge on the Health tab and on the machine's Setup card. Nothing else is sent.
 
 ![Rclone Manager under Maintenance → Rclone](docs/images/rclone.png)
 
@@ -395,15 +416,15 @@ After setup you don't run anything by hand:
 - **The 6:00 AM Daily Run** asks the Dispatcharr agent for fresh lists, refreshes the catalog
   and removes titles that are gone from Dispatcharr. **Run Now** on the Daily Run tab does
   the same on demand.
-- **Changed an answer** on a machine card (a folder, Docker, Rclone Manager)? Press **Save**
-  and run that machine's command again.
+- **Changed an answer** on a machine card (a folder, Docker, Rclone Manager, the cache limit)?
+  Press **Save** and run that machine's command again.
 - **Rclone Manager**, if you installed it, is at `http://<media-machine>:5573`, linked from the
   Health tab and Maintenance → Rclone. Without it, check the mounts with
   `systemctl status rclone-vod-bridge-movies` and restart them with
   `systemctl restart rclone-vod-bridge-movies rclone-vod-bridge-movies-cat rclone-vod-bridge-series`.
 - **Regenerate** on the Setup tab makes a new private link. Commands you already copied stop
-  working, so run Command A on the Dispatcharr machine again afterwards (and Command B, if you
-  want to re-run it later).
+  working, so run Command A on the Dispatcharr machine again afterwards, and Command B on each
+  media machine so its disk report uses the new link.
 
 ## Upgrading from 0.40 or earlier
 
@@ -548,7 +569,7 @@ Wants=network-online.target
 [Service]
 Type=notify
 ExecStartPre=/bin/mkdir -p /mnt/vod-bridge
-ExecStart=/usr/bin/rclone mount vodbridge-movies: /mnt/vod-bridge --read-only --allow-other --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m --timeout 30s
+ExecStart=/usr/bin/rclone mount vodbridge-movies: /mnt/vod-bridge --read-only --allow-other --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m --vfs-cache-max-size 7G --vfs-cache-min-free-space 5G --timeout 30s
 ExecStop=/bin/fusermount -uz /mnt/vod-bridge
 Restart=on-failure
 RestartSec=10

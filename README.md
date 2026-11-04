@@ -38,9 +38,13 @@ graph LR
 - **TV Series** — Pick series categories, activate whole shows, seasons or single episodes, and send each category to its own Plex TV library
 - **Movie Categories** — Split movies into categories (kids, 4K, ...), each with its own Plex Movies library the bridge creates for you. Map provider categories to them for automatic placement, and move active movies between them
 - **One-Click Activation** — Activate movies to instantly add them to your Plex library with poster art, genres, and metadata
+- **Activation Queue** — Movies and episodes are added one at a time, 5 seconds apart, and wait for a free provider slot instead of failing. A pill at the top shows progress; shift+click selects a range of cards
+- **Series Wizard** — Tick several shows and activate them in one go, one step per show: pick the library and all seasons, or just the seasons and episodes you want
 - **Pipe Streaming** (default) — Single persistent connection to Dispatcharr with adaptive bitrate throttling and local disk buffering
 - **Redirect Mode** (optional) — Sends Plex straight to Dispatcharr's VOD proxy with a 302, with a per-title session cap
-- **Head/Tail Caching** — Caches the first 8 MB and last 256 KB of each activated movie so Plex can probe metadata without opening a provider connection
+- **Head/Tail Caching** — Caches the start and end of each activated movie and episode so Plex can probe metadata without opening a provider connection. Episodes are cached by a paced background queue
+- **Plex Mount Check** — Every 30 minutes the bridge asks Plex whether it can still read each bridge folder, and shows a red banner with the fix if an rclone mount has stopped
+- **Disk Gauge and Cache Limit** — Each Plex/Jellyfin machine reports its free disk space and rclone cache size every 5 minutes, and a per-machine cache limit keeps the rclone cache from filling the disk
 - **TMDB Enrichment** — Automatically fills in titles, genres, descriptions, posters, runtime, director, country, and cast for movies and series from [The Movie Database](https://www.themoviedb.org/), checking a local TMDB library first (TMDB Local tab) before calling the API. TMDB's title wins over the provider's, so names stay the same whatever languages or countries the provider uses
 - **Multi-Provider Support** — Works with multiple M3U accounts, shows which providers carry each movie
 - **Language Detection** — Background detection of audio language via TMDB, with filters in the browse UI
@@ -188,10 +192,10 @@ Each step on the Setup tab turns green once the bridge confirms it worked. Platf
 >
 > - **Activating a movie** reads its start and end once through Dispatcharr to check that it
 >   plays.
-> - **Plex reads the head and tail of every new file** when it scans it. For movies the bridge
->   answers those reads from what it saved at activation, so most never reach Dispatcharr.
->   Episodes have no saved copy, so **every new episode Plex scans opens a Dispatcharr
->   connection**.
+> - **Plex reads the head and tail of every new file** when it scans it. The bridge answers
+>   those reads from a saved copy, so most never reach Dispatcharr. Movies get it at
+>   activation. Episodes get it from a background queue after they're added, **one short
+>   Dispatcharr connection per episode**, 5 seconds apart and only when a slot is free.
 > - **Jellyfin does the same.** Its library scan probes each new file (ffprobe), which reads
 >   the start of the file and often the end.
 > - **Redirect mode: use with caution.** It sends Plex and Jellyfin straight to Dispatcharr's
@@ -216,6 +220,9 @@ vod-plex-bridge/
 ├── app/                      # Application source
 │   ├── main.py               # FastAPI app, version, lifespan
 │   ├── api.py                # REST API (catalog, activation, filters, Daily Run, series)
+│   ├── activation_queue.py   # Paced activation queue for movies and series
+│   ├── cache_fill.py         # Head/tail cache fill for episodes and failed-over movies
+│   ├── plex_mounts.py        # Checks that Plex can read each bridge folder
 │   ├── auth.py               # Sign-in and sessions
 │   ├── proxy.py              # Stream proxy (pipes, range requests, /vod/ and /vod-series/ listings)
 │   ├── redirect.py           # Optional 302 redirect streaming mode
@@ -307,6 +314,8 @@ docker compose up -d
 
 Your database and settings persist in the `DATA_DIR` volume. The agent on the Dispatcharr host and the mounts on the Plex/Jellyfin hosts keep running on their own; re-running Command A or B updates them in place.
 
+> **Upgrading to 0.45.1 or later: run Command B again on each Plex/Jellyfin machine.** That applies the rclone cache limit (Settings → Setup → the machine's card, default 20 GB) and installs the 5-minute disk report behind the disk gauge. Do the same whenever you change the cache limit: press **Save**, then run Command B again. A working hand-made rclone mount is left alone and doesn't get the limit; add `--replace` (`| sudo bash -s -- --replace`) to swap it for the bridge's own.
+
 ## Troubleshooting
 
 | Problem | Check |
@@ -318,6 +327,8 @@ Your database and settings persist in the `DATA_DIR` volume. The agent on the Di
 | rclone mount hangs | Bridge is down. Check `docker ps` and `curl http://BRIDGE_IP:8585/version` from the Plex host |
 | 0 categories showing | Command A hasn't reported yet: check the Dispatcharr light on the Setup tab and re-run Command A. Select at least one provider. |
 | Daily Run report says the dump is stale | The agent on the Dispatcharr host isn't checking in. Re-run Command A, and check `/etc/cron.d/vod-plex-bridge` exists there |
+| Red banner says Plex can't see or read a bridge folder | The rclone mount on that Plex machine has stopped. Click **Show the setup command** in the banner and run it on that machine, then **Check again** |
+| Disk filling up on the Plex/Jellyfin machine | The rclone cache keeps a copy of what's playing. Lower **Cache limit (GB)** on the machine's Setup card, press Save and run Command B again. Copies are removed 10 minutes after playback stops |
 | Mount missing / folder picker empty | `systemctl status rclone-vod-bridge-movies` on the media host, then re-run Command B. In an LXC, enable FUSE first (`pct set <id> --features fuse=1`) |
 | Every page sends you to sign-in | Expected: everything except the `/vod/`, `/vod-movies/`, `/vod-series/` and `/stream/` paths requires sign-in |
 | Stream stops after ~10 min | Check Dispatcharr nginx has `uwsgi_buffering off` and `uwsgi_read_timeout 300s` on the `/proxy/` location |

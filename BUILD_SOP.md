@@ -373,7 +373,7 @@ Wants=network-online.target
 [Service]
 Type=notify
 ExecStartPre=/bin/mkdir -p /mnt/vod-bridge
-ExecStart=/bin/rclone mount vodbridge: /mnt/vod-bridge --allow-other --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m
+ExecStart=/bin/rclone mount vodbridge: /mnt/vod-bridge --allow-other --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m --vfs-cache-max-size 20G --vfs-cache-min-free-space 5G
 ExecStop=/bin/fusermount -u /mnt/vod-bridge
 Restart=on-failure
 RestartSec=10
@@ -399,7 +399,12 @@ ls /mnt/vod-bridge/
 | `--allow-other` | Lets the `plex` user read the mount (not just root) |
 | `--dir-cache-time 1m` | Re-checks the file listing every 1 minute (picks up newly activated movies quickly) |
 | `--vfs-cache-mode full` | Enables full read caching — allows Plex to seek within files |
-| `--vfs-cache-max-age 10m` | Cached data expires after 10 minutes (keeps disk usage low) |
+| `--vfs-cache-max-age 10m` | A cached copy is removed 10 minutes after the file is closed (an open file is never removed) |
+| `--vfs-cache-max-size 20G` | Caps the cache; the oldest closed copies are removed first. Several streams at once can still push it over while they play |
+| `--vfs-cache-min-free-space 5G` | Removes cached copies to keep 5 GB of the disk free (rclone 1.64 or newer; older rclone refuses to start with it) |
+
+Command B sets these from **Cache limit (GB)** on the machine's Setup card (split across its
+mounts). After changing the limit, press Save and run Command B again on that machine.
 
 ### Step 4: Add the series mount (for TV series)
 

@@ -16,6 +16,7 @@ from config import DISPATCHARR_URL, DISPATCHARR_API_KEY, STRM_OUTPUT_DIR, PLEX_U
 import media_servers
 import plex_libraries
 import plex_presence
+import plex_mounts
 from database import get_db
 from scraper import scrape_catalog, fetch_movies, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing, _upsert_movie
 from generator import generate_strm_files, sanitize_filename, write_strm_for_movie, parse_title, get_folder_name
@@ -834,9 +835,15 @@ async def _plex_sessions() -> tuple[list[dict], str]:
         duration_ms = int(s.get("duration", 0))
         view_offset_ms = int(s.get("viewOffset", 0))
 
+        title = s.get("title", "Unknown")
+        if s.get("type") == "episode" and s.get("grandparentTitle"):
+            # Same form as Jellyfin: "Show - S01E02 - Episode"
+            title = (f"{s['grandparentTitle']} - S{int(s.get('parentIndex') or 0):02d}"
+                     f"E{int(s.get('index') or 0):02d} - {title}")
+
         sessions.append({
             "server": "plex",
-            "title": s.get("title", "Unknown"),
+            "title": title,
             "year": s.get("year"),
             "type": s.get("type", "movie"),
             "thumb": s.get("thumb", ""),
@@ -912,45 +919,25 @@ async def activate_movies(request: Request):
             await db.commit()
             logger.info(f"Refreshed stream_ids for {updated_ids} movies before activation")
 
+        # Movies are activated by the queue worker (activation_queue.py), one at a time,
+        # only when a provider slot is free. The category is applied as each one starts.
         # Already-active movies keep their category; moving them is /movie-categories/assign.
-        if "category" in data:
-            err = await _set_movie_category(db, movie_ids, data.get("category"), "activated = 0")
-            if err:
-                return JSONResponse(status_code=400, content={"error": err})
-        else:
-            await _set_movie_category(db, movie_ids, "auto", "activated = 0 AND category_id IS NULL")
+        category = data.get("category") if "category" in data else None
+        if category not in (None, "auto", "", 0, "0", "default"):
+            try:
+                row = await db.execute("SELECT id FROM user_movie_categories WHERE id = ?", (int(category),))
+                found = await row.fetchone()
+            except (TypeError, ValueError):
+                found = None
+            if not found:
+                return JSONResponse(status_code=400, content={"error": "Category not found"})
 
-        placeholders = ",".join("?" for _ in movie_ids)
-        needs_header = await db.execute(
-            f"SELECT id, uuid, stream_id, account_id, account_name, content_type, container_extension, alt_streams, name, year FROM movies WHERE id IN ({placeholders}) AND stream_id IS NOT NULL",
-            movie_ids,
-        )
-        to_validate = [dict(r) for r in await needs_header.fetchall()]
-
-        activated_ids = []
-        failed_ids = []
-
-        if to_validate:
-            activated_ids, failed_ids = await _fetch_headers_validated(to_validate)
-
-        no_stream = [mid for mid in movie_ids if mid not in {m["id"] for m in to_validate}]
-        if no_stream:
-            failed_ids.extend(no_stream)
-
-        count_row = await db.execute("SELECT COUNT(*) as cnt FROM movies WHERE activated = 1")
-        total = (await count_row.fetchone())["cnt"]
-        # Lets the UI update a card's category badge without reloading the grid.
-        cat_rows = await db.execute(f"SELECT id, category_id FROM movies WHERE id IN ({placeholders})", movie_ids)
-        categories = {r["id"]: r["category_id"] for r in await cat_rows.fetchall()}
-
+        from activation_queue import enqueue
+        queued = await enqueue(movie_ids, category)
         return {
-            "status": "ok",
-            "categories": categories,
-            "activated": len(activated_ids),
-            "failed": len(failed_ids),
-            "activated_ids": activated_ids,
-            "failed_ids": failed_ids,
-            "total_activated": total,
+            "status": "queued",
+            "queued": queued,
+            "already_active": len(movie_ids) - queued,
             "stream_ids_refreshed": updated_ids,
         }
     finally:
@@ -1453,7 +1440,7 @@ async def _try_activate_stream(movie_id: int, movie_name: str, uuid: str,
         }
 
 
-async def _fetch_headers_validated(movies: list[dict]) -> tuple[list[int], list[int]]:
+async def _fetch_headers_validated(movies: list[dict], plex_scan: bool = True) -> tuple[list[int], list[int]]:
     """Fetch head+tail for each movie with provider fallback.
     Tries the primary stream first, then alt_streams on failure.
     Only marks dead if ALL streams fail."""
@@ -1550,7 +1537,7 @@ async def _fetch_headers_validated(movies: list[dict]) -> tuple[list[int], list[
             await _mark_activation_dead(movie_id, movie_name, movie.get("year"), str(e))
             failed_ids.append(movie_id)
 
-    if activated_ids:
+    if activated_ids and plex_scan:
         await _plex_scan_movie_sections(activated_ids)
 
     return activated_ids, failed_ids
@@ -3411,6 +3398,11 @@ async def _run_scheduled_refresh():
                               f"{pr['episodes_marked']} episodes already in Plex")
             except Exception as e:
                 report.append(f"Plex presence: FAILED ({plex_libraries.describe_error(e)})")
+            # 7b. Plex mounts: can Plex still read the bridge folders it mounted?
+            try:
+                report.append(plex_mounts.summary(await plex_mounts.check()))
+            except Exception as e:
+                report.append(f"Plex mounts: FAILED ({e})")
 
         # 8. Language detection — new movies only (missing language tag), background, TMDB API only
         if tmdb_local.has_credentials():
@@ -3807,6 +3799,18 @@ async def fetch_series_episodes_route(series_id: int, request: Request):
     relation_id = body.get("relation_id")
     result = await fetch_series_episodes(series_id, force_refresh=force_refresh, relation_id=relation_id)
     return result
+
+
+@router.get("/plex/mounts")
+async def plex_mounts_status():
+    """Last result of the check that Plex can read the bridge folders (see plex_mounts.py)."""
+    return plex_mounts.status()
+
+
+@router.post("/plex/mounts/check")
+async def plex_mounts_check():
+    await plex_mounts.check()
+    return plex_mounts.status()
 
 
 @router.post("/plex/scan-presence")
@@ -4233,6 +4237,60 @@ async def _ensure_episode_mapping(db, episode: dict, refetched_series: set) -> d
     return dict(fresh) if fresh else episode
 
 
+async def activate_episode_rows(db, episode_ids: list[int]) -> tuple[list[int], list[dict], set[int]]:
+    """Mark episodes active using their stored provider mapping. No provider connection and
+    no slot check: the account is picked at playback time. Returns (activated, failed, series_ids)."""
+    activated, failed, series_ids = [], [], set()
+    refetched_series = set()
+    now = datetime.now(timezone.utc).isoformat()
+    for episode_id in episode_ids:
+        try:
+            row = await db.execute("SELECT * FROM episodes WHERE id = ?", (episode_id,))
+            episode = await row.fetchone()
+            if not episode:
+                failed.append({"episode_id": episode_id, "reason": "Episode not found"})
+                continue
+            episode = await _ensure_episode_mapping(db, dict(episode), refetched_series)
+            if not (episode.get("stream_id") or episode.get("account_id")):
+                failed.append({"episode_id": episode_id, "reason": "No provider stream mapped"})
+                continue
+            await db.execute(
+                "UPDATE episodes SET activated = 1, activated_at = COALESCE(activated_at, ?) WHERE id = ?",
+                (now, episode_id))
+            activated.append(episode_id)
+            series_ids.add(episode["series_id"])
+        except Exception as e:
+            logger.error("Activate error for episode %s: %s", episode_id, e)
+            failed.append({"episode_id": episode_id, "reason": str(e)})
+    await db.commit()
+    return activated, failed, series_ids
+
+
+async def write_series_files(db, series_ids, category: dict):
+    """tvshow/season folders and episode NFO/STRM files for every active episode of these series."""
+    for series_id in series_ids:
+        series_row = await db.execute("SELECT * FROM series WHERE id = ?", (series_id,))
+        series = await series_row.fetchone()
+        if not series:
+            continue
+        series = dict(series)
+        await write_tvshow_and_season_dirs(series, category)
+        ep_rows = await db.execute(
+            "SELECT * FROM episodes WHERE series_id = ? AND activated = 1", (series_id,)
+        )
+        episodes = [dict(r) for r in await ep_rows.fetchall()]
+        await write_episode_nfo_batch(series, category, episodes)
+
+
+def series_scan_section(category: dict) -> str | None:
+    """Plex section to scan for a series category: its own section when set (999 = unset),
+    else the global PLEX_SERIES_LIBRARY_ID."""
+    cat_section = category.get("plex_library_section")
+    if cat_section is not None and cat_section != 999:
+        return str(cat_section)
+    return PLEX_SERIES_LIBRARY_ID or None
+
+
 @router.post("/episodes/activate")
 async def activate_episodes(request: Request):
     body = await request.json()
@@ -4251,80 +4309,11 @@ async def activate_episodes(request: Request):
         return JSONResponse(status_code=404, content={"error": "Category not found"})
     category = dict(category)
 
-    activated = []
-    failed = []
-    activated_series_ids = set()
-
-    refetched_series = set()
-    async with httpx.AsyncClient() as client:
-        for episode_id in episode_ids:
-            try:
-                row = await db.execute("SELECT * FROM episodes WHERE id = ?", (episode_id,))
-                episode = await row.fetchone()
-                if not episode:
-                    failed.append({"episode_id": episode_id, "reason": "Episode not found"})
-                    continue
-                episode = dict(episode)
-                episode = await _ensure_episode_mapping(db, episode, refetched_series)
-
-                picked = await _pick_episode_relation_with_capacity(client, episode)
-                if not picked:
-                    failed.append({"episode_id": episode_id, "reason": "No provider capacity available"})
-                    continue
-
-                stream_id, account_id = picked
-                account_name = ""
-                if account_id:
-                    try:
-                        alts = json.loads(episode.get("alt_streams") or "[]")
-                    except (json.JSONDecodeError, TypeError):
-                        alts = []
-                    if account_id == episode.get("account_id"):
-                        account_name = episode.get("account_name", "")
-                    else:
-                        for alt in alts:
-                            if alt.get("account_id") == account_id:
-                                account_name = alt.get("account_name", "")
-                                break
-
-                await db.execute(
-                    "UPDATE episodes SET activated = 1, stream_id = ?, account_id = ?, account_name = ?, "
-                    "activated_at = ? WHERE id = ?",
-                    (stream_id, account_id, account_name, datetime.now(timezone.utc).isoformat(), episode_id),
-                )
-                await db.commit()
-
-                activated.append(episode_id)
-                activated_series_ids.add(episode["series_id"])
-            except Exception as e:
-                logger.error("Activate error for episode %s: %s", episode_id, e)
-                failed.append({"episode_id": episode_id, "reason": str(e)})
-
-    for series_id in activated_series_ids:
-        series_row = await db.execute("SELECT * FROM series WHERE id = ?", (series_id,))
-        series = await series_row.fetchone()
-        if not series:
-            continue
-        series = dict(series)
-
-        await write_tvshow_and_season_dirs(series, category)
-
-        ep_rows = await db.execute(
-            "SELECT * FROM episodes WHERE series_id = ? AND activated = 1", (series_id,)
-        )
-        episodes = [dict(r) for r in await ep_rows.fetchall()]
-        await write_episode_nfo_batch(series, category, episodes)
+    activated, failed, series_ids = await activate_episode_rows(db, episode_ids)
+    await write_series_files(db, series_ids, category)
 
     if activated:
-        # Precedence: category's plex_library_section wins when explicitly set (not the
-        # 999 "unset" sentinel); otherwise fall back to the global PLEX_SERIES_LIBRARY_ID.
-        cat_section = category.get("plex_library_section")
-        if cat_section is not None and cat_section != 999:
-            scan_library_id = str(cat_section)
-        elif PLEX_SERIES_LIBRARY_ID:
-            scan_library_id = PLEX_SERIES_LIBRARY_ID
-        else:
-            scan_library_id = None
+        scan_library_id = series_scan_section(category)
         if scan_library_id:
             await _plex_scan_library(scan_library_id)
         else:
@@ -4422,7 +4411,9 @@ async def deactivate_episodes(request: Request):
                 continue
             episode = dict(episode)
 
-            await db.execute("UPDATE episodes SET activated = 0 WHERE id = ?", (episode_id,))
+            await db.execute(
+                "UPDATE episodes SET activated = 0, header_data = NULL, header_size = 0, tail_data = NULL, "
+                "tail_size = 0, tail_offset = 0, cache_account_id = NULL WHERE id = ?", (episode_id,))
             await db.commit()
 
             series_row = await db.execute("SELECT * FROM series WHERE id = ?", (episode["series_id"],))

@@ -20,10 +20,12 @@ from tmdb_routes import router as tmdb_router
 import setup_scripts
 import tmdb_local
 import tmdb_store
+import activation_queue
+import plex_mounts
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-APP_VERSION = "0.43.0"
+APP_VERSION = "0.45.1"
 
 
 async def _restore_strm_files():
@@ -113,6 +115,8 @@ async def lifespan(app: FastAPI):
     catalog_sched_task = asyncio.create_task(start_catalog_sync_scheduler())
     await asyncio.to_thread(tmdb_store.init_db)
     tmdb_task = asyncio.create_task(tmdb_local.fill_loop())
+    queue_task = activation_queue.start_worker()
+    mounts_task = asyncio.create_task(plex_mounts.monitor_loop())
     sweep_task = None
     if REDIRECT_STREAMING:
         from redirect import session_cap_sweep_loop
@@ -123,6 +127,8 @@ async def lifespan(app: FastAPI):
     log_archive_task.cancel()
     catalog_sched_task.cancel()
     tmdb_task.cancel()
+    queue_task.cancel()
+    mounts_task.cancel()
     if sweep_task:
         sweep_task.cancel()
 
@@ -140,6 +146,7 @@ app.include_router(auth.router)
 app.include_router(connection_router)
 app.include_router(sources.router)
 app.include_router(tmdb_router)
+app.include_router(activation_queue.router)
 app.include_router(setup_scripts.open_router)
 app.include_router(setup_scripts.router)
 app.mount("/static", StaticFiles(directory="/app/static"), name="static")

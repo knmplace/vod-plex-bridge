@@ -1,6 +1,6 @@
 # VOD Plex Bridge — User Guide
 
-This guide covers VOD Plex Bridge **v0.40.0**. It explains what the app does, how to set it up, and how to use each tab. For a first-time install (Docker compose, then the Setup tab's commands), see [INSTALL.md](../INSTALL.md). Come back here once the container is running.
+This guide covers VOD Plex Bridge **v0.45.1**. It explains what the app does, how to set it up, and how to use each tab. For a first-time install (Docker compose, then the Setup tab's commands), see [INSTALL.md](../INSTALL.md). Come back here once the container is running.
 
 Placeholders used throughout:
 
@@ -57,11 +57,23 @@ The Setup tab opens by itself on first sign-in until every step is done. Each st
 ### What the commands set up
 
 - **Command A** installs `/opt/vod-plex-bridge/` and `/etc/cron.d/vod-plex-bridge` on the Dispatcharr machine. Every minute it asks the bridge whether fresh lists are wanted (the Daily Run and **Run Now** ask for them). Every 12 hours it sends them anyway.
-- **Command B** installs rclone and FUSE, adds the `vodbridge-movies`, `vodbridge-movies-cat` and `vodbridge-series` remotes to `rclone.conf`, and starts `rclone-vod-bridge-movies.service`, `rclone-vod-bridge-movies-cat.service` and `rclone-vod-bridge-series.service`. They mount `/mnt/vod-bridge`, `/mnt/vod-bridge-movies` and `/mnt/vod-bridge-series` by default. The movie-categories mount stays empty until you add a movie category.
+- **Command B** installs rclone and FUSE, adds the `vodbridge-movies`, `vodbridge-movies-cat` and `vodbridge-series` remotes to `rclone.conf`, and starts `rclone-vod-bridge-movies.service`, `rclone-vod-bridge-movies-cat.service` and `rclone-vod-bridge-series.service`. They mount `/mnt/vod-bridge`, `/mnt/vod-bridge-movies` and `/mnt/vod-bridge-series` by default. The movie-categories mount stays empty until you add a movie category. It also installs `vod-bridge-disk-report.timer`, which sends the machine's free disk space and rclone cache size to the bridge every 5 minutes for the disk gauge.
 
 Both commands are safe to run again. A second run updates what is there and leaves working parts alone. To read a script before running it, download it with `curl -o` instead of piping it to `bash`.
 
-The commands contain a private setup link (`/setup/<token>/...`). If it leaks, use **make a new link** at the bottom of the Setup tab. Old commands stop working after that, so run Command A again (and Command B, to update a machine later).
+The commands contain a private setup link (`/setup/<token>/...`). If it leaks, use **make a new link** at the bottom of the Setup tab. Old commands stop working after that, so run Command A again, and Command B on each media machine so its disk report uses the new link.
+
+### Cache limit and disk gauge
+
+The mounts keep a copy of what is playing on the media machine's disk (rclone's full cache), so Plex can seek without opening a new provider connection. Copies are removed 10 minutes after playback stops. **Cache limit (GB)** on the machine's card (default 20 GB, shared by its mounts) caps the cache: the oldest finished copies go first. A title that is still playing is never removed, so allow about one full copy per stream that plays at the same time (a 4K movie can be 20–60 GB). With rclone 1.64 or newer, the mounts also keep 5 GB of the disk free.
+
+> **After changing the cache limit, press Save and run Command B again on that machine.** The limit is written into the mount services, so nothing changes until you do. Until then the Setup and Health tabs say the machine still uses the old limit. A working hand-made rclone mount that Command B leaves alone doesn't get the limit; Command B warns about it, and `| sudo bash -s -- --replace` swaps it for the bridge's own.
+
+The gauge on the machine's Setup card and on the Health tab shows used and free disk space, how much of it is the rclone cache, and the limit. It turns yellow below 20% free and red below 10%, and the "updated" time turns yellow if the machine hasn't reported for 20 minutes.
+
+### Plex mount check
+
+Every 30 minutes, and in the Daily Run, the bridge asks Plex about each bridge folder with active titles: is there a Plex library on it, and can Plex still read its newest file? If an rclone mount on the Plex machine has stopped, a red banner appears at the top of every page. It names the folder and the machine. **Show the setup command** opens that machine's Command B, which restarts or repairs the mount, and **Check again** re-runs the check. The Health tab shows the same result. The check uses the Plex API and the bridge's database only; it never contacts a provider.
 
 ### Libraries
 
@@ -237,8 +249,8 @@ Sets how often the **movie catalog** and the **series catalog** sync from Dispat
 >   plays.
 > - **Plex reads the head and tail of every new file** when it scans it. For movies the bridge
 >   answers those reads from what it saved at activation, so most never reach Dispatcharr.
->   Episodes have no saved copy, so **every new episode Plex scans opens a Dispatcharr
->   connection**.
+>   Episodes get the same saved copy from a background queue after they're added: **one short
+>   Dispatcharr connection per episode**, 5 seconds apart and only when a slot is free.
 > - **Jellyfin does the same.** Its library scan probes each new file (ffprobe), which reads
 >   the start of the file and often the end.
 > - **Redirect mode: use with caution.** It sends Plex and Jellyfin straight to Dispatcharr's
@@ -279,9 +291,10 @@ Summary tables show counts **by provider** (fallback providers included), **by l
 
 - **Search** by title, and **sort** by rating, year or name (ascending or descending).
 - **Filters**: activated or not, decade, genre, language, category, provider (the last four are multi-select). Use **Clear filters** to reset them. Page size can be 60, 100, 200 or 300.
-- **Activate or deactivate one movie** with the button on its card. **Activate** opens a small window where you pick its Plex library: **Auto category**, **Default library**, any movie category, or **+ New category…** (enter a name, an optional folder and a Plex library, and the bridge creates the category and its library, then activates the movie into it). **Remove** deactivates straight away. The card updates in place; the page doesn't reload.
+- **Activate or deactivate one movie** with the button on its card. **Activate** opens a window where you pick its Plex library: **Auto category**, **Default library**, any movie category, or **+ New category…** (enter a name, an optional folder and a Plex library, and the bridge creates the category and its library, then activates the movie into it). The same window opens for a bulk activation, with one library for all of them, a warning when there are two or more, and each provider account's free connection slots. **Remove** deactivates straight away. The card updates in place; the page doesn't reload.
+- **Activation queue**: activated movies go into a queue and are added one at a time, 5 seconds apart. If no provider account has a free slot, a movie waits and is checked again every 10 minutes instead of failing. The queue pill at the top shows progress; click it to see queued movies or remove them. Queued cards show a **Queued** badge.
 - **Activity indicator**: while an activation, move or deactivation runs (single or bulk, movies or episodes), a spinning pill next to **Scan Plex Library** says what's happening. It turns into a green ✓ or red ✕ result for a few seconds when it's done.
-- **Bulk actions**: click cards to select them. The selection bar then offers a category picker, **Activate**, **Move**, **Deactivate** and **Clear**. Language detection runs automatically in the Daily Run, and you can run it for a single movie from its details.
+- **Bulk actions**: click cards to select them (shift+click selects a range). The selection bar then offers a category picker, **Activate**, **Move**, **Deactivate** and **Clear**. Language detection runs automatically in the Daily Run, and you can run it for a single movie from its details.
 - **Categories**: the picker chooses where activated movies go. **Auto category** (the default, and what the card's own button uses) picks the movie category whose provider categories include the movie, or the Default library if none do. **Default library** or a named category sends them there. **Move** sends already-active movies to the picked category: they leave their old Plex library and the new one is scanned. A movie in a category shows the category name on its card.
 
 What happens when you activate:
@@ -331,15 +344,21 @@ Because each category is its own folder under the series mount, one rclone serie
 
 **Browse Series**
 
-- Search, filter by category, and filter by activated.
+- Search, filter by category, and filter by activated. Cards show provider and language tags, and **Series per page** can be 60, 100, 200 or 300 (remembered by the browser).
 - **Sync Series Catalog** pulls the latest series list from Dispatcharr.
 
-**Series detail**
+**Activate several shows at once**
 
-1. Click a series to open it.
-2. Pick its category, then a season.
-3. Click **Fetch Episodes** to load the episode list. A **Trailer** button appears when one is available.
-4. Select episodes, then choose **Activate**, **Reactivate** or **Deactivate**.
+1. Tick series cards (shift+click selects a range), then click **Activate**.
+2. The wizard has one step per show. Pick its Plex library, then **Yes, all N episodes**, or **No, let me choose** to tick seasons or open a season to pick episodes. **Select all** and shift+click ranges work for seasons and episodes. **Skip this show** leaves one out.
+3. The **Review** step lists what will be added. It warns that each new episode opens one short provider connection (for its saved start and end), with an extra warning over 20 episodes.
+4. Nothing is queued until you click **Add N episodes**. The episodes are added by the background queue, then each library gets one Plex scan.
+
+A show that already has active episodes stays in its library, and those episodes are skipped.
+
+**One show**
+
+Click a series card to open it in the same layout. A **Trailer** button appears when one is available, and **Refresh episode list** asks Dispatcharr to re-read the show (no video stream is opened). Pick new episodes to add as above, or click active episodes (or **Select all active**) to **Deactivate** or **Reactivate** them.
 
 ---
 
@@ -404,7 +423,7 @@ This sub-tab appears once a media machine reports that Rclone Manager is running
 ### Other monitoring tabs
 
 - **Streams**: active bridge streams and **Now Playing**, each with auto-refresh. Now Playing covers Plex plus Jellyfin and Emby when they are set up (section 4.7), with each session tagged by server.
-- **Health**: status cards for the bridge, Dispatcharr, the Plex library, and Jellyfin/Emby when set up (**Check Now** to refresh them). It also shows stream health counts (activated, healthy, striking, dead, never checked) and a health check log. The schedule itself lives in **Maintenance > Daily Updates**, not in Settings.
+- **Health**: status cards for the bridge, Dispatcharr, the Plex library, and Jellyfin/Emby when set up (**Check Now** to refresh them). It also shows the Plex mount check, and each media machine's setup result with its disk gauge and any cache-limit warning (section 2). It also shows stream health counts (activated, healthy, striking, dead, never checked) and a health check log. The schedule itself lives in **Maintenance > Daily Updates**, not in Settings.
 
 ---
 
@@ -489,6 +508,18 @@ Changing the mode requires a container restart.
 2. Open `http://<bridge-host>:8585/vod/` in a browser. It should list your activated movies. If it does but the mount is empty, check the URL in `rclone.conf`.
 3. Make sure the Plex library points at the mount path, and that path matches **Plex movie mount root** in Settings.
 4. Wait about a minute (rclone's directory cache), then scan the library in Plex.
+
+**A red banner says Plex can't see or read a bridge folder.**
+The rclone mount on that Plex machine has stopped or broken. Click **Show the setup command**, run it on that machine, then click **Check again**. See "Plex mount check" in section 2.
+
+**The disk on the Plex/Jellyfin machine is filling up.**
+The rclone cache keeps a copy of each title while it plays and removes it 10 minutes after playback stops. Lower **Cache limit (GB)** on the machine's Setup card, press **Save** and run Command B again. If the card shows a cache-limit warning, Command B hasn't run since the limit changed. Several big titles playing at once can still go over the limit until they stop.
+
+**The disk gauge is missing or says it was updated long ago.**
+Run Command B again on that machine. It installs the 5-minute report timer (`systemctl status vod-bridge-disk-report.timer`). If you made a new setup link, the old timer stops reporting until Command B is run again.
+
+**Movies say Queued and nothing happens.**
+Every provider account is busy, so they wait and are checked again every 10 minutes. Click the queue pill to see them or remove them.
 
 **Plex matched a movie or show to the wrong title.**
 Titles activated since 0.41.2 carry their TMDB ID in the name Plex sees, so this is mostly older titles that Plex matched before. Plex keeps an existing match. Use **Fix Match** on the item and search `{tmdb-<id>}`, with the ID from the bridge's movie card, or remove the item and scan again. If the title has no TMDB ID, Plex can only guess from the name and year.

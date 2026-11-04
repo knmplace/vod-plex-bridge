@@ -557,10 +557,6 @@
             border-color: var(--accent);
             color: #fff;
         }
-        #seriesDetailEpisodeBody tr.card-selected {
-            background: var(--accent);
-            color: #fff;
-        }
 
         /* Hover action bar */
         .movie-card .card-actions {
@@ -736,7 +732,58 @@
         .act-modal-box h3 { margin: 0; font-size: 1rem; color: var(--text-primary); }
         .act-modal-box label { font-size: 0.78rem; color: var(--text-muted); }
         .act-modal-box .search-input { width: 100%; margin-bottom: 0; }
-        .act-modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.4rem; }
+        .act-modal-info { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.45; display: flex; flex-direction: column; gap: 0.4rem; }
+        .act-modal-info .warn { border-left: 3px solid var(--warning); padding: 0.35rem 0.6rem; background: var(--bg-card-hover); }
+        .act-modal-info .slot-line { display: flex; justify-content: space-between; gap: 0.75rem; }
+        .act-modal-info .slot-full { color: var(--danger); }
+        .busy-ind.queue-ind { cursor: pointer; }
+        .busy-ind.queue-ind.waiting { color: var(--warning); border-color: var(--warning); }
+        .busy-ind.queue-ind.waiting .busy-spin { display: none; }
+        .movie-card .activated-badge.queued-badge { background: var(--warning); color: #2b1d00; }
+        .queue-list { max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.8rem; }
+        .queue-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.4rem; border: 1px solid var(--border); border-radius: 6px; }
+        .queue-row .q-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+        .queue-row .q-note { font-size: 0.72rem; color: var(--text-muted); }
+        .movie-card { user-select: none; }
+        .act-modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.4rem; flex-wrap: wrap; }
+        #seriesGrid .check-overlay { cursor: pointer; }
+        .sw-box { width: min(580px, calc(100vw - 32px)); max-height: calc(88vh / var(--z)); overflow-y: auto; position: relative;
+                  background: rgba(26,34,54,0.55); border-color: rgba(255,255,255,0.12); backdrop-filter: blur(2px); }
+        .sw-box.sw-detail { width: min(680px, calc(100vw - 32px)); }
+        .sw-x { position: absolute; top: 0.55rem; right: 0.8rem; font-size: 1.5rem; line-height: 1; color: #fff; cursor: pointer; }
+        .sw-title-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; padding-right: 1.5rem; }
+        .sw-title-row .btn { padding: 0.15rem 0.55rem; font-size: 0.74rem; }
+        .sw-all { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.5rem; font-size: 0.8rem; color: var(--text-primary); flex-wrap: wrap; }
+        .sw-all .sw-link { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 0.74rem; padding: 0; margin-left: auto; }
+        .sw-ep.active-ep { color: var(--text-primary); cursor: pointer; }
+        .sw-ep.active-ep.marked { color: var(--danger); }
+        .sw-ep .sw-active-tag { color: var(--success); font-size: 0.72rem; }
+        #scrollTopBtn { position: fixed; right: 22px; bottom: 22px; z-index: 9000; width: 42px; height: 42px; border-radius: 50%;
+                        border: 1px solid var(--border); background: var(--accent); color: #fff; font-size: 1.2rem; cursor: pointer;
+                        box-shadow: 0 4px 14px rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; }
+        #scrollTopBtn.show { display: flex; }
+        .sw-step { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+        .sw-head { display: flex; gap: 0.75rem; align-items: center; }
+        .sw-head img { width: 46px; height: 69px; object-fit: cover; border-radius: 4px; background: var(--bg-card-hover); flex: none; }
+        .sw-yn { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        .sw-yn .btn { padding: 0.25rem 0.7rem; font-size: 0.8rem; }
+        .sw-seasons { display: flex; flex-direction: column; gap: 0.3rem; max-height: calc(42vh / var(--z)); overflow-y: auto; }
+        .sw-season { border: 1px solid var(--border); border-radius: 6px; }
+        .sw-season-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.5rem; }
+        .sw-season-row .sw-sname { cursor: pointer; color: var(--text-primary); }
+        .sw-season-row .sw-count { margin-left: auto; font-size: 0.74rem; color: var(--text-muted); }
+        .sw-exp { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 0.85rem; padding: 0 0.25rem; }
+        .sw-eps { display: flex; flex-direction: column; gap: 0.1rem; padding: 0 0.5rem 0.4rem 1.9rem; }
+        .sw-ep { display: flex; gap: 0.45rem; align-items: center; font-size: 0.78rem; cursor: pointer; user-select: none; color: var(--text-primary); }
+        .sw-ep.done { color: var(--text-muted); cursor: default; }
+        .sw-ep input { pointer-events: none; }
+        .sw-muted { font-size: 0.74rem; color: var(--text-muted); }
+        .sw-sum { display: flex; flex-direction: column; }
+        .sw-sum-row { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+        .sw-sum-row.skipped { color: var(--text-muted); }
+        .sw-sum-row .sw-sub { font-size: 0.74rem; color: var(--text-muted); }
+        .sw-sum-row.sw-total { border-bottom: none; }
+        .sw-note { border-left: 3px solid var(--accent); padding: 0.35rem 0.6rem; background: var(--bg-card-hover); }
         .sync-overlay .sync-title {
             font-size: 1.2rem;
             font-weight: 600;
@@ -1001,6 +1048,11 @@
         .server-tag.jellyfin { background: #8e5cd9; }
         .server-tag.emby { background: #3f9a39; }
         .plex-session-meta { font-size: 0.78rem; color: var(--text-muted); }
+        .disk-gauge { margin: 0.4rem 0 0.2rem; max-width: 520px; }
+        .disk-gauge-bar { position: relative; height: 8px; background: var(--bg-secondary); border-radius: 4px; overflow: hidden; }
+        .disk-gauge-bar > div { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+        .disk-gauge-bar > .disk-gauge-cache { background: rgba(0, 0, 0, 0.35); }
+        .disk-gauge-text { font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.2rem; }
         .plex-session-progress {
             height: 4px;
             background: var(--bg-secondary);
@@ -1051,6 +1103,7 @@
     <div class="trailer-modal" id="activateModal" onclick="if (event.target === this) closeActivateModal()">
         <div class="act-modal-box" role="dialog" aria-modal="true" aria-labelledby="actModalTitle">
             <h3 id="actModalTitle">Activate</h3>
+            <div class="act-modal-info" id="actModalList" style="display:none;"></div>
             <label for="actModalCategory">Plex library</label>
             <select class="search-input" id="actModalCategory" onchange="actModalToggleNew()"></select>
             <div id="actModalNew" style="display:none;flex-direction:column;gap:0.5rem;">
@@ -1058,9 +1111,23 @@
                 <input type="text" class="search-input" id="actModalNewFolder" placeholder="Folder (defaults to name)">
                 <select class="search-input" id="actModalNewPlex" title="Plex movie library this category's folder is added to"></select>
             </div>
+            <div class="act-modal-info" id="actModalInfo"></div>
             <div class="act-modal-actions">
                 <button class="btn btn-outline" onclick="closeActivateModal()">Cancel</button>
                 <button class="btn btn-primary" id="actModalGo" onclick="confirmActivateModal()">Activate</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="trailer-modal" id="queueModal" onclick="if (event.target === this) closeQueueModal()">
+        <div class="act-modal-box" role="dialog" aria-modal="true" aria-labelledby="queueModalTitle" style="width:min(520px, calc(100vw - 32px));">
+            <h3 id="queueModalTitle">Activation queue</h3>
+            <div class="act-modal-info" id="queueModalSummary"></div>
+            <div class="queue-list" id="queueModalList"></div>
+            <div class="act-modal-actions">
+                <button class="btn btn-outline" onclick="closeQueueModal()">Close</button>
+                <button class="btn btn-danger" onclick="cancelQueue()">Cancel all queued</button>
+                <button class="btn btn-primary" onclick="queueCheckNow()" title="Check the waiting movies for a free slot now">Check now</button>
             </div>
         </div>
     </div>
@@ -1132,6 +1199,7 @@
         </div>
         <button class="btn btn-outline" onclick="scanPlexPresence(this)" title="Mark movies and shows that are already in a Plex library">Scan Plex Library</button>
         <span class="busy-ind" id="busyInd" role="status" aria-live="polite"><span class="busy-spin"></span><span id="busyText"></span></span>
+        <span class="busy-ind queue-ind" id="queueInd" role="status" aria-live="polite" onclick="openQueueModal()" title="Show the activation queue"><span class="busy-spin"></span><span id="queueText"></span></span>
         <button class="btn btn-danger" id="stopBtn" onclick="stopSync()" style="display:none;">Stop</button>
         <span class="msg" id="syncMessage"></span>
         <span class="msg" id="langMessage" style="color:var(--warning);margin-left:0.5rem;"></span>
@@ -1143,6 +1211,14 @@
         <button class="sub-nav-btn" data-sub="logs" onclick="switchTab('logs')">Proxy Logs</button>
         <button class="sub-nav-btn" data-sub="daily" onclick="switchTab('daily')">Daily Updates</button>
         <button class="sub-nav-btn" data-sub="rclone" id="rcloneSubBtn" style="display:none;" onclick="switchTab('rclone')">Rclone</button>
+    </div>
+
+    <!-- Shown when Plex can't read a bridge folder it mounted (plex_mounts.py) -->
+    <div id="mountBanner" style="display:none;margin:0.5rem 1rem;padding:0.7rem 1rem;border:1px solid var(--danger);border-radius:8px;background:rgba(248,81,73,0.12);color:var(--text);">
+        <div style="display:flex;gap:0.75rem;align-items:flex-start;">
+            <div style="flex:1;" id="mountBannerText"></div>
+            <button class="btn btn-outline" id="mountBannerBtn" onclick="recheckMounts()">Check again</button>
+        </div>
     </div>
 
     <!-- BROWSE TAB -->
@@ -1428,8 +1504,19 @@
                         <option value="1">Activated</option>
                         <option value="0">Not Activated</option>
                     </select>
+                    <select id="seriesPageSize" onchange="localStorage.setItem('seriesPageSize', this.value);loadSeriesList(1)" title="Shows per page">
+                        <option value="60" selected>60 / page</option>
+                        <option value="100">100 / page</option>
+                        <option value="200">200 / page</option>
+                        <option value="300">300 / page</option>
+                    </select>
                     <button class="btn btn-warning" style="font-size:0.78rem;" onclick="scrapeSeriesCatalog()">Sync Series Catalog</button>
                     <span class="msg" id="seriesSyncMessage"></span>
+                    <div id="seriesSelectionBar" style="display:none;" class="selection-bar">
+                        <span class="count" id="seriesSelCount">0</span> selected
+                        <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="activateSelectedSeries()">Activate</button>
+                        <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="clearSeriesSelection()">Clear</button>
+                    </div>
                 </div>
                 <div id="seriesLibraryBanner" style="display:none;align-items:center;gap:0.75rem;padding:0.5rem 1rem;background:var(--bg-card-hover);border-left:3px solid var(--accent);font-size:0.82rem;">
                     <span id="seriesLibraryBannerText"></span>
@@ -1445,34 +1532,14 @@
         </div>
     </div>
 
-    <!-- SERIES DETAIL MODAL -->
-    <div class="trailer-modal" id="seriesDetailModal" onclick="closeSeriesDetail(event)">
-        <div onclick="event.stopPropagation()" style="background:var(--bg-panel);border-radius:8px;max-width:900px;width:90%;max-height:calc(85vh / var(--z));overflow-y:auto;margin:calc(5vh / var(--z)) auto;padding:1.25rem;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-                <div style="display:flex;align-items:center;gap:0.6rem;min-width:0;">
-                    <h2 id="seriesDetailTitle" style="margin:0;font-size:1.1rem;"></h2>
-                    <button class="btn btn-danger" id="seriesDetailTrailer" style="display:none;padding:0.2rem 0.6rem;font-size:0.78rem;">&#9654; Trailer</button>
-                </div>
-                <span class="trailer-close" style="position:static;" onclick="closeSeriesDetail()">&times;</span>
-            </div>
-            <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;">
-                <select id="seriesDetailCategory" style="min-width:220px;"></select>
-                <select id="seriesDetailSeason" onchange="loadSeriesDetailEpisodes()">
-                    <option value="0">All Seasons</option>
-                </select>
-                <button class="btn btn-outline" style="font-size:0.78rem;" onclick="fetchSeriesEpisodesNow()">Fetch Episodes</button>
-                <div id="seriesEpSelectionBar" style="display:none;gap:0.4rem;align-items:center;">
-                    <span class="count" id="seriesEpSelCount">0</span> selected
-                    <button class="btn btn-success" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="activateSelectedEpisodes()">Activate</button>
-                    <button class="btn btn-primary" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="reactivateSelectedEpisodes()">Reactivate</button>
-                    <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="deactivateSelectedEpisodes()">Deactivate</button>
-                    <button class="btn btn-outline" style="padding:0.2rem 0.6rem;font-size:0.78rem;" onclick="clearEpisodeSelection()">Clear</button>
-                </div>
-            </div>
-            <table class="summary-table compact" id="seriesDetailEpisodeTable">
-                <thead><tr><th style="width:24px;"></th><th>S</th><th>E</th><th>Title</th><th>Aired</th><th>Status</th></tr></thead>
-                <tbody id="seriesDetailEpisodeBody"><tr><td colspan="6" class="empty-state">Select a season, then Fetch Episodes.</td></tr></tbody>
-            </table>
+    <!-- SERIES ACTIVATE WIZARD: one card per show, then a summary -->
+    <div class="trailer-modal" id="seriesWizModal" onclick="if (event.target === this) closeSeriesWizard()">
+        <div class="act-modal-box sw-box" role="dialog" aria-modal="true" aria-labelledby="swTitle">
+            <span class="sw-x" title="Close" onclick="closeSeriesWizard()">&times;</span>
+            <div class="sw-step" id="swStep"></div>
+            <h3 id="swTitle"></h3>
+            <div class="act-modal-info" id="swBody"></div>
+            <div class="act-modal-actions" id="swActions"></div>
         </div>
     </div>
 
@@ -2049,7 +2116,7 @@
                 else if (shown('tabSeries')) {
                     loadSeriesCategories();
                     loadSeriesList(seriesCurrentPage);
-                    if (shown('seriesDetailModal')) loadSeriesDetailEpisodes();
+                    if (sw && sw.detail) swReload();
                 } else if (shown('tabDead')) loadDeadMovies(deadPage);
                 else if (shown('tabCatalog')) loadCatalogSummary();
             }, 600);
@@ -2555,7 +2622,42 @@
             }).join('');
         }
         const SETUP_LINUX_MOUNTS = ['/mnt/vod-bridge', '/mnt/vod-bridge-series', '/mnt/vod-bridge-movies'];
-        const RCLONE_FLAGS = '--read-only --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m';
+        // The cache limit is shared by the machine's mounts, the same split Command B uses.
+        function rcloneFlags(a) {
+            const n = Math.max(1, setupMounts(a).length);
+            const perMb = Math.ceil((parseInt(a.cache_gb, 10) || 20) * 1024 / n);
+            return `--read-only --dir-cache-time 1m --vfs-cache-mode full --vfs-cache-max-age 10m --vfs-cache-max-size ${perMb}M --vfs-cache-min-free-space 5G`;
+        }
+
+        function fmtBytes(n) {
+            if (!(n >= 0)) return '?';
+            const gb = n / 1073741824;
+            return gb >= 100 ? `${Math.round(gb)} GB` : gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(n / 1048576)} MB`;
+        }
+
+        // Disk space on a media machine, from the report its timer sends every 5 minutes.
+        function diskGauge(d) {
+            if (!d || !(d.total > 0)) return '';
+            const used = d.total - d.free;
+            const pct = Math.min(100, Math.round(used * 100 / d.total));
+            const color = d.free < d.total * 0.1 ? 'var(--danger)' : d.free < d.total * 0.2 ? 'var(--warning)' : 'var(--success)';
+            const cachePct = Math.min(100, Math.round((d.cache || 0) * 100 / d.total));
+            const stale = Date.now() / 1000 - (d.received_at || 0) > 20 * 60;
+            return `<div class="disk-gauge" title="Whole bar: the disk. Darker part: the bridge mounts&#39; rclone cache.">
+                <div class="disk-gauge-bar"><div style="width:${pct}%;background:${color};"></div><div class="disk-gauge-cache" style="width:${cachePct}%;"></div></div>
+                <div class="disk-gauge-text">Disk: ${fmtBytes(used)} of ${fmtBytes(d.total)} used, <b>${fmtBytes(d.free)} free</b> · rclone cache ${fmtBytes(d.cache)}` +
+                (d.cache_max ? ` of ${fmtBytes(d.cache_max)} limit` : '') +
+                ` · ${stale ? '<span style="color:var(--warning)">' : ''}updated ${setupAgo(d.received_at)}${stale ? '</span>' : ''}</div></div>`;
+        }
+
+        // The cache limit takes effect only when the machine's command runs again after a change.
+        function cacheLimitNote(m, mr) {
+            if (!m || m.os !== 'linux' || !mr) return '';
+            const want = String(m.cache_gb || '20');
+            if (mr.cache_gb == null) return `<span style="color:var(--warning)">This machine's mounts have no cache limit yet. Run its command again to set ${escapeHtml(want)} GB.</span>`;
+            if (String(mr.cache_gb) !== want) return `<span style="color:var(--warning)">The cache limit is set to ${escapeHtml(want)} GB, but this machine still uses ${escapeHtml(String(mr.cache_gb))} GB. Run its command again to apply it.</span>`;
+            return '';
+        }
         const SETUP_SERVERS = ['plex', 'jellyfin', 'emby'];
         const SETUP_SERVER_NAMES = { plex: 'Plex', jellyfin: 'Jellyfin', emby: 'Emby' };
         const SETUP_OS_OPTIONS = [['linux', 'Linux / Proxmox LXC'], ['unraid', 'Unraid'], ['windows', 'Windows'],
@@ -2631,6 +2733,10 @@
                     <label class="conn-field" data-show="want_movies"><span>Movie categories folder on that machine</span><input data-f="movie_cat_mount" value="${v(m.movie_cat_mount)}" ${changed}></label>
                     <label class="conn-field" data-show="want_series"><span>Series folder on that machine</span><input data-f="series_mount" value="${v(m.series_mount)}" ${changed}></label>
                 </div>
+                <div class="conn-fields" style="margin-top:0.6rem;">
+                    <label class="conn-field"><span>Cache limit (GB)</span><input data-f="cache_gb" type="number" min="2" max="2000" step="1" value="${v(m.cache_gb || 20)}" ${changed}></label>
+                    <p class="conn-note" style="flex:1 1 100%;margin:0;">rclone keeps a copy of what is playing on this machine's disk, so seeking doesn't open a new connection to the provider. Copies are removed 10 minutes after playback stops, and the oldest go first once this limit is reached. A title that is still playing is never removed, so leave room for one copy per stream at the same time (a 4K movie can be 20–60 GB). After changing it, click Save and run this machine's command again: the limit is written into its mounts.</p>
+                </div>
                 <div class="conn-fields" style="margin-top:0.6rem;" data-show="rcm">
                     <label class="conn-field setup-check"><input type="checkbox" data-f="rclone_manager"${on(m.rclone_manager)} ${changed}><span>Also install Rclone Manager, a web page for checking and restarting the mounts</span></label>
                     <p class="conn-note">Tick this before you run the command below. If you tick it later, click Save and run the command again.</p>
@@ -2677,6 +2783,7 @@
                 want_movies: f('want_movies').checked, want_series: f('want_series').checked,
                 movie_mount: f('movie_mount').value.trim(), series_mount: f('series_mount').value.trim(),
                 movie_cat_mount: f('movie_cat_mount').value.trim(), rclone_manager: f('rclone_manager').checked,
+                cache_gb: f('cache_gb').value.trim(),
             };
         }
 
@@ -2689,7 +2796,7 @@
             const [movie, series, movieCat] = setupMountDefaults('linux');
             document.getElementById('setupMachines').insertAdjacentHTML('beforeend', setupMachineCard({
                 id: 'm' + n, label: '', servers: [hasPlex ? 'jellyfin' : 'plex'], os: 'linux', docker: false, container: '',
-                want_movies: true, want_series: true, movie_mount: movie, series_mount: series, movie_cat_mount: movieCat, rclone_manager: false,
+                want_movies: true, want_series: true, movie_mount: movie, series_mount: series, movie_cat_mount: movieCat, rclone_manager: false, cache_gb: '20',
             }));
             setupDirty();
             renderSetupFormHints();
@@ -2885,7 +2992,7 @@
                 const script = '#!/bin/bash\n# VOD Plex Bridge mounts. User Scripts schedule: At Startup of Array\n' +
                     mounts.map(([, path, url]) =>
                         `mkdir -p ${path}\nfusermount -uz ${path} 2>/dev/null\n` +
-                        `rclone mount :http: ${path} --http-url ${url} --allow-other ${RCLONE_FLAGS} \\\n    --uid 99 --gid 100 --umask 002 --daemon`).join('\n');
+                        `rclone mount :http: ${path} --http-url ${url} --allow-other ${rcloneFlags(a)} \\\n    --uid 99 --gid 100 --umask 002 --daemon`).join('\n');
                 return `<p class="conn-note">Unraid steps ${untested}</p><ol class="setup-steps">
                     <li>In <b>Apps</b>, install the <b>rclone</b> plugin and the <b>User Scripts</b> plugin.</li>
                     <li>In <b>Settings → User Scripts</b>, add a script named <code>vod-bridge-mount</code>, paste this in, set the schedule to <b>At Startup of Array</b>, then click <b>Run in background</b> once.${setupPre(script)}
@@ -2895,7 +3002,7 @@
             }
             if (a.os === 'windows') {
                 const tasks = mounts.map(([, path, url]) =>
-                    `C:\\rclone\\rclone.exe mount :http: ${path.replace(/\\$/, '')} --http-url ${url} ${RCLONE_FLAGS} --no-console`).join('\n');
+                    `C:\\rclone\\rclone.exe mount :http: ${path.replace(/\\$/, '')} --http-url ${url} ${rcloneFlags(a)} --no-console`).join('\n');
                 return `<p class="conn-note">Windows steps ${untested}</p><ol class="setup-steps">
                     <li>Install <b>WinFsp</b> from winfsp.dev. Download <b>rclone</b> from rclone.org and put <code>rclone.exe</code> in <code>C:\\rclone</code>.</li>
                     <li>Open <b>Task Scheduler → Create Task</b>, once for each line below. Run it as the Windows user that Plex runs as, choose <b>Run only when user is logged on</b>, and set the trigger to <b>At log on</b>. The action starts the program <code>C:\\rclone\\rclone.exe</code> with the rest of the line as its arguments.${setupPre(tasks)}
@@ -2904,7 +3011,7 @@
             }
             if (a.os === 'macos') {
                 const plists = mounts.map(([name, path, url]) => {
-                    const args = ['/usr/local/bin/rclone', 'mount', ':http:', path, '--http-url', url].concat(RCLONE_FLAGS.split(' '));
+                    const args = ['/usr/local/bin/rclone', 'mount', ':http:', path, '--http-url', url].concat(rcloneFlags(a).split(' '));
                     return `<!-- ~/Library/LaunchAgents/com.vodbridge.${name}.plist -->\n<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n  <key>Label</key><string>com.vodbridge.${name}</string>\n  <key>ProgramArguments</key><array>\n` +
                         args.map(x => `    <string>${x}</string>`).join('\n') +
                         `\n  </array>\n  <key>RunAtLoad</key><true/>\n  <key>KeepAlive</key><true/>\n</dict></plist>`;
@@ -2916,7 +3023,7 @@
             }
             // NAS: no host rclone, so a small rclone container does the mount.
             const cmd = mounts.map(([name, , url], i) =>
-                `${i === mounts.length - 1 ? 'exec ' : ''}rclone mount :http: /mnt/${name} --http-url ${url} --allow-other ${RCLONE_FLAGS}${i === mounts.length - 1 ? '' : ' --daemon &&'}`);
+                `${i === mounts.length - 1 ? 'exec ' : ''}rclone mount :http: /mnt/${name} --http-url ${url} --allow-other ${rcloneFlags(a)}${i === mounts.length - 1 ? '' : ' --daemon &&'}`);
             const compose = `  vod-bridge-rclone:
     image: rclone/rclone:1.68.2
     container_name: vod-bridge-rclone
@@ -2993,7 +3100,8 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                     status.innerHTML =
                         `Ran on <b>${escapeHtml(mr.hostname || mr.from || '?')}</b> ${setupAgo(mr.received_at)}: ${mr.ok ? '<span style="color:var(--success)">worked</span>' : '<span style="color:var(--danger)">something failed, see the command output</span>'}.` +
                         (mr.read_as ? ` Checked as user <b>${escapeHtml(mr.read_as)}</b>.` : '') + (mounts ? '<br>' + mounts : '') +
-                        (m.docker && !mr.docker_ok ? '<br><span style="color:var(--warning)">The container can\'t see the folders yet. Add the volume lines and recreate it.</span>' : '');
+                        (m.docker && !mr.docker_ok ? '<br><span style="color:var(--warning)">The container can\'t see the folders yet. Add the volume lines and recreate it.</span>' : '') +
+                        (cacheLimitNote(m, mr) ? '<br>' + cacheLimitNote(m, mr) : '') + diskGauge(st.disk);
                 } else {
                     status.innerHTML = m.os === 'linux' ? 'Waiting for the command to report back.' : '';
                 }
@@ -3085,11 +3193,23 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             const s = await fetchJSON('/api/setup/state');
             if (s && !s.error) showRcloneSubBtn(s);
             const reported = s && !s.error ? (s.machines || []).filter(m => m.report) : [];
-            el.innerHTML = reported.map(m => {
+            // Live result of the bridge's own Plex check (every 30 min), above the setup-script reports.
+            let live = '';
+            const pm = await fetchJSON('/api/plex/mounts').catch(() => null);
+            if (pm && pm.checked_at && (pm.mounts || []).length) {
+                const down = pm.down || [];
+                live = `Plex can read bridge folders (checked ${setupAgo(pm.checked_at)}): ` + (down.length
+                    ? `<span style="color:var(--danger)">NO: ${down.map(m => escapeHtml(m.label) + ' (' + escapeHtml(m.root) + ')').join(', ')}</span>`
+                    : '<span style="color:var(--success)">OK</span>') + (reported.length ? '<br>' : '');
+            }
+            const answers = (s && s.answers && s.answers.machines) || [];
+            el.innerHTML = live + reported.map(m => {
                 const mr = m.report;
-                return `${escapeHtml(m.name)} mounts (${escapeHtml(mr.hostname || mr.from || '?')}, checked ${setupAgo(mr.received_at)}): ` +
+                const note = cacheLimitNote(answers.find(x => x.id === m.id), mr);
+                return `${escapeHtml(m.name)} setup command last ran ${setupAgo(mr.received_at)} on ${escapeHtml(mr.hostname || mr.from || '?')}: ` +
                     (mr.ok ? '<span style="color:var(--success)">OK</span>' : '<span style="color:var(--danger)">problem, see Settings → Setup</span>') +
-                    (m.rclone_manager_url ? ` · <a href="${escapeHtml(m.rclone_manager_url)}" target="_blank" rel="noopener" style="color:var(--accent);">Open Rclone Manager</a>` : '');
+                    (m.rclone_manager_url ? ` · <a href="${escapeHtml(m.rclone_manager_url)}" target="_blank" rel="noopener" style="color:var(--accent);">Open Rclone Manager</a>` : '') +
+                    (note ? '<br>' + note : '') + diskGauge(m.disk);
             }).join('<br>');
         }
 
@@ -3510,11 +3630,11 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
 
             container.innerHTML = data.results.map(m => `
                 <div class="movie-card ${selectedMovies.has(m.id) ? 'card-selected' : ''}"
-                     onclick="toggleMovie(${m.id})" data-id="${m.id}">
+                     onclick="toggleMovie(${m.id}, event)" data-id="${m.id}">
                     <div class="poster">
                         <img src="${m.poster_url || ''}" alt="" loading="lazy"
                              onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
-                        <div class="card-badges">${trailerChipHTML(m.trailer_key)}${m.activated ? '<span class="activated-badge">ACTIVE</span>' : ''}${movieCategoryName(m.category_id) ? '<span class="activated-badge" style="background:var(--accent);">' + movieCategoryName(m.category_id).replace(/</g,'&lt;') + '</span>' : ''}</div>
+                        <div class="card-badges">${trailerChipHTML(m.trailer_key)}${m.activated ? '<span class="activated-badge">ACTIVE</span>' : ''}${!m.activated && queuedMovieIds.has(m.id) ? '<span class="activated-badge queued-badge">QUEUED</span>' : ''}${movieCategoryName(m.category_id) ? '<span class="activated-badge" style="background:var(--accent);">' + movieCategoryName(m.category_id).replace(/</g,'&lt;') + '</span>' : ''}</div>
                         ${plexBadgeHTML(m.in_plex)}
                         <div class="check-overlay">&check;</div>
                         ${m.rating > 0 ? `<span class="rating-chip">&#9733; ${Number(m.rating).toFixed(1)}</span>` : ''}
@@ -3547,14 +3667,27 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             document.getElementById('paginationBottom').innerHTML = pagHTML;
         }
 
-        function toggleMovie(id) {
-            if (selectedMovies.has(id)) {
-                selectedMovies.delete(id);
+        // Click toggles one card. Shift+click selects every card from the last clicked one
+        // to this one, in grid order (like a file list).
+        let movieSelectAnchor = null;
+
+        function toggleMovie(id, ev) {
+            const cards = [...document.querySelectorAll('#movieGrid .movie-card[data-id]')];
+            const ids = cards.map(c => Number(c.dataset.id));
+            if (ev && ev.shiftKey && movieSelectAnchor !== null && ids.includes(movieSelectAnchor) && ids.includes(id)) {
+                window.getSelection()?.removeAllRanges();
+                const a = ids.indexOf(movieSelectAnchor), b = ids.indexOf(id);
+                for (let i = Math.min(a, b); i <= Math.max(a, b); i++) {
+                    selectedMovies.add(ids[i]);
+                    cards[i].classList.add('card-selected');
+                }
             } else {
-                selectedMovies.add(id);
+                if (selectedMovies.has(id)) selectedMovies.delete(id);
+                else selectedMovies.add(id);
+                const card = document.querySelector(`#movieGrid .movie-card[data-id="${id}"]`);
+                if (card) card.classList.toggle('card-selected', selectedMovies.has(id));
             }
-            const card = document.querySelector(`.movie-card[data-id="${id}"]`);
-            if (card) card.classList.toggle('card-selected');
+            movieSelectAnchor = id;
             updateSelectionBar();
         }
 
@@ -3571,36 +3704,9 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             updateSelectionBar();
         }
 
-        async function activateSelected() {
+        function activateSelected() {
             if (!selectedMovies.size) return;
-            const ids = [...selectedMovies];
-            ids.forEach(id => {
-                const card = document.querySelector(`.movie-card[data-id="${id}"]`);
-                if (card) card.style.opacity = '0.5';
-            });
-            busyStart(`Activating ${plural(ids.length, 'movie')}…`);
-            let res = {};
-            try {
-                res = await fetchJSON('/api/movies/activate', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({movie_ids: ids, category: document.getElementById('selMovieCategory').value})
-                });
-                if (res.failed_ids && res.failed_ids.length > 0) {
-                    res.failed_ids.forEach(id => {
-                        const card = document.querySelector(`.movie-card[data-id="${id}"]`);
-                        if (card) card.remove();
-                    });
-                    alert(`Activated: ${res.activated || 0}\nFailed (marked dead): ${res.failed_ids.length}`);
-                }
-            } catch(e) { /* fetchJSON already logged */ }
-            selectedMovies.clear();
-            updateSelectionBar();
-            await Promise.all([loadMovies(currentPage), loadMovieCategories()]);
-            refreshActivatedCount();
-            refreshStatus();
-            const failed = (res.failed_ids || []).length;
-            busyEnd(res.error ? 'Activation failed' : `Activated ${res.activated || 0}` + (failed ? `, ${failed} failed` : ''), !!res.error || failed > 0);
+            openActivateModal([...selectedMovies], true);
         }
 
         async function moveSelectedMovies() {
@@ -3668,8 +3774,6 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
         let seriesCategories = [];
         let seriesCurrentPage = 1;
         let seriesSearchTimeout = null;
-        let currentSeriesDetail = null;
-        let selectedEpisodes = new Set();
 
         let plexSeriesLibraries = [];
 
@@ -3715,9 +3819,6 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
 
             if (seriesLibraryView !== null && !seriesCategories.some(c => c.id === seriesLibraryView)) showSeriesCatalog();
 
-            const detailSel = document.getElementById('seriesDetailCategory');
-            detailSel.innerHTML = seriesCategories.map(c => `<option value="${c.id}">${(c.name||'').replace(/</g,'&lt;')}</option>`).join('')
-                || '<option value="">No categories - add one first</option>';
         }
 
         async function createSeriesCategory() {
@@ -3939,7 +4040,8 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             const search = document.getElementById('seriesSearch').value;
             const categoryId = document.getElementById('seriesFilterCategory').value;
             const activatedOnly = document.getElementById('seriesFilterActivated').value;
-            let url = `/api/series?page=${seriesCurrentPage}&page_size=60`;
+            const seriesPs = parseInt(document.getElementById('seriesPageSize').value) || 60;
+            let url = `/api/series?page=${seriesCurrentPage}&page_size=${seriesPs}`;
             const libCat = seriesCategories.find(c => c.id === seriesLibraryView);
             const banner = document.getElementById('seriesLibraryBanner');
             if (libCat) {
@@ -3967,23 +4069,28 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             }
 
             container.innerHTML = data.results.map(s => `
-                <div class="movie-card" onclick="openSeriesDetail(${s.id})" data-id="${s.id}" data-category-id="${s.category_id || ''}" data-trailer="${s.trailer_key || ''}">
+                <div class="movie-card ${selectedSeries.has(s.id) ? 'card-selected' : ''}" onclick="seriesCardClick(${s.id}, event)" data-id="${s.id}" data-category-id="${s.category_id || ''}" data-trailer="${s.trailer_key || ''}">
                     <div class="poster">
                         <img src="${s.poster_url || ''}" alt="" loading="lazy"
                              onerror="this.style.background='var(--bg-card)';this.style.minHeight='180px'">
-                        <div class="card-badges">${trailerChipHTML(s.trailer_key)}${s.activated_episode_count > 0 ? `<span class="activated-badge">${s.activated_episode_count} ACTIVE</span>` : ''}</div>
+                        <div class="card-badges">${trailerChipHTML(s.trailer_key)}${s.activated_episode_count > 0 ? `<span class="activated-badge">${s.activated_episode_count} ACTIVE</span>` : ''}${queuedSeriesIds.has(s.id) ? '<span class="activated-badge queued-badge">QUEUED</span>' : ''}</div>
                         ${plexBadgeHTML(s.in_plex)}
+                        <div class="check-overlay" title="Select (shift+click selects a range)" onclick="event.stopPropagation();toggleSeries(${s.id}, event)">&check;</div>
                         ${s.rating > 0 ? `<span class="rating-chip">&#9733; ${Number(s.rating).toFixed(1)}</span>` : ''}
                     </div>
                     <div class="info">
                         <div class="title" title="${(s.name||'').replace(/"/g,'&quot;')}">${s.name || 'Unknown'}</div>
                         <div class="meta">${[s.year, (s.episode_count || 0) + ' eps'].filter(Boolean).join(' &middot; ')}</div>
                         ${s.genre ? '<div class="meta sub">' + s.genre + '</div>' : ''}
+                        <div class="tags">
+                            ${(s.account_names || '').split(',').map(a => a.trim()).filter(Boolean).map(a => '<span class="tag tag-provider">' + swEsc(a) + '</span>').join('')}
+                            ${s.language ? '<span class="tag tag-lang">' + getLangName(s.language) + '</span>' : ''}
+                        </div>
                     </div>
                 </div>
             `).join('');
 
-            const totalPages = Math.ceil(data.count / 60);
+            const totalPages = Math.ceil(data.count / seriesPs);
             let pagHTML = '';
             if (totalPages > 1) {
                 if (seriesCurrentPage > 1) pagHTML += `<button class="btn btn-outline" onclick="loadSeriesList(${seriesCurrentPage-1})">&laquo; Prev</button>`;
@@ -3993,158 +4100,549 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             document.getElementById('seriesPagination').innerHTML = pagHTML;
         }
 
-        async function openSeriesDetail(seriesId) {
-            currentSeriesDetail = seriesId;
-            selectedEpisodes.clear();
-            updateEpisodeSelectionBar();
+        // --- Series selection and the Activate wizard ---
+        // Adding episodes opens no provider connection from the bridge, so there is no slot check here
+        // (Plex does open short ones while it scans the new files in; the Review step says so). The
+        // wizard shows one card per selected show, then a summary; nothing is queued until the
+        // summary is confirmed. The server adds the episodes in the background (activation_queue.py).
+        let selectedSeries = new Set();
+        let seriesSelectAnchor = null;
+        let queuedSeriesIds = new Set();
+        let sw = null;   // wizard state while it is open
 
-            document.getElementById('seriesDetailTitle').textContent = 'Loading...';
-            document.getElementById('seriesDetailModal').classList.add('active');
+        function swEsc(v) { return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
 
-            const seasonsData = await fetchJSON(`/api/series/${seriesId}/seasons`);
-            const seasonSel = document.getElementById('seriesDetailSeason');
-            seasonSel.innerHTML = '<option value="0">All Seasons</option>' +
-                (seasonsData.seasons || []).map(s => `<option value="${s.season_number}">Season ${s.season_number} (${s.activated_count}/${s.episode_count})</option>`).join('');
+        function seriesCardTitle(sid) {
+            const t = document.querySelector(`#seriesGrid .movie-card[data-id="${sid}"] .title`);
+            return t ? t.textContent : `Series #${sid}`;
+        }
 
-            const cardEl = document.querySelector(`#seriesGrid .movie-card[data-id="${seriesId}"]`);
-            const row = cardEl ? cardEl.querySelector('.title') : null;
-            document.getElementById('seriesDetailTitle').textContent = row ? row.textContent : `Series #${seriesId}`;
-            const trailerKey = cardEl ? cardEl.getAttribute('data-trailer') : '';
-            const trailerBtn = document.getElementById('seriesDetailTrailer');
-            trailerBtn.style.display = trailerKey ? 'inline-block' : 'none';
-            trailerBtn.onclick = () => playTrailer(trailerKey);
-            const existingCatId = cardEl ? cardEl.getAttribute('data-category-id') : '';
-            if (existingCatId) document.getElementById('seriesDetailCategory').value = existingCatId;
+        function seriesCardClick(id, ev) {
+            if (ev && ev.shiftKey && selectedSeries.size) { toggleSeries(id, ev); return; }
+            openSeriesWizard([id], null, true);
+        }
 
-            if (!seasonsData.episodes_fetched) {
-                document.getElementById('seriesDetailEpisodeBody').innerHTML =
-                    '<tr><td colspan="6" class="empty-state">No episodes cached yet. Click Fetch Episodes.</td></tr>';
+        function toggleSeries(id, ev) {
+            const cards = [...document.querySelectorAll('#seriesGrid .movie-card[data-id]')];
+            const ids = cards.map(c => Number(c.dataset.id));
+            if (ev && ev.shiftKey && seriesSelectAnchor !== null && ids.includes(seriesSelectAnchor) && ids.includes(id)) {
+                window.getSelection()?.removeAllRanges();
+                const a = ids.indexOf(seriesSelectAnchor), b = ids.indexOf(id);
+                for (let i = Math.min(a, b); i <= Math.max(a, b); i++) {
+                    selectedSeries.add(ids[i]);
+                    cards[i].classList.add('card-selected');
+                }
+            } else {
+                if (selectedSeries.has(id)) selectedSeries.delete(id);
+                else selectedSeries.add(id);
+                document.querySelector(`#seriesGrid .movie-card[data-id="${id}"]`)?.classList.toggle('card-selected', selectedSeries.has(id));
+            }
+            seriesSelectAnchor = id;
+            updateSeriesSelectionBar();
+        }
+
+        function updateSeriesSelectionBar() {
+            document.getElementById('seriesSelCount').textContent = selectedSeries.size;
+            document.getElementById('seriesSelectionBar').style.display = selectedSeries.size ? 'flex' : 'none';
+        }
+
+        function clearSeriesSelection() {
+            selectedSeries.clear();
+            document.querySelectorAll('#seriesGrid .movie-card.card-selected').forEach(c => c.classList.remove('card-selected'));
+            updateSeriesSelectionBar();
+        }
+
+        function activateSelectedSeries() {
+            if (!selectedSeries.size) return;
+            // Walk the shows in the order they appear on screen.
+            const order = [...document.querySelectorAll('#seriesGrid .movie-card[data-id]')].map(c => Number(c.dataset.id));
+            const pos = id => { const i = order.indexOf(id); return i < 0 ? 1e9 : i; };
+            openSeriesWizard([...selectedSeries].sort((a, b) => pos(a) - pos(b)));
+        }
+
+        function markSeriesQueued(sid, on) {
+            const badges = document.querySelector(`#seriesGrid .movie-card[data-id="${sid}"] .card-badges`);
+            if (!badges) return;
+            badges.querySelectorAll('.queued-badge').forEach(b => b.remove());
+            if (on) badges.insertAdjacentHTML('beforeend', '<span class="activated-badge queued-badge">QUEUED</span>');
+        }
+
+        function setSeriesActiveCount(sid, n) {
+            const badges = document.querySelector(`#seriesGrid .movie-card[data-id="${sid}"] .card-badges`);
+            if (!badges) return;
+            let b = [...badges.querySelectorAll('.activated-badge:not(.queued-badge)')].find(x => / ACTIVE$/.test(x.textContent));
+            if (!n) { if (b) b.remove(); return; }
+            if (!b) {
+                badges.insertAdjacentHTML('afterbegin', '<span class="activated-badge"></span>');
+                b = badges.firstElementChild;
+                const chip = badges.querySelector('.trailer-chip');   // keep the trailer chip first
+                if (chip) badges.insertBefore(chip, b);
+            }
+            b.textContent = `${n} ACTIVE`;
+        }
+
+        function openSeriesWizard(ids, preselect, detail) {
+            if (!seriesCategories.length) {
+                alert('Add a series category (Plex library) first, in the Series Categories panel.');
                 return;
             }
-            loadSeriesDetailEpisodes();
+            let lastCat = null;
+            if (detail) {
+                const card = document.querySelector(`#seriesGrid .movie-card[data-id="${ids[0]}"]`);
+                lastCat = card ? (parseInt(card.dataset.categoryId) || null) : null;
+            }
+            sw = {ids, idx: 0, info: {}, data: {}, plan: {}, skip: new Set(), anchor: {}, sAnchor: {}, mAnchor: {},
+                  token: 0, payload: [], preselect: preselect || {}, detail: !!detail, lastCat};
+            document.querySelector('#seriesWizModal .sw-box').classList.toggle('sw-detail', !!detail);
+            document.getElementById('seriesWizModal').classList.add('active');
+            swRender();
         }
 
-        function closeSeriesDetail(event) {
-            if (event && event.target !== event.currentTarget) return;
-            document.getElementById('seriesDetailModal').classList.remove('active');
-            currentSeriesDetail = null;
+        function closeSeriesWizard() {
+            document.getElementById('seriesWizModal').classList.remove('active');
+            sw = null;
         }
 
-        async function fetchSeriesEpisodesNow() {
-            if (!currentSeriesDetail) return;
-            document.getElementById('seriesDetailEpisodeBody').innerHTML = '<tr><td colspan="6" class="empty-state">Fetching...</td></tr>';
-            await fetchJSON(`/api/series/${currentSeriesDetail}/fetch-episodes`, {
+        // Load a show's episode list once (Dispatcharr's cached copy; never a forced refresh).
+        function swLoad(sid) {
+            const s = sw;
+            if (!s.info[sid]) {
+                s.info[sid] = fetchJSON(`/api/series/${sid}/activation-info`)
+                    .catch(e => ({error: (e && e.message) || 'could not load the episode list'}))
+                    .then(r => {
+                        r = r || {};
+                        r.seasons = r.seasons || [];
+                        s.data[sid] = r;
+                        return r;
+                    });
+            }
+            return s.info[sid];
+        }
+
+        // Episodes that can still be added, in show order.
+        function swOpenEps(info, seasonFilter) {
+            return info.seasons.filter(se => !seasonFilter || seasonFilter(se))
+                .flatMap(se => se.episodes.filter(e => !e.activated).map(e => e.id));
+        }
+
+        // Episodes already active, in show order.
+        function swActiveEps(info, seasonFilter) {
+            return info.seasons.filter(se => !seasonFilter || seasonFilter(se))
+                .flatMap(se => se.episodes.filter(e => e.activated).map(e => e.id));
+        }
+
+        function swInitPlan(sid, info) {
+            if (sw.plan[sid]) return sw.plan[sid];
+            const pre = sw.preselect[sid];
+            const picked = new Set(pre ? swOpenEps(info).filter(id => pre.has(id)) : []);
+            const expanded = new Set();
+            if (pre) info.seasons.forEach(se => { if (se.episodes.some(e => picked.has(e.id))) expanded.add(se.season_number); });
+            let cat = info.locked ? info.category_id : (sw.lastCat || info.category_id || seriesCategories[0].id);
+            if (!info.locked && !seriesCategories.some(c => c.id === cat)) cat = seriesCategories[0].id;
+            // A single show that already has active episodes opens on the season list, so they are visible.
+            const mode = pre || (sw.detail && info.active_total) ? 'choose' : 'all';
+            return sw.plan[sid] = {mode, picked, expanded, manage: new Set(), category_id: cat};
+        }
+
+        function swPicked(sid) {
+            const p = sw.plan[sid], info = sw.data[sid];
+            if (!p || !info || sw.skip.has(sid)) return [];
+            const open = swOpenEps(info);
+            return p.mode === 'all' ? open : open.filter(id => p.picked.has(id));
+        }
+
+        function swCur() {
+            const sid = sw.ids[sw.idx];
+            return {sid, p: sw.plan[sid], info: sw.data[sid]};
+        }
+
+        function swTitleHTML(sid, info) {
+            const name = swEsc((info && info.name) || seriesCardTitle(sid)) + (info && info.year ? ` (${info.year})` : '');
+            if (!sw.detail) return name;
+            const card = document.querySelector(`#seriesGrid .movie-card[data-id="${sid}"]`);
+            const trailer = card && card.dataset.trailer;
+            return `<span class="sw-title-row"><span>${name}</span>` +
+                (trailer ? `<button class="btn btn-outline" onclick="playTrailer('${swEsc(trailer)}')">&#9654; Trailer</button>` : '') +
+                `<button class="btn btn-outline" onclick="swRefreshEpisodes()" title="Ask Dispatcharr to re-read this show's episode list. No video stream is opened.">Refresh episode list</button></span>`;
+        }
+
+        async function swRender() {
+            if (!sw) return;
+            const s = sw, token = ++s.token;
+            if (s.idx >= s.ids.length) { swRenderSummary(); return; }
+            const sid = s.ids[s.idx];
+            const step = document.getElementById('swStep');
+            const title = document.getElementById('swTitle');
+            const body = document.getElementById('swBody');
+            const actions = document.getElementById('swActions');
+            step.textContent = s.ids.length > 1 ? `Show ${s.idx + 1} of ${s.ids.length}` : 'Activate show';
+            const multi = s.ids.length > 1;
+            const navBtns = (mid, nextBtn) =>
+                '<button class="btn btn-outline" onclick="closeSeriesWizard()">Cancel</button>' +
+                (s.idx > 0 ? '<button class="btn btn-outline" onclick="swBack()">Back</button>' : '') +
+                (multi ? '<button class="btn btn-outline" onclick="swSkip()">Skip this show</button>' : '') + mid + nextBtn;
+            if (!s.data[sid]) {
+                title.innerHTML = swTitleHTML(sid, null);
+                body.innerHTML = '<div>Loading the episode list…</div>';
+                actions.innerHTML = navBtns('', '');
+            }
+            const info = await swLoad(sid);
+            if (sw !== s || token !== s.token) return;   // the user moved on while it loaded
+            if (s.ids[s.idx + 1] != null) swLoad(s.ids[s.idx + 1]);   // preload the next show
+            const p = swInitPlan(sid, info);
+            const open = swOpenEps(info);
+
+            title.innerHTML = swTitleHTML(sid, info);
+            let html = `<div class="sw-head">${info.poster_url ? `<img src="${swEsc(info.poster_url)}" alt="">` : ''}<div>` +
+                `${plural(info.seasons.length, 'season')} · ${plural(info.episodes_total || 0, 'episode')}` +
+                (info.active_total ? ` · <b>${info.active_total} already active</b>${s.detail ? '' : ' (will be skipped)'}` : '') +
+                (info.queued ? ' · <b>queued</b>' : '') + '</div></div>';
+            if (!open.length) {
+                if (info.error && !info.episodes_total) {
+                    html += `<div class="warn">Could not load the episode list: ${swEsc(info.error)}.${multi ? ' Skip this show for now.' : ''}</div>`;
+                } else {
+                    html += '<div class="warn">Every episode is already active. Nothing to add.</div>';
+                    if (s.detail && info.active_total) html += swSeasonsHTML(info, p);
+                }
+            } else {
+                if (info.queued) html += '<div class="warn">This show is already in the queue. What you pick here is added to it.</div>';
+                const opts = seriesCategories.map(c =>
+                    `<option value="${c.id}" ${c.id === p.category_id ? 'selected' : ''}>${swEsc(c.name)}</option>`).join('');
+                html += `<label for="swCat">Plex library</label>
+                    <select class="search-input" id="swCat" ${info.locked ? 'disabled' : ''} onchange="swSetCat(this.value)">${opts}</select>`;
+                if (info.locked) html += '<div class="sw-muted">Stays in this library, where its active episodes are.</div>';
+                html += `<div>Add all seasons?</div>
+                    <div class="sw-yn">
+                        <button class="btn ${p.mode === 'all' ? 'btn-primary' : 'btn-outline'}" onclick="swMode('all')">Yes, all ${plural(open.length, 'episode')}</button>
+                        <button class="btn ${p.mode === 'choose' ? 'btn-primary' : 'btn-outline'}" onclick="swMode('choose')">No, let me choose</button>
+                    </div>`;
+                if (p.mode === 'choose') html += swSeasonsHTML(info, p);
+            }
+            body.innerHTML = html;
+            body.querySelectorAll('input[data-state="some"]').forEach(i => { i.indeterminate = true; });
+
+            const n = swPicked(sid).length;
+            const m = s.detail ? p.manage.size : 0;
+            const last = s.idx === s.ids.length - 1;
+            const mid = m ? `<button class="btn btn-outline" onclick="swManage('reactivate')" title="Re-create the selected episodes' files in Plex">Reactivate (${m})</button>` +
+                            `<button class="btn btn-danger" onclick="swManage('deactivate')">Deactivate (${m})</button>` : '';
+            actions.innerHTML = navBtns(mid,
+                `<button class="btn btn-primary" onclick="swNext()" ${n ? '' : 'disabled'}>${last ? 'Review' : 'Next show'} (${plural(n, 'episode')})</button>`);
+        }
+
+        // Which set a season checkbox drives: the open episodes, or (single show, season fully
+        // active) the active ones, so whole seasons can be picked for deactivate/reactivate.
+        function swSeasonTarget(se, p) {
+            const open = se.episodes.filter(e => !e.activated).map(e => e.id);
+            if (open.length || !sw.detail) return {ids: open, set: p.picked};
+            return {ids: se.episodes.map(e => e.id), set: p.manage};
+        }
+
+        function swSeasonsHTML(info, p) {
+            const det = sw.detail;
+            const rows = info.seasons.map(se => {
+                const sn = se.season_number;
+                const open = se.episodes.filter(e => !e.activated);
+                const n = open.filter(e => p.picked.has(e.id)).length;
+                const active = se.episodes.length - open.length;
+                const mN = det ? se.episodes.filter(e => e.activated && p.manage.has(e.id)).length : 0;
+                const exp = p.expanded.has(sn);
+                const t = swSeasonTarget(se, p);
+                const tn = t.ids.filter(id => t.set.has(id)).length;
+                const state = !t.ids.length ? 'none' : tn === t.ids.length ? 'all' : tn ? 'some' : 'none';
+                const label = sn ? `Season ${sn}` : 'Specials';
+                const eps = !exp ? '' : '<div class="sw-eps">' + se.episodes.map(e => {
+                    const txt = `E${e.episode_number ?? '?'}${e.name ? ' · ' + swEsc(e.name) : ''}`;
+                    if (e.activated && det) {
+                        const on = p.manage.has(e.id);
+                        return `<div class="sw-ep active-ep ${on ? 'marked' : ''}" role="checkbox" aria-checked="${on}" onclick="swToggleManage(${e.id}, event)"><input type="checkbox" tabindex="-1" ${on ? 'checked' : ''}> ${txt} <span class="sw-active-tag">Active</span></div>`;
+                    }
+                    return e.activated
+                        ? `<div class="sw-ep done"><input type="checkbox" checked disabled tabindex="-1"> ${txt} <span class="sw-muted">(active)</span></div>`
+                        : `<div class="sw-ep" role="checkbox" aria-checked="${p.picked.has(e.id)}" onclick="swToggleEp(${e.id}, event)"><input type="checkbox" tabindex="-1" ${p.picked.has(e.id) ? 'checked' : ''}> ${txt}</div>`;
+                }).join('') + '</div>';
+                const count = (open.length ? `${n} of ${open.length} picked` : 'all active') +
+                    (active && open.length ? ` · ${active} active` : '') + (mN ? ` · ${mN} active selected` : '');
+                return `<div class="sw-season">
+                        <div class="sw-season-row">
+                            <input type="checkbox" data-state="${state}" ${state === 'all' ? 'checked' : ''} ${t.ids.length ? '' : 'disabled'} onclick="swToggleSeason(${sn}, event)" aria-label="${label}">
+                            <span class="sw-sname" onclick="swExpand(${sn})">${label}</span>
+                            <span class="sw-count">${count}</span>
+                            <button class="sw-exp" onclick="swExpand(${sn})" aria-expanded="${exp}" title="${exp ? 'Hide' : 'Show'} episodes">${exp ? '&#9662;' : '&#9656;'}</button>
+                        </div>${eps}
+                    </div>`;
+            }).join('');
+
+            const openAll = swOpenEps(info);
+            const nAll = openAll.filter(id => p.picked.has(id)).length;
+            const stAll = !openAll.length ? 'none' : nAll === openAll.length ? 'all' : nAll ? 'some' : 'none';
+            const activeAll = det ? swActiveEps(info) : [];
+            let top = '';
+            if (openAll.length || activeAll.length) {
+                top = '<div class="sw-all">';
+                if (openAll.length) top += `<label><input type="checkbox" data-state="${stAll}" ${stAll === 'all' ? 'checked' : ''} onclick="swToggleAll()"> Select all (${plural(openAll.length, 'episode')} not yet active)</label>`;
+                if (activeAll.length) top += `<button class="sw-link" onclick="swManageAll()">${p.manage.size === activeAll.length ? 'Clear active selection' : `Select all active (${activeAll.length})`}</button>`;
+                top += '</div>';
+            }
+            const hint = 'Tick whole seasons, or open a season to pick episodes. Shift+click picks a range of seasons or episodes.' +
+                (det && activeAll.length ? ' Click an active episode to select it for Deactivate or Reactivate.' : '');
+            return `<div class="sw-muted">${hint}</div>${top}<div class="sw-seasons" id="swSeasons">${rows}</div>`;
+        }
+
+        // Re-render the current card, keeping both scroll positions.
+        function swRerender() {
+            const box = document.querySelector('#seriesWizModal .sw-box');
+            const list = document.getElementById('swSeasons');
+            const boxTop = box.scrollTop, listTop = list ? list.scrollTop : 0;
+            swRender().then(() => {
+                box.scrollTop = boxTop;
+                const l2 = document.getElementById('swSeasons');
+                if (l2) l2.scrollTop = listTop;
+            });
+        }
+
+        function swSetCat(v) {
+            const {p} = swCur();
+            p.category_id = parseInt(v);
+            sw.lastCat = p.category_id;
+        }
+
+        function swMode(m) {
+            const {p} = swCur();
+            p.mode = m;
+            swRerender();
+        }
+
+        function swToggleAll() {
+            const {p, info} = swCur();
+            const open = swOpenEps(info);
+            const all = open.every(id => p.picked.has(id));
+            open.forEach(id => { if (all) p.picked.delete(id); else p.picked.add(id); });
+            swRerender();
+        }
+
+        function swManageAll() {
+            const {p, info} = swCur();
+            const act = swActiveEps(info);
+            if (p.manage.size === act.length) p.manage.clear();
+            else act.forEach(id => p.manage.add(id));
+            swRerender();
+        }
+
+        function swToggleSeason(sn, ev) {
+            const {sid, p, info} = swCur();
+            const sns = info.seasons.map(x => x.season_number);
+            const se = info.seasons.find(x => x.season_number === sn);
+            if (!se) return;
+            const t = swSeasonTarget(se, p);
+            const on = !(t.ids.length && t.ids.every(id => t.set.has(id)));
+            const apply = x => { const tt = swSeasonTarget(x, p); tt.ids.forEach(id => { if (on) tt.set.add(id); else tt.set.delete(id); }); };
+            const a = sw.sAnchor[sid];
+            if (ev && ev.shiftKey && a != null && a !== sn && sns.includes(a)) {
+                window.getSelection()?.removeAllRanges();
+                const i = sns.indexOf(a), j = sns.indexOf(sn);
+                for (let k = Math.min(i, j); k <= Math.max(i, j); k++) apply(info.seasons[k]);
+            } else apply(se);
+            sw.sAnchor[sid] = sn;
+            swRerender();
+        }
+
+        function swExpand(sn) {
+            const {p} = swCur();
+            if (p.expanded.has(sn)) p.expanded.delete(sn);
+            else p.expanded.add(sn);
+            swRerender();
+        }
+
+        // Shift+click range over the visible (expanded) rows; the range takes the anchor's state.
+        function swRangeToggle(set, order, anchorMap, key, id, ev) {
+            const a = anchorMap[key];
+            if (ev && ev.shiftKey && a != null && a !== id && order.includes(a) && order.includes(id)) {
+                window.getSelection()?.removeAllRanges();
+                const on = set.has(a);
+                const i = order.indexOf(a), j = order.indexOf(id);
+                for (let k = Math.min(i, j); k <= Math.max(i, j); k++) {
+                    if (on) set.add(order[k]); else set.delete(order[k]);
+                }
+            } else if (set.has(id)) set.delete(id);
+            else set.add(id);
+            anchorMap[key] = id;
+            swRerender();
+        }
+
+        function swToggleEp(id, ev) {
+            const {sid, p, info} = swCur();
+            swRangeToggle(p.picked, swOpenEps(info, se => p.expanded.has(se.season_number)), sw.anchor, sid, id, ev);
+        }
+
+        function swToggleManage(id, ev) {
+            const {sid, p, info} = swCur();
+            swRangeToggle(p.manage, swActiveEps(info, se => p.expanded.has(se.season_number)), sw.mAnchor, sid, id, ev);
+        }
+
+        // Re-read the current show (after a change), keeping the user's picks that still apply.
+        async function swReload() {
+            const s = sw;
+            if (!s || s.idx >= s.ids.length) return;
+            const sid = s.ids[s.idx];
+            delete s.info[sid];
+            const info = await swLoad(sid);
+            if (sw !== s || s.ids[s.idx] !== sid) return;
+            const p = s.plan[sid];
+            if (p) {
+                const open = new Set(swOpenEps(info)), act = new Set(swActiveEps(info));
+                [...p.picked].forEach(id => { if (!open.has(id)) p.picked.delete(id); });
+                [...p.manage].forEach(id => { if (!act.has(id)) p.manage.delete(id); });
+            }
+            swRerender();
+        }
+
+        async function swRefreshEpisodes() {
+            const sid = sw && sw.ids[sw.idx];
+            if (sid == null) return;
+            busyStart('Refreshing the episode list…');
+            const r = await fetchJSON(`/api/series/${sid}/fetch-episodes`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({force_refresh: true})
-            });
-            const seasonsData = await fetchJSON(`/api/series/${currentSeriesDetail}/seasons`);
-            const seasonSel = document.getElementById('seriesDetailSeason');
-            seasonSel.innerHTML = '<option value="0">All Seasons</option>' +
-                (seasonsData.seasons || []).map(s => `<option value="${s.season_number}">Season ${s.season_number} (${s.activated_count}/${s.episode_count})</option>`).join('');
-            loadSeriesDetailEpisodes();
+            }).catch(e => ({error: (e && e.message) || 'request failed'}));
+            if (!r || r.error) busyEnd(`Could not refresh the episode list: ${(r && r.error) || 'no response'}`, true);
+            else busyEnd('Episode list refreshed');
+            await swReload();
         }
 
-        async function loadSeriesDetailEpisodes() {
-            if (!currentSeriesDetail) return;
-            const season = document.getElementById('seriesDetailSeason').value;
-            let url = `/api/series/${currentSeriesDetail}/episodes`;
-            if (season && season !== '0') url += `?season=${season}`;
-            const data = await fetchJSON(url);
-            const body = document.getElementById('seriesDetailEpisodeBody');
+        async function swManage(kind) {
+            const {p} = swCur();
+            if (!p || !p.manage.size) return;
+            const ids = [...p.manage];
+            if (kind === 'deactivate' && !confirm(`Deactivate ${plural(ids.length, 'episode')}? They are removed from Plex.`)) return;
+            busyStart(`${kind === 'deactivate' ? 'Deactivating' : 'Reactivating'} ${plural(ids.length, 'episode')}…`);
+            const r = await fetchJSON(`/api/episodes/${kind}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({episode_ids: ids})
+            }).catch(e => ({error: (e && e.message) || 'request failed'}));
+            if (!r || r.error) busyEnd(`Could not ${kind}: ${(r && r.error) || 'no response'}`, true);
+            else if (kind === 'deactivate') busyEnd(`Deactivated ${plural((r.deactivated || []).length || ids.length, 'episode')}`);
+            else {
+                const ok = (r.activated || []).length, bad = (r.failed || []).length;
+                busyEnd(`Reactivated ${plural(ok, 'episode')}${bad ? `, ${bad} failed` : ''}`, bad > 0 && !ok);
+            }
+            p.manage.clear();
+            await swReload();
+            loadSeriesList(seriesCurrentPage);
+            loadSeriesCategories();
+            refreshActivatedCount();
+        }
 
-            if (!data.results.length) {
-                body.innerHTML = '<tr><td colspan="6" class="empty-state">No episodes. Try Fetch Episodes.</td></tr>';
+        function swNext() {
+            const {sid, p, info} = swCur();
+            sw.skip.delete(sid);
+            if (p && !info.locked) sw.lastCat = p.category_id;   // carry the library to the next show
+            sw.idx++;
+            swRender();
+        }
+
+        function swSkip() {
+            sw.skip.add(sw.ids[sw.idx]);
+            sw.idx++;
+            swRender();
+        }
+
+        function swBack() {
+            sw.idx = Math.max(0, Math.min(sw.idx, sw.ids.length) - 1);
+            swRender();
+        }
+
+        // "Seasons 1–3, 5 · S4: 6 of 10"
+        function swSeasonsLabel(info, ids) {
+            const pick = new Set(ids);
+            const full = [], partial = [];
+            info.seasons.forEach(se => {
+                const open = se.episodes.filter(e => !e.activated);
+                const n = open.filter(e => pick.has(e.id)).length;
+                if (!n) return;
+                if (n === open.length) full.push(se.season_number);
+                else partial.push(`${se.season_number ? 'S' + se.season_number : 'Specials'}: ${n} of ${open.length}`);
+            });
+            const runs = [];
+            full.forEach(n => {
+                const r = runs[runs.length - 1];
+                if (r && n === r[1] + 1) r[1] = n; else runs.push([n, n]);
+            });
+            const parts = [];
+            if (full.length) parts.push((full.length === 1 ? 'Season ' : 'Seasons ') + runs.map(([a, b]) => a === b ? `${a}` : `${a}–${b}`).join(', '));
+            return parts.concat(partial).join(' · ');
+        }
+
+        function swRenderSummary() {
+            const s = sw;
+            const shows = [];
+            let total = 0;
+            const rows = s.ids.map(sid => {
+                const info = s.data[sid];
+                const name = swEsc((info && info.name) || seriesCardTitle(sid));
+                const ids = swPicked(sid);
+                if (!ids.length) {
+                    const why = s.skip.has(sid) ? 'Skipped' : 'Nothing to add';
+                    return `<div class="sw-sum-row skipped"><span>${name}</span><span>${why}</span></div>`;
+                }
+                const p = s.plan[sid];
+                const cat = seriesCategories.find(c => c.id === p.category_id);
+                shows.push({series_id: sid, category_id: p.category_id, episode_ids: ids});
+                total += ids.length;
+                return `<div class="sw-sum-row"><div><b>${name}</b>
+                        <div class="sw-sub">${swEsc(cat ? cat.name : 'Library ' + p.category_id)} · ${swSeasonsLabel(info, ids)}</div></div>
+                        <span>${plural(ids.length, 'episode')}</span></div>`;
+            }).join('');
+            s.payload = shows;
+            document.getElementById('swStep').textContent = 'Review';
+            document.getElementById('swTitle').textContent = shows.length
+                ? `Adding ${plural(shows.length, 'show')}` : 'Nothing to add';
+            document.getElementById('swBody').innerHTML = `<div class="sw-sum">${rows}</div>` +
+                (shows.length ? `<div class="sw-sum-row sw-total"><b>Total</b><b>${plural(total, 'episode')}</b></div>` : '') +
+                '<div class="sw-note">After adding, the bridge reads the start and end of each new episode once, so Plex can scan ' +
+                'and analyse it from the bridge. That is <b>one short provider connection per episode</b>, one at a time, ' +
+                'only while an account has a free connection (you will see them as VOD connections in Dispatcharr). ' +
+                'Playing an episode opens one too.</div>' +
+                (total > 20 ? `<div class="warn">${plural(total, 'episode')} means about ${total} short provider connections, ` +
+                    'one every few seconds. If your provider limits connections, add a few seasons at a time.</div>' : '');
+            document.getElementById('swActions').innerHTML =
+                '<button class="btn btn-outline" onclick="closeSeriesWizard()">Cancel</button>' +
+                '<button class="btn btn-outline" onclick="swBack()">Back</button>' +
+                `<button class="btn btn-success" id="swGo" onclick="swConfirm()" ${total ? '' : 'disabled'}>Add ${plural(total, 'episode')}</button>`;
+        }
+
+        async function swConfirm() {
+            const s = sw;
+            if (!s || !s.payload.length) return;
+            const go = document.getElementById('swGo');
+            go.disabled = true;
+            const res = await fetchJSON('/api/series/activate-batch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({shows: s.payload})
+            }).catch(e => ({error: (e && e.message) || 'request failed'}));
+            if (sw !== s) return;
+            if (!res || res.error) {
+                go.disabled = false;
+                document.getElementById('swBody').insertAdjacentHTML('beforeend',
+                    `<div class="warn">Could not add the episodes: ${swEsc(res && res.error)}</div>`);
                 return;
             }
-
-            body.innerHTML = data.results.map(ep => `
-                <tr class="${selectedEpisodes.has(ep.id) ? 'card-selected' : ''}" onclick="toggleEpisode(${ep.id}, this)" style="cursor:pointer;">
-                    <td><input type="checkbox" ${selectedEpisodes.has(ep.id) ? 'checked' : ''} onclick="event.stopPropagation();toggleEpisode(${ep.id}, this.closest('tr'))"></td>
-                    <td>${ep.season_number ?? '?'}</td>
-                    <td>${ep.episode_number ?? '?'}</td>
-                    <td>${(ep.name||'Unknown').replace(/</g,'&lt;')}</td>
-                    <td>${ep.air_date || '-'}</td>
-                    <td>${ep.activated ? '<span style="color:var(--success)">Activated</span>' : (ep.in_plex ? '' : '<span style="color:var(--text-muted)">-</span>')}${ep.in_plex ? `<span style="color:#a3e635;margin-left:${ep.activated ? '0.4rem' : '0'};" title="Already in Plex: ${ep.in_plex.replace(/"/g,'&quot;')}">&check; in Plex</span>` : ''}</td>
-                </tr>
-            `).join('');
-        }
-
-        function toggleEpisode(id, rowEl) {
-            if (selectedEpisodes.has(id)) {
-                selectedEpisodes.delete(id);
+            if (!res.queued_shows) { closeSeriesWizard(); busyEnd('Those episodes are already active'); return; }
+            s.payload.forEach(x => markSeriesQueued(x.series_id, true));
+            if (s.detail) {
+                // Single show: stay on its card so the episodes turn Active as the queue adds them.
+                Object.values(s.plan).forEach(pl => pl.picked.clear());
+                s.idx = 0;
+                swReload();
             } else {
-                selectedEpisodes.add(id);
+                closeSeriesWizard();
+                clearSeriesSelection();
             }
-            if (rowEl) rowEl.classList.toggle('card-selected');
-            updateEpisodeSelectionBar();
-        }
-
-        function clearEpisodeSelection() {
-            selectedEpisodes.clear();
-            document.querySelectorAll('#seriesDetailEpisodeBody tr.card-selected').forEach(r => r.classList.remove('card-selected'));
-            updateEpisodeSelectionBar();
-        }
-
-        function updateEpisodeSelectionBar() {
-            const bar = document.getElementById('seriesEpSelectionBar');
-            const count = selectedEpisodes.size;
-            document.getElementById('seriesEpSelCount').textContent = count;
-            bar.style.display = count > 0 ? 'flex' : 'none';
-        }
-
-        async function activateSelectedEpisodes() {
-            if (!selectedEpisodes.size) return;
-            const category_id = parseInt(document.getElementById('seriesDetailCategory').value);
-            if (!category_id) { alert('Select a category first.'); return; }
-            busyStart(`Activating ${plural(selectedEpisodes.size, 'episode')}…`);
-            const res = await fetchJSON('/api/episodes/activate', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({episode_ids: [...selectedEpisodes], category_id})
-            });
-            if (res.failed && res.failed.length) {
-                alert(`Activated: ${res.activated.length}\nFailed: ${res.failed.length}\n` +
-                      res.failed.map(f => `#${f.episode_id}: ${f.reason}`).join('\n'));
-            }
-            clearEpisodeSelection();
-            await Promise.all([loadSeriesDetailEpisodes(), loadSeriesList(seriesCurrentPage), loadSeriesCategories()]);
-            refreshActivatedCount();
-            const failed = (res.failed || []).length;
-            busyEnd(res.error ? 'Activation failed' : `Activated ${plural((res.activated || []).length, 'episode')}` + (failed ? `, ${failed} failed` : ''), !!res.error || failed > 0);
-        }
-
-        async function reactivateSelectedEpisodes() {
-            if (!selectedEpisodes.size) return;
-            busyStart(`Reactivating ${plural(selectedEpisodes.size, 'episode')}…`);
-            const res = await fetchJSON('/api/episodes/reactivate', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({episode_ids: [...selectedEpisodes]})
-            });
-            if (res.failed && res.failed.length) {
-                alert(`Reactivated: ${res.activated.length}\nFailed: ${res.failed.length}`);
-            }
-            clearEpisodeSelection();
-            await Promise.all([loadSeriesDetailEpisodes(), loadSeriesList(seriesCurrentPage), loadSeriesCategories()]);
-            refreshActivatedCount();
-            const failed = (res.failed || []).length;
-            busyEnd(res.error ? 'Reactivation failed' : `Reactivated ${plural((res.activated || []).length, 'episode')}` + (failed ? `, ${failed} failed` : ''), !!res.error || failed > 0);
-        }
-
-        async function deactivateSelectedEpisodes() {
-            if (!selectedEpisodes.size) return;
-            const n = selectedEpisodes.size;
-            busyStart(`Deactivating ${plural(n, 'episode')}…`);
-            const res = await fetchJSON('/api/episodes/deactivate', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({episode_ids: [...selectedEpisodes]})
-            });
-            clearEpisodeSelection();
-            await Promise.all([loadSeriesDetailEpisodes(), loadSeriesList(seriesCurrentPage), loadSeriesCategories()]);
-            refreshActivatedCount();
-            busyEnd(res && res.error ? 'Deactivation failed' : `Deactivated ${plural(n, 'episode')}`, !!(res && res.error));
+            seriesHadWork = true;   // so the pill shows the result even if the batch finishes before the next poll
+            kickQueue();
         }
 
         // --- Sync ---
@@ -4570,12 +5068,26 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
         }
 
         // Card Activate popup: same library choices as the selection bar, plus a new category.
-        let activateModalMovie = null;
+        let activateModalIds = [];
+        let activateModalFromSelection = false;
 
-        function openActivateModal(movieId) {
+        // ids: one movie id (card button) or a list (selection bar). Every movie goes to the
+        // one library picked here. The activation itself runs in the server's queue.
+        function openActivateModal(ids, fromSelection) {
             const esc = s => String(s ?? '').replace(/</g,'&lt;');
-            activateModalMovie = movieId;
-            document.getElementById('actModalTitle').textContent = `Activate ${cardTitle(movieId)}`;
+            activateModalIds = Array.isArray(ids) ? ids : [ids];
+            activateModalFromSelection = !!fromSelection;
+            const n = activateModalIds.length;
+            document.getElementById('actModalTitle').textContent =
+                n === 1 ? `Activate ${cardTitle(activateModalIds[0])}` : `Activate ${n} movies`;
+            const list = document.getElementById('actModalList');
+            if (n > 1) {
+                const names = activateModalIds.slice(0, 6).map(id => esc(cardTitle(id)));
+                list.innerHTML = `<div>${names.join(', ')}${n > 6 ? ` and ${n - 6} more` : ''}</div>`;
+                list.style.display = 'flex';
+            } else {
+                list.style.display = 'none';
+            }
             const sel = document.getElementById('actModalCategory');
             sel.innerHTML = '<option value="auto">Auto category (provider category match, else Default)</option>'
                 + '<option value="default">Default library</option>'
@@ -4587,13 +5099,47 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             document.getElementById('actModalNewName').value = '';
             document.getElementById('actModalNewFolder').value = '';
             document.getElementById('actModalGo').disabled = false;
+            document.getElementById('actModalGo').textContent = n === 1 ? 'Activate' : `Activate ${n}`;
             document.getElementById('activateModal').classList.add('active');
             actModalToggleNew();
             sel.focus();
+            loadActivateSlots(activateModalIds);
+        }
+
+        // Warning for multi-select, plus the free provider slots right now.
+        async function loadActivateSlots(ids) {
+            const esc = s => String(s ?? '').replace(/</g,'&lt;');
+            const info = document.getElementById('actModalInfo');
+            const n = ids.length;
+            const warn = n > 1
+                ? `<div class="warn">Each movie uses one provider connection while it is checked. Movies are checked one at a time, about 5 seconds apart, so ${n} movies take about ${Math.max(1, Math.ceil(n * 8 / 60))} min. While this runs it can use every free slot on an account. When an account has no free slot, its movies wait in the queue and are checked again every 10 minutes. Progress shows in the bar at the top.</div>`
+                : '';
+            info.innerHTML = warn + '<div class="q-note">Checking provider slots…</div>';
+            let s;
+            try {
+                s = await fetchJSON('/api/movies/slots', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({movie_ids: ids})
+                });
+            } catch (e) { s = {error: true}; }
+            if (JSON.stringify(ids) !== JSON.stringify(activateModalIds)) return;  // modal reopened meanwhile
+            if (!s || s.error) { info.innerHTML = warn + '<div class="q-note">Could not check provider slots.</div>'; return; }
+            const lines = (s.accounts || []).map(a => {
+                const txt = a.unlimited ? 'no limit' : !a.known ? 'unknown' : `${a.free} of ${a.total} free`;
+                const full = a.known && !a.unlimited && a.free <= 0;
+                return `<div class="slot-line"><span>${esc(a.name)}</span><span class="${full ? 'slot-full' : ''}">${txt}</span></div>`;
+            }).join('');
+            const notes = [];
+            if (s.already_active) notes.push(`${plural(s.already_active, 'movie')} already active, skipped.`);
+            if (s.no_stream) notes.push(`${plural(s.no_stream, 'movie')} have no provider stream and will fail.`);
+            if (s.will_wait) notes.push(`<span class="slot-full">${plural(s.will_wait, 'movie')} will wait in the queue until a slot frees up.</span>`);
+            info.innerHTML = warn + (lines ? `<div><div class="q-note">Provider slots now</div>${lines}</div>` : '')
+                + notes.map(t => `<div>${t}</div>`).join('');
         }
 
         function closeActivateModal() {
-            activateModalMovie = null;
+            activateModalIds = [];
             document.getElementById('activateModal').classList.remove('active');
         }
 
@@ -4604,10 +5150,10 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
         }
 
         async function confirmActivateModal() {
-            const movieId = activateModalMovie;
-            if (movieId === null) return;
+            const ids = activateModalIds.slice();
+            if (!ids.length) return;
+            const fromSelection = activateModalFromSelection;
             let category = document.getElementById('actModalCategory').value;
-            const name = cardTitle(movieId);
             if (category === 'new') {
                 const catName = document.getElementById('actModalNewName').value.trim();
                 if (!catName) { alert('Category name is required.'); return; }
@@ -4637,30 +5183,208 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                 category = String(made);
             }
             closeActivateModal();
-            const card = document.querySelector(`#movieGrid .movie-card[data-id="${movieId}"]`);
-            const btn = card?.querySelector('.activate-btn');
-            btn?.classList.add('working');
-            busyStart(`Activating ${name}…`);
             try {
                 const res = await fetchJSON('/api/movies/activate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({movie_ids: [movieId], category})
+                    body: JSON.stringify({movie_ids: ids, category})
                 });
                 if (res.error) throw new Error(res.error);
-                if (res.failed_ids && res.failed_ids.includes(movieId)) {
-                    fadeOutCard(card);
-                    busyEnd(`${name} could not be played and was marked dead`, true);
-                } else {
-                    const catId = (res.categories || {})[movieId] ?? null;
-                    setCardState(movieId, true, catId);
-                    busyEnd(`Activated ${name} in ${movieCategoryName(catId) || 'Default'}`);
-                }
-                afterCardChange();
+                ids.forEach(id => markCardQueued(id, true));
+                if (fromSelection) clearSelection();
+                if (!res.queued) busyEnd(ids.length === 1 ? `${cardTitle(ids[0])} is already active` : 'Those movies are already active');
+                kickQueue();
             } catch (e) {
-                btn?.classList.remove('working');
-                busyEnd(`Could not activate ${name}${e.message ? ': ' + e.message : ''}`, true);
+                busyStart('');
+                busyEnd(`Could not queue activation${e.message ? ': ' + e.message : ''}`, true);
             }
+        }
+
+        // --- Activation queue (server-side; see activation_queue.py) ---
+        let queuedMovieIds = new Set();
+        let queueSeq = null;        // last result seen; null until the first poll
+        let queueTimer = null;
+        let queueLast = null;       // last status, for the queue popup
+        let queueHadWork = false;
+        let seriesHadWork = false;
+
+        function markCardQueued(movieId, on) {
+            const card = document.querySelector(`#movieGrid .movie-card[data-id="${movieId}"]`);
+            if (!card) return;
+            const badges = card.querySelector('.card-badges');
+            badges.querySelectorAll('.queued-badge').forEach(b => b.remove());
+            const isActive = [...badges.querySelectorAll('.activated-badge')].some(b => b.textContent === 'ACTIVE');
+            if (on && !isActive) badges.insertAdjacentHTML('beforeend', '<span class="activated-badge queued-badge">QUEUED</span>');
+            card.querySelector('.activate-btn')?.classList.toggle('working', !!on);
+        }
+
+        function kickQueue() {
+            clearTimeout(queueTimer);
+            queueTimer = setTimeout(pollQueue, 300);
+        }
+
+        async function pollQueue() {
+            clearTimeout(queueTimer);
+            let q;
+            try {
+                q = await fetchJSON(`/api/activation-queue?since=${queueSeq ?? 0}`);
+            } catch (e) { queueTimer = setTimeout(pollQueue, 10000); return; }
+            if (!q || q.error) { queueTimer = setTimeout(pollQueue, 10000); return; }
+            const firstPoll = queueSeq === null;
+            queueSeq = q.seq;
+            queueLast = q;
+
+            const nowQueued = new Set((q.items || []).map(i => i.movie_id));
+            queuedMovieIds.forEach(id => { if (!nowQueued.has(id)) markCardQueued(id, false); });
+            nowQueued.forEach(id => markCardQueued(id, true));
+            queuedMovieIds = nowQueued;
+
+            if (!firstPoll && q.recent && q.recent.length) {
+                q.recent.forEach(r => {
+                    if (r.ok) setCardState(r.movie_id, true, r.category_id);
+                    else if ((r.reason || '').includes('dead')) fadeOutCard(document.querySelector(`#movieGrid .movie-card[data-id="${r.movie_id}"]`));
+                });
+                afterCardChange();
+            }
+            const sq = q.series || {items: [], recent: [], running: null, batch: {shows: 0, episodes: 0, failed: 0}};
+            q.series = sq;
+            const nowSeries = new Set(sq.items.map(i => i.series_id));
+            queuedSeriesIds.forEach(id => { if (!nowSeries.has(id)) markSeriesQueued(id, false); });
+            nowSeries.forEach(id => markSeriesQueued(id, true));
+            queuedSeriesIds = nowSeries;
+            if (!firstPoll && sq.recent.length) {
+                sq.recent.forEach(r => setSeriesActiveCount(r.series_id, r.active_total));
+                if (sw && sw.detail && sq.recent.some(r => r.series_id === sw.ids[0])) swReload();
+                refreshActivatedCount();
+            }
+
+            renderQueuePill(q);
+            if (document.getElementById('queueModal').classList.contains('active')) renderQueueModal();
+
+            const busy = q.running || q.pending > 0 || sq.items.length > 0 || sq.running;
+            // Poll again right when the next movie is due to start, so the pill does not lag.
+            const dueIn = !q.running && q.next ? (q.next.at - Date.now() / 1000) * 1000 + 300 : Infinity;
+            if (busy) queueTimer = setTimeout(pollQueue, Math.max(300, Math.min(2000, dueIn)));
+            else if (q.waiting > 0) queueTimer = setTimeout(pollQueue, 30000);
+        }
+
+        function renderQueuePill(q) {
+            const el = document.getElementById('queueInd');
+            const text = document.getElementById('queueText');
+            const sq = q.series;
+            if (sq && (sq.items.length || sq.running)) {
+                // Shows are quick (no provider connection), so they take the pill while they run.
+                seriesHadWork = true;
+                const total = sq.batch.shows + sq.items.length;   // the running show is still in items
+                const cur = sq.running ? sq.running.name : (sq.items[0] && sq.items[0].name) || 'next show';
+                el.className = 'busy-ind queue-ind';
+                text.textContent = `Adding ${cur}: ${Math.min(sq.batch.shows + 1, total)} of ${total}`;
+                el.style.display = 'inline-flex';
+                return;
+            }
+            if (seriesHadWork) {
+                seriesHadWork = false;
+                const b = sq.batch;
+                const bad = b.failed && !b.episodes;
+                el.className = 'busy-ind queue-ind ' + (bad ? 'fail' : 'done');
+                text.textContent = (bad ? '✕ ' : '✓ ') + `Added ${plural(b.episodes, 'episode')} from ${plural(b.shows, 'show')}` + (b.failed ? `, ${b.failed} failed` : '');
+                el.style.display = 'inline-flex';
+                loadSeriesCategories();
+                setTimeout(() => { if (!queuedMovieIds.size && !queuedSeriesIds.size) el.style.display = 'none'; }, b.failed ? 8000 : 4000);
+                return;
+            }
+            const done = q.batch.activated + q.batch.failed;
+            const left = q.pending + q.waiting + (q.running ? 1 : 0);
+            if (left > 0) {
+                queueHadWork = true;
+                const total = done + left;
+                if (q.running || q.pending > 0) {
+                    el.className = 'busy-ind queue-ind';
+                    const waitNote = q.waiting ? ` · ${q.waiting} waiting for a slot` : '';
+                    if (q.running) {
+                        text.textContent = `Activating ${done + 1} of ${total}: ${q.running.name}` + waitNote;
+                    } else {
+                        // Pause between two activations: say what is next and when it starts.
+                        const secs = q.next ? Math.ceil(q.next.at - Date.now() / 1000) : 0;
+                        const nextName = q.next ? (q.next.name || 'next movie') : 'next movie';
+                        text.textContent = (done ? `Activated ${done} of ${total} · ` : '') +
+                            `next: ${nextName}` + (secs > 0 ? ` in ${secs}s` : '') + waitNote;
+                    }
+                } else {
+                    el.className = 'busy-ind queue-ind waiting';
+                    const at = q.next_check_at ? new Date(q.next_check_at * 1000).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : '';
+                    text.textContent = `${plural(q.waiting, 'movie')} queued, waiting for a free provider slot` + (at ? ` · next check ${at}` : '');
+                }
+                el.style.display = 'inline-flex';
+                return;
+            }
+            if (queueHadWork) {
+                queueHadWork = false;
+                const failed = q.batch.failed;
+                el.className = 'busy-ind queue-ind ' + (failed ? 'fail' : 'done');
+                const recentOk = (q.recent || []).filter(r => r.ok).length;
+                text.textContent = (failed ? '✕ ' : '✓ ') + (done ? `Activated ${done - failed}` + (failed ? `, ${failed} failed` : '') : `Activated ${recentOk}`);
+                setTimeout(() => { if (!queuedMovieIds.size) el.style.display = 'none'; }, failed ? 8000 : 4000);
+                return;
+            }
+            el.style.display = 'none';
+        }
+
+        function openQueueModal() {
+            document.getElementById('queueModal').classList.add('active');
+            renderQueueModal();
+            kickQueue();
+        }
+
+        function closeQueueModal() {
+            document.getElementById('queueModal').classList.remove('active');
+        }
+
+        function renderQueueModal() {
+            const esc = s => String(s ?? '').replace(/</g,'&lt;');
+            const q = queueLast;
+            const sum = document.getElementById('queueModalSummary');
+            const list = document.getElementById('queueModalList');
+            if (!q) { sum.textContent = 'Loading…'; list.innerHTML = ''; return; }
+            const sq = q.series || {items: []};
+            const parts = [];
+            if (sq.items.length) parts.push(`${plural(sq.items.length, 'show')} adding episodes`);
+            if (q.running) parts.push(`Activating ${esc(q.running.name)}`);
+            if (q.pending) parts.push(`${q.pending} next in line`);
+            if (q.waiting) parts.push(`${q.waiting} waiting for a free slot (checked every 10 min)`);
+            sum.innerHTML = parts.length ? parts.join(' · ') : 'The queue is empty.';
+            const label = {running: 'Activating', pending: 'Queued', waiting: 'Waiting'};
+            list.innerHTML = sq.items.map(i => `
+                <div class="queue-row">
+                    <div class="q-name" title="${esc(i.name)}">${esc(i.name || 'Series ' + i.series_id)}
+                        <div class="q-note">${plural(i.episodes, 'episode')}</div></div>
+                    <span class="q-note">${i.status === 'running' ? 'Adding' : 'Queued'}</span>
+                    ${i.status !== 'running' ? `<button class="btn btn-outline" style="padding:0.1rem 0.5rem;font-size:0.72rem;" onclick="cancelQueue(null, [${i.series_id}])">Remove</button>` : ''}
+                </div>`).join('') + (q.items || []).map(i => `
+                <div class="queue-row">
+                    <div class="q-name" title="${esc(i.name)}">${esc(i.name || 'Movie ' + i.movie_id)}${i.year ? ' (' + i.year + ')' : ''}
+                        ${i.note ? `<div class="q-note">${esc(i.note)}</div>` : ''}</div>
+                    <span class="q-note">${label[i.status] || i.status}</span>
+                    ${i.status !== 'running' ? `<button class="btn btn-outline" style="padding:0.1rem 0.5rem;font-size:0.72rem;" onclick="cancelQueue([${i.movie_id}])">Remove</button>` : ''}
+                </div>`).join('');
+        }
+
+        async function cancelQueue(ids, seriesIds) {
+            if (!ids && !seriesIds && !confirm('Remove everything queued? Whatever is being added right now still finishes.')) return;
+            const post = body => fetchJSON('/api/activation-queue/cancel', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body)
+            });
+            if (seriesIds) await post({series_ids: seriesIds});
+            else if (ids) await post({movie_ids: ids});
+            else { await post({}); await post({all_series: true}); }
+            kickQueue();
+        }
+
+        async function queueCheckNow() {
+            await fetchJSON('/api/activation-queue/check-now', {method: 'POST'});
+            kickQueue();
         }
 
         // --- Dead Movies ---
@@ -5988,14 +6712,24 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             } catch (e) {}
         }
 
+        // Dispatcharr can answer with no IP while its own lookup is still running (right after
+        // it starts, or when the lookup is slow). Retry soon instead of waiting the full minute.
+        let vpnIpRetry = null, vpnIpMisses = 0;
         async function refreshVpnIp() {
+            clearTimeout(vpnIpRetry);
             try {
                 const d = await fetchJSON('/api/vpn-ip');
                 const el = document.getElementById('vpnIpDisplay');
                 if (d.ip) {
+                    vpnIpMisses = 0;
                     el.textContent = 'Dispatcharr IP: ' + d.ip;
                     el.title = d.city && d.country ? d.city + ', ' + d.country : '';
                     el.style.color = '#58a6ff';
+                } else if (vpnIpMisses < 6) {
+                    vpnIpMisses++;
+                    el.textContent = 'Dispatcharr IP: looking up…';
+                    el.style.color = '';
+                    vpnIpRetry = setTimeout(refreshVpnIp, 5000);
                 } else {
                     el.textContent = 'Dispatcharr IP: unavailable';
                     el.style.color = '#f85149';
@@ -6004,6 +6738,67 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                 document.getElementById('vpnIpDisplay').textContent = 'Dispatcharr IP: error';
                 document.getElementById('vpnIpDisplay').style.color = '#f85149';
             }
+        }
+
+        // --- Plex mount check ---
+        function renderMountBanner(d) {
+            const box = document.getElementById('mountBanner');
+            const down = (d && d.down) || [];
+            if (!down.length) { box.style.display = 'none'; return; }
+            document.getElementById('mountBannerText').innerHTML =
+                '<strong style="color:var(--danger);">Plex can&#39;t see some bridge titles.</strong>' +
+                down.map(m => `<div style="margin-top:0.3rem;">${escapeHtml(m.label)} (<code>${escapeHtml(m.root)}</code>): ${escapeHtml(m.reason)}</div>`).join('') +
+                `<div style="margin-top:0.4rem;"><strong>To fix:</strong> on the machine that runs Plex${plexMachineName ? ` (<b>${escapeHtml(plexMachineName)}</b>)` : ''}, ` +
+                'run its setup command again. It is under <strong>Settings → Setup → 3. Media server machines</strong>. ' +
+                'It restarts a stopped mount, repairs a broken one, and leaves working ones alone.</div>' +
+                '<div style="margin-top:0.5rem;"><button class="btn btn-primary" onclick="openPlexSetupCommand()">Show the setup command</button></div>';
+            box.style.display = 'block';
+        }
+        // Name and id of the setup machine that runs Plex, for the banner and its button.
+        let plexMachineName = '', plexMachineId = '';
+        async function loadPlexMachine() {
+            const s = await fetchJSON('/api/setup/state');
+            if (!s || s.error) return;
+            const a = ((s.answers && s.answers.machines) || []).find(m => (m.servers || []).includes('plex'));
+            if (!a) return;
+            plexMachineId = a.id;
+            const m = (s.machines || []).find(x => x.id === a.id);
+            plexMachineName = (m && m.name) || a.label || '';
+        }
+        // Opens Settings → Setup with step 3 and the Plex machine expanded, scrolled to its command.
+        function openPlexSetupCommand() {
+            setupOpen['setupLight3'] = true;
+            if (plexMachineId) setupOpen['m:' + plexMachineId] = true;
+            switchTab('settings');
+            showSettingsSection('setup');
+            let tries = 0;
+            const t = setInterval(() => {
+                const card = plexMachineId && document.querySelector(`#setupMachines .setup-machine[data-mid="${plexMachineId}"]`);
+                const target = card || document.getElementById('setupLight3');
+                if ((target && target.offsetParent) || ++tries > 40) {
+                    clearInterval(t);
+                    if (!target) return;
+                    applySetupCollapse();
+                    const cmd = card && card.querySelector('.setup-cmd, pre, code');
+                    (cmd || target).scrollIntoView({behavior: 'smooth', block: 'center'});
+                }
+            }, 150);
+        }
+        function refreshMounts() {
+            loadPlexMachine().catch(() => {}).then(() => fetchJSON('/api/plex/mounts')).then(d => {
+                renderMountBanner(d);
+                if (d && !d.checked_at) setTimeout(refreshMounts, 15000);  // bridge just started, first check pending
+            }).catch(() => {});
+        }
+        async function recheckMounts() {
+            const btn = document.getElementById('mountBannerBtn');
+            btn.disabled = true; btn.textContent = 'Checking...';
+            try {
+                const r = await fetch('/api/plex/mounts/check', {method: 'POST'});
+                renderMountBanner(await r.json());
+                if (document.getElementById('healthSetupLinks')) loadHealthSetupLinks();
+            } catch (e) {}
+            btn.disabled = false; btn.textContent = 'Check again';
         }
 
         // --- Init ---
@@ -6026,8 +6821,28 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
         refreshDeadBadge();
         refreshStreamBadge();
         setInterval(refreshStreamBadge, 10000);
+        refreshMounts();
+        setInterval(refreshMounts, 300000);
         loadMovies(1);
+        pollQueue();
         setupAutoOpen();
+
+        // Shows per page, remembered like the display size.
+        try {
+            const ps = localStorage.getItem('seriesPageSize');
+            const sel = document.getElementById('seriesPageSize');
+            if (ps && [...sel.options].some(o => o.value === ps)) sel.value = ps;
+        } catch (e) {}
+
+        // Back-to-top button: shown once the page is scrolled 5% of the way down.
+        function updateScrollTopBtn() {
+            const el = document.scrollingElement || document.documentElement;
+            const room = el.scrollHeight - el.clientHeight;
+            document.getElementById('scrollTopBtn').classList.toggle('show', room > 0 && el.scrollTop / room >= 0.05);
+        }
+        window.addEventListener('scroll', updateScrollTopBtn, {passive: true});
+        window.addEventListener('resize', updateScrollTopBtn);
     </script>
+    <button id="scrollTopBtn" title="Back to top" aria-label="Back to top" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">&#8593;</button>
 </body>
 </html>

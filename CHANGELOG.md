@@ -29,6 +29,40 @@ The three minor bumps each mark a major feature:
 
 ---
 
+## [0.45.1] — 2026-11-03
+
+**0.44.0 and 0.45.0 were never released on their own.** They were developed and tested locally, and 0.45.1 is the first published release that contains them. If you're upgrading from 0.43.0, you get everything listed here, including the items marked *(0.44.0)* and *(0.45.0)*.
+
+### Upgrade notes (from 0.43.0)
+- Update the bridge image, then **run Command B again on each Plex/Jellyfin machine** (Settings → Setup). That adds the cache limit to the rclone mounts, installs the disk report timer for the disk gauge, and repairs a hand-made bridge mount whose remote went missing. Command A doesn't need to run again.
+- After changing a machine's **Cache limit (GB)** later, press **Save** and run its Command B again.
+- No database steps are needed. New tables and columns are added on first start, and episodes that are already active get their head/tail cache from the background queue, one short provider connection each.
+
+### Added
+- *(0.44.0)* **Shift+click** selects a range of movie cards.
+- *(0.44.0)* **Activation popup.** Activating movies opens one popup with a library picker for all of them, a warning for two or more, and the free provider slots per account.
+- *(0.44.0)* **Activation queue.** Movies are activated one at a time, 5 seconds apart. If no provider account has a free slot, the movie waits and is checked again every 10 minutes instead of failing. A queue pill shows progress; click it to see or remove queued movies.
+- *(0.45.0)* **Activate several series at once.** Tick series cards (shift+click for a range), then **Activate** opens a wizard with one step per show and a Review step. Each step picks the library and either all seasons or the seasons and episodes you choose. Nothing is queued until **Add N episodes**. Episodes are added by a background queue, with one Plex scan per library when it finishes.
+- *(0.45.0)* Series cards show provider and language tags.
+- **The bridge warns when Plex can't see its folders.** Every 30 minutes, and in the Daily Run, the bridge asks Plex about each folder it serves (movies, movie categories, series) that has active titles. It checks that a Plex library uses the folder and that Plex can still read the newest file there. If the rclone mount on the Plex machine has stopped, a red banner appears at the top of every page. It names the folder and the Plex machine, and its **Show the setup command** button opens Settings → Setup at that machine's command, which restarts or repairs the mount. The Health tab shows the same live result, and the Daily Run report shows `Plex mounts: FAILED`. The check uses the Plex API and the bridge's database only; it never contacts a provider. The last result is at `GET /api/plex/mounts`, and **Check again** in the banner runs it at once.
+- **Single-show view uses the wizard layout.** Clicking a series card opens the show in the Activate wizard's layout instead of the old episode table. Active episodes can be deactivated or reactivated there, and **Refresh episode list** re-reads the show from Dispatcharr.
+- **Select all and shift+click ranges** for seasons and episodes in the wizard.
+- **Series per page** selector (60, 100, 200 or 300), remembered by the browser.
+- **Back to top** button on every page.
+- **Episodes get a head/tail cache, like movies.** After episodes are added, the bridge reads the start (6 MB) and end (256 KB) of each one and stores them with its real file size. Plex's scans and analysis then read those parts from the bridge instead of the provider. The reads go one at a time through the activation queue, 5 seconds apart, before the series Plex scan (which waits at most 15 minutes for them), and only while a provider account has a free connection. Episodes played in the last 3 hours are left alone. A failed read is retried after 1 hour, 6 hours, then daily, and never marks anything dead. Episodes already active when you update are cached the same way.
+- The wizard's Review step says that adding episodes opens one short provider connection per episode, with an extra warning for batches over 20 episodes.
+- **Cache limit for the rclone mounts.** Each media machine's Setup card has a **Cache limit (GB)** setting (default 20 GB, shared by that machine's mounts). Command B writes it into the mounts as `--vfs-cache-max-size`. With rclone 1.64 or newer it also adds `--vfs-cache-min-free-space 5G`. The full rclone cache stays on because it lets Plex seek without opening new provider connections. Copies are still removed 10 minutes after playback stops, the oldest go first once the limit is reached, and a title that is still playing is never removed. **After changing the limit, press Save and run Command B again on that machine.** The limit only takes effect when you do, and until then the Setup and Health tabs say the machine still uses the old limit. A working hand-made rclone unit that Command B leaves alone doesn't get the limit; Command B warns about it, and `--replace` swaps it for the bridge's own.
+- **Disk gauge for media machines.** Command B installs `vod-bridge-disk-report.timer`, which sends the machine's disk size, free space and rclone cache size to the bridge every 5 minutes. The cache size includes a hand-made bridge mount that Command B left in place. A gauge on the Health tab and on the machine's Setup card shows them, and turns yellow below 20% free and red below 10%. Nothing else is sent. Run Command B again on existing machines to get it.
+
+### Changed
+- **A movie's head/tail cache is refilled after a failover.** Switching to another stream, or a new UUID from Dispatcharr, clears the cache, and until now it stayed empty, so Plex's later scans reached the provider. The activation queue now refills it the same way as episodes, skipping movies that are playing or were played in the last 3 hours.
+- An episode's cache is cleared when Dispatcharr gives it a new UUID, when it is deactivated, and when playback switches to a different provider account than the one the cache came from.
+- Now Playing shows the show name for Plex episodes, in the same form as Jellyfin: "Show - S01E02 - Episode".
+
+### Fixed
+- **Command B (media setup) could break a hand-made rclone mount.** When it rewrote `rclone.conf`, it removed every remote named `vodbridge-movies`, `vodbridge-movies-cat` or `vodbridge-series`, including one that a separate, hand-made rclone unit used. The running mount kept working until its next start, often a reboot, and then failed on every restart while Plex showed an empty library. Command B now leaves any remote that another rclone unit uses, and its own mount takes a spare `-setup` name if needed. If a hand-made unit's bridge remote is already missing, Command B puts it back and restarts the unit, so re-running Command B repairs an affected host. Its final check also reports any rclone unit whose remote is missing from its config. This only affected hosts with a hand-made rclone unit that used one of those exact remote names. Command B is served by the bridge, so updating the bridge updates it.
+- When Command B asks to replace a hand-made rclone unit that isn't working, it now shows that unit's actual `ExecStart` line (it showed `ExecStartPre` before).
+
 ## [0.43.0] — 2026-10-27
 
 ### Added

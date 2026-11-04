@@ -48,6 +48,38 @@ async def _account_has_capacity(client: httpx.AsyncClient, account_id: int) -> b
         return True
 
 
+async def account_slots(client: httpx.AsyncClient, account_id: int) -> dict:
+    """Free/total provider connections for an account, summed over its active profiles.
+    unlimited=True when any active profile has max_streams 0. known=False when Dispatcharr
+    could not be asked (callers treat that as "has capacity", like _account_has_capacity)."""
+    out = {"account_id": account_id, "name": "", "free": 0, "total": 0, "unlimited": False, "known": False}
+    if not account_id:
+        out["unlimited"] = True
+        return out
+    try:
+        resp = await client.get(f"{DISPATCHARR_URL}/api/m3u/accounts/{account_id}/",
+                                headers=_auth_headers(), timeout=10)
+        if resp.status_code != 200:
+            return out
+        data = resp.json()
+        out["name"] = data.get("name", "")
+        out["known"] = True
+        profiles = [p for p in data.get("profiles", []) if p.get("is_active", True)]
+        if not profiles or any(p.get("max_streams", 0) == 0 for p in profiles):
+            out["unlimited"] = True
+            return out
+        for p in profiles:
+            out["total"] += p.get("max_streams", 0)
+            out["free"] += max(0, p.get("max_streams", 0) - p.get("current_viewers", 0))
+    except Exception as e:
+        logger.warning("Slot check failed for account %d: %s", account_id, e)
+    return out
+
+
+def slots_free(slots: dict) -> bool:
+    return slots["unlimited"] or not slots["known"] or slots["free"] > 0
+
+
 async def _pick_relation_with_capacity(client: httpx.AsyncClient, movie: dict) -> tuple[int, int, str] | None:
     """Return (stream_id, account_id, label) for the first relation with free capacity.
 
@@ -262,7 +294,8 @@ async def get_episode_redirect_url(episode_id: int) -> tuple[str | None, str | N
 
         db = await get_db()
         row = await db.execute(
-            "SELECT id, uuid, stream_id, account_id, container_extension, alt_streams FROM episodes WHERE id = ?",
+            "SELECT id, uuid, stream_id, account_id, container_extension, alt_streams, cache_account_id, "
+            "header_size FROM episodes WHERE id = ?",
             (episode_id,),
         )
         episode = await row.fetchone()
@@ -280,6 +313,15 @@ async def get_episode_redirect_url(episode_id: int) -> tuple[str | None, str | N
             return None, "No provider capacity available", True
 
         stream_id, account_id = picked
+        if episode.get("header_size") and episode.get("cache_account_id") and episode["cache_account_id"] != account_id:
+            # The cached head/tail came from another account's copy, which may not be the same file.
+            # Drop it so later reads go to this stream; cache_fill.py fetches it again.
+            await db.execute(
+                "UPDATE episodes SET header_data = NULL, header_size = 0, tail_data = NULL, tail_size = 0, "
+                "tail_offset = 0, file_size = NULL, cache_account_id = NULL WHERE id = ?", (episode_id,))
+            await db.commit()
+            logger.info("Episode %s: playing from account %s, cleared cache from account %s",
+                        episode_id, account_id, episode["cache_account_id"])
         params = []
         if account_id:
             params.append(f"m3u_account_id={account_id}")
