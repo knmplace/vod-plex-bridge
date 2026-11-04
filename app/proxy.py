@@ -722,6 +722,21 @@ def _log_event(level: str, movie_id: int | None, msg: str, movie_name: str | Non
     _proxy_log.append(entry)
 
 
+def _episode_label(ep) -> str:
+    """Log label for an episode: "Show - S01E02 - Episode", as Now Playing shows it (missing parts left out)."""
+    parts = []
+    if ep["series_name"]:
+        parts.append(ep["series_name"])
+    try:
+        parts.append(f"S{int(ep['season_number']):02d}E{int(ep['episode_number']):02d}")
+    except (TypeError, ValueError):
+        pass
+    name = ep["name"] or ""
+    if name and name not in parts:
+        parts.append(name)
+    return " - ".join(parts) or f"Episode {ep['id']}"
+
+
 def get_proxy_log() -> list[dict]:
     return list(_proxy_log)
 
@@ -1569,8 +1584,9 @@ async def vod_series_file(subpath: str, request: Request):
     if m:
         episode_id = int(m.group(1))
         row = await db.execute(
-            "SELECT id, uuid, name, container_extension, file_size, activated, header_data, header_size, "
-            "tail_data, tail_size, tail_offset FROM episodes WHERE id = ?",
+            "SELECT e.id, e.uuid, e.name, e.container_extension, e.file_size, e.activated, e.header_data, "
+            "e.header_size, e.tail_data, e.tail_size, e.tail_offset, e.season_number, e.episode_number, "
+            "s.name AS series_name FROM episodes e LEFT JOIN series s ON s.id = e.series_id WHERE e.id = ?",
             (episode_id,),
         )
         episode = await row.fetchone()
@@ -1614,7 +1630,7 @@ async def vod_series_file(subpath: str, request: Request):
                 part = "tail"
             if chunk:
                 serve_end = range_start + len(chunk) - 1
-                _log_event("info", None, f"Episode served from cache ({part})", movie_name=episode["name"],
+                _log_event("info", None, f"Episode served from cache ({part})", movie_name=_episode_label(episode),
                            episode_id=episode_id, bytes=len(chunk), range_start=range_start, range_end=serve_end)
                 return Response(
                     status_code=206,

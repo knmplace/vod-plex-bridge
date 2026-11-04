@@ -1,6 +1,6 @@
 # VOD Plex Bridge — User Guide
 
-This guide covers VOD Plex Bridge **v0.45.1**. It explains what the app does, how to set it up, and how to use each tab. For a first-time install (Docker compose, then the Setup tab's commands), see [INSTALL.md](../INSTALL.md). Come back here once the container is running.
+This guide covers VOD Plex Bridge **v0.45.2**. It explains what the app does, how to set it up, and how to use each tab. For a first-time install (Docker compose, then the Setup tab's commands), see [INSTALL.md](../INSTALL.md). Come back here once the container is running.
 
 Placeholders used throughout:
 
@@ -344,7 +344,7 @@ Because each category is its own folder under the series mount, one rclone serie
 
 **Browse Series**
 
-- Search, filter by category, and filter by activated. Cards show provider and language tags, and **Series per page** can be 60, 100, 200 or 300 (remembered by the browser).
+- Search, filter by category, and filter by activated. Cards show provider and language tags, plus a **Continuing** (green) or **Ended** (red) badge from TMDB at the bottom right. Shows TMDB doesn't know have no badge. **Series per page** can be 60, 100, 200 or 300 (remembered by the browser).
 - **Sync Series Catalog** pulls the latest series list from Dispatcharr.
 
 **Activate several shows at once**
@@ -410,7 +410,7 @@ Provider blocks are usually temporary. Many dead movies play fine after a restor
 
 ### 6.3 Proxy Logs
 
-- **Activity log**: live streaming and proxy events, with auto-refresh, a level filter and a **Refresh** button.
+- **Activity log**: live streaming and proxy events, with auto-refresh, a level filter and a **Refresh** button. Episode lines name the show, season and episode ("Show - S01E02 - Episode").
 - **Redirect mode**: each playback logs one line naming the account and stream it went to, for example "Redirecting to Dispatcharr proxy via Account A, stream 1234". The line says so when a fallback account was used because the primary was full, or when all accounts were full. Plex re-requests a title every minute or two while it buffers, and those repeats are not logged. A new line appears only after 15 minutes of quiet, or as "Redirect switched to …" when the stream changes.
 - **Archived logs**: older logs are archived automatically every 4 hours (change this with `LOG_ARCHIVE_INTERVAL`), and old archives are cleaned up. Click **Archive Now** to archive immediately, click an archive to view it, and select archives to **Delete** them.
 

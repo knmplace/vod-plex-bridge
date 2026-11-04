@@ -29,6 +29,17 @@ The three minor bumps each mark a major feature:
 
 ---
 
+## [0.45.2] — 2026-11-04
+
+### Added
+- **Continuing / Ended badge on series cards.** Each series card shows whether the show is still airing, using the show status from TMDB, the same information Sonarr shows. **Continuing** (green) covers TMDB's *Returning Series*, *In Production*, *Planned* and *Pilot*. **Ended** (red) covers *Ended* and *Canceled*. Shows without a TMDB match have no badge. The badge sits at the bottom right of the card, next to the language tag. Existing series get their status from the local TMDB library on the next series TMDB enrichment (after a series catalog sync or in the Daily Run), and only titles missing from it are fetched from TMDB. A show TMDB later marks as changed, for example when it is cancelled, is checked again on the next pass.
+
+### Changed
+- Episode lines in the proxy activity log now name the show, season and episode, for example "The Walking Dead - S02E05 - What Will Survive", in the same form as Now Playing. Before, they showed only the episode name.
+
+### Fixed
+- **A scheduled catalog sync no longer runs straight after a manual one.** Clicking **Sync Series Catalog** (or the movie catalog sync) didn't restart the sync schedule's clock. If a scheduled sync was due, it started as soon as yours finished, while your sync was still applying TMDB data. Any full sync now restarts the clock, and only one series sync runs at a time. A second request is ignored while one is still running.
+
 ## [0.45.1] — 2026-11-03
 
 **0.44.0 and 0.45.0 were never released on their own.** They were developed and tested locally, and 0.45.1 is the first published release that contains them. If you're upgrading from 0.43.0, you get everything listed here, including the items marked *(0.44.0)* and *(0.45.0)*.

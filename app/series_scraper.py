@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -90,23 +91,55 @@ async def _upsert_series(db, series):
     ))
 
 
+_CONTINUING = {"returning series", "in production", "planned", "pilot"}
+_ENDED = {"ended", "canceled", "cancelled"}
+
+
+def map_tmdb_status(status: str | None) -> str | None:
+    """TMDB /tv status -> 'continuing' / 'ended' (None when unknown)."""
+    s = (status or "").strip().lower()
+    if s in _CONTINUING:
+        return "continuing"
+    if s in _ENDED:
+        return "ended"
+    return None
+
+
 async def enrich_series_from_tmdb(limit: int = 5000) -> dict:
     """TMDB (local store first, API on a miss) for series flagged by a Dispatcharr change
     or never checked: TMDB wins for title, poster, plot, genre and year. Locked series and
     series without a TMDB id keep Dispatcharr's data; folder names never change."""
     import tmdb_local
     result = {"enriched": 0, "changed": 0, "nfo_rewritten": 0, "not_found": 0, "failed": 0,
-              "remaining": 0, "local": 0, "api": 0, "fields": {}}
+              "remaining": 0, "local": 0, "api": 0, "fields": {},
+              "status_changed": 0}
     if not tmdb_local.has_credentials():
         return result
 
+    import tmdb_store
+    run_started = time.time()
     db = await get_db()
-    # lang_checked = 0 also re-queues series enriched before the language column existed.
-    pending = ("(tmdb_check = 1 OR tmdb_enriched_at IS NULL OR COALESCE(lang_checked, 0) = 0) "
+
+    # Shows the TMDB store refreshed since the last pass (e.g. flagged by /tv/changes) are
+    # re-applied, so a show that ends or is cancelled gets its status updated.
+    since = float(await asyncio.to_thread(tmdb_store.get_meta, "series_applied_at", "0") or 0)
+    if since:
+        ids = [str(i) for i in await asyncio.to_thread(tmdb_store.list_fetched_since, "tv", since)]
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            await db.execute(
+                f"UPDATE series SET tmdb_check = 1 WHERE tmdb_enriched_at IS NOT NULL "
+                f"AND tmdb_id IN ({','.join('?' * len(chunk))})", chunk,
+            )
+        await db.commit()
+
+    # lang_checked / status_checked = 0 also re-queue series enriched before those columns existed.
+    pending = ("(tmdb_check = 1 OR tmdb_enriched_at IS NULL OR COALESCE(lang_checked, 0) = 0 "
+               "OR COALESCE(status_checked, 0) = 0) "
                "AND tmdb_id IS NOT NULL AND tmdb_id != '' "
                "AND COALESCE(tmdb_locked, 0) = 0")
     rows = await (await db.execute(
-        f"SELECT id, tmdb_id, name, poster_url, description, genre, year, language FROM series "
+        f"SELECT id, tmdb_id, name, poster_url, description, genre, year, language, tmdb_status FROM series "
         f"WHERE {pending} ORDER BY tmdb_check DESC, id DESC LIMIT ?", (limit,))).fetchall()
 
     rewrite = []
@@ -119,8 +152,8 @@ async def enrich_series_from_tmdb(limit: int = 5000) -> dict:
                 data, local = await tmdb_local.fetch_title("tv", s["tmdb_id"])
             except tmdb_local.TmdbNotFoundError:
                 result["not_found"] += 1
-                await db.execute("UPDATE series SET tmdb_check = 0, lang_checked = 1, tmdb_enriched_at = ? WHERE id = ?",
-                                 (now, s["id"]))
+                await db.execute("UPDATE series SET tmdb_check = 0, lang_checked = 1, status_checked = 1, "
+                                 "tmdb_enriched_at = ? WHERE id = ?", (now, s["id"]))
                 continue
             if data is None:
                 result["failed"] += 1  # transient: stays queued
@@ -142,8 +175,14 @@ async def enrich_series_from_tmdb(limit: int = 5000) -> dict:
             lang = "" if s["language"] else (data.get("original_language") or "").strip().lower()
             sets += "language = ?, " if lang else ""
             vals = (*changes.values(), lang) if lang else tuple(changes.values())
-            await db.execute(f"UPDATE series SET {sets}tmdb_check = 0, lang_checked = 1, tmdb_enriched_at = ? WHERE id = ?",
-                             (*vals, now, s["id"]))
+            # Show status for the card badge; not part of tvshow.nfo.
+            status = map_tmdb_status(data.get("status"))
+            if status and status != s["tmdb_status"]:
+                result["status_changed"] += 1
+            sets += "tmdb_status = COALESCE(?, tmdb_status), "
+            vals = (*vals, status)
+            await db.execute(f"UPDATE series SET {sets}tmdb_check = 0, lang_checked = 1, status_checked = 1, "
+                             f"tmdb_enriched_at = ? WHERE id = ?", (*vals, now, s["id"]))
             result["enriched"] += 1
             result["local" if local else "api"] += 1
             if changes:
@@ -165,6 +204,8 @@ async def enrich_series_from_tmdb(limit: int = 5000) -> dict:
         except Exception as e:
             logger.error(f"tvshow.nfo rewrite failed for series {series_id}: {e}")
 
+    if not _cancel:
+        await asyncio.to_thread(tmdb_store.set_meta, "series_applied_at", run_started)
     result["remaining"] = (await (await db.execute(f"SELECT COUNT(*) FROM series WHERE {pending}")).fetchone())[0]
     logger.info("Series TMDB enrichment: %s", result)
     return result
@@ -261,7 +302,35 @@ async def tag_series_accounts() -> dict:
     return result
 
 
+_scrape_running = False
+
+
+def is_scrape_running() -> bool:
+    """True from the start of a series sync until its tagging and TMDB enrichment finish."""
+    return _scrape_running
+
+
 async def scrape_series_catalog(max_series: int = 0):
+    """One series sync at a time: a second request (a double click, or the schedule coming due
+    while a manual sync is in its TMDB step) is ignored. A full sync also restarts the schedule's
+    clock, so a scheduled sync doesn't run straight after a manual one."""
+    global _scrape_running
+    if _scrape_running:
+        logger.info("Series catalog sync already running; request ignored")
+        return 0
+    _scrape_running = True
+    try:
+        if max_series == 0:
+            db = await get_db()
+            await db.execute("UPDATE series_sync_state SET last_auto_catalog_sync = ? WHERE id = 1",
+                             (datetime.now().isoformat(timespec="seconds"),))
+            await db.commit()
+        return await _scrape_series_catalog(max_series)
+    finally:
+        _scrape_running = False
+
+
+async def _scrape_series_catalog(max_series: int = 0):
     """Page through Dispatcharr's series catalog and upsert into the local series table."""
     global _cancel
     _cancel = False

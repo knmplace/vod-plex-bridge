@@ -2387,6 +2387,12 @@ async def stream_health_stats():
 
 
 async def _run_catalog_sync(max_movies: int = 0, category_ids: list = None, account_ids: list = None):
+    if max_movies == 0:
+        # Any full sync restarts the schedule's clock, so a scheduled sync doesn't follow a manual one.
+        db = await get_db()
+        await db.execute("UPDATE sync_state SET last_auto_catalog_sync = ? WHERE id = 1",
+                         (datetime.now().isoformat(timespec="seconds"),))
+        await db.commit()
     try:
         await scrape_catalog(max_movies=max_movies, category_ids=category_ids, account_ids=account_ids)
         if not is_cancelled() and max_movies == 0:
@@ -2593,6 +2599,10 @@ async def run_due_catalog_syncs(now: datetime = None) -> list[str]:
         status = (await (await db.execute(f"SELECT status FROM {table} WHERE id = 1")).fetchone())["status"]
         if _refresh_running or status in ("scraping", "enriching", "refreshing"):
             continue
+        if kind == "series":
+            import series_scraper
+            if series_scraper.is_scrape_running():
+                continue
         await db.execute(f"UPDATE {table} SET last_auto_catalog_sync = ? WHERE id = 1",
                          (now.isoformat(timespec="seconds"),))
         await db.commit()

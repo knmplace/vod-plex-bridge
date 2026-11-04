@@ -480,6 +480,11 @@
         }
         .movie-card .tag-provider { color: #93c5fd; border-color: rgba(59,130,246,0.45); background: rgba(59,130,246,0.12); }
         .movie-card .tag-lang { color: #fcd34d; border-color: rgba(245,158,11,0.45); background: rgba(245,158,11,0.12); }
+        /* Series status (TMDB): own bottom row, right-aligned so the language chip keeps its spot on the left */
+        .movie-card .tags-bottom { flex-wrap: nowrap; align-items: center; }
+        .movie-card .tags-bottom .tag-status { margin-left: auto; flex-shrink: 0; }
+        .movie-card .tag-continuing { color: #86efac; border-color: rgba(34,197,94,0.45); background: rgba(34,197,94,0.12); }
+        .movie-card .tag-ended { color: #fca5a5; border-color: rgba(239,68,68,0.5); background: rgba(239,68,68,0.14); }
 
         /* Poster overlays */
         .movie-card .card-badges {
@@ -4084,8 +4089,12 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                         ${s.genre ? '<div class="meta sub">' + s.genre + '</div>' : ''}
                         <div class="tags">
                             ${(s.account_names || '').split(',').map(a => a.trim()).filter(Boolean).map(a => '<span class="tag tag-provider">' + swEsc(a) + '</span>').join('')}
-                            ${s.language ? '<span class="tag tag-lang">' + getLangName(s.language) + '</span>' : ''}
                         </div>
+                        ${(s.language || s.tmdb_status) ? `<div class="tags tags-bottom">
+                            ${s.language ? '<span class="tag tag-lang">' + getLangName(s.language) + '</span>' : ''}
+                            ${s.tmdb_status === 'continuing' ? '<span class="tag tag-status tag-continuing" title="Still airing (TMDB)">Continuing</span>'
+                              : s.tmdb_status === 'ended' ? '<span class="tag tag-status tag-ended" title="Ended or cancelled (TMDB)">Ended</span>' : ''}
+                        </div>` : ''}
                     </div>
                 </div>
             `).join('');

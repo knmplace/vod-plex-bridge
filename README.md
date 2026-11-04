@@ -35,7 +35,7 @@ graph LR
 ## Features
 
 - **VOD Catalog Browser** — Browse and search your provider's movie catalog (Movies tab) with multi-select filters for language, category, genre, year, provider and activation state
-- **TV Series** — Pick series categories, activate whole shows, seasons or single episodes, and send each category to its own Plex TV library
+- **TV Series** — Pick series categories, activate whole shows, seasons or single episodes, and send each category to its own Plex TV library. Series cards show a **Continuing** or **Ended** badge from TMDB
 - **Movie Categories** — Split movies into categories (kids, 4K, ...), each with its own Plex Movies library the bridge creates for you. Map provider categories to them for automatic placement, and move active movies between them
 - **One-Click Activation** — Activate movies to instantly add them to your Plex library with poster art, genres, and metadata
 - **Activation Queue** — Movies and episodes are added one at a time, 5 seconds apart, and wait for a free provider slot instead of failing. A pill at the top shows progress; shift+click selects a range of cards

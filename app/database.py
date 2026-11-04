@@ -343,6 +343,10 @@ async def init_db():
         "ALTER TABLE series ADD COLUMN account_names TEXT",
         "ALTER TABLE series ADD COLUMN language TEXT",
         "ALTER TABLE series ADD COLUMN lang_checked INTEGER DEFAULT 0",
+        # TMDB show status mapped to 'continuing' / 'ended' (series card badge).
+        # status_checked = 0 queues a one-time backfill through enrich_series_from_tmdb.
+        "ALTER TABLE series ADD COLUMN tmdb_status TEXT",
+        "ALTER TABLE series ADD COLUMN status_checked INTEGER DEFAULT 0",
     ]:
         try:
             await db.execute(series_col)
