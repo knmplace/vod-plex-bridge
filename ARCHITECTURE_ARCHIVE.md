@@ -142,7 +142,7 @@
 ### Provider Behavior (discovered 2026-06-26, updated 2026-06-27)
 - Movies are NOT permanently burned — provider uses temporary blocks with cooldown
 - HTTP 500 from proxy = provider blocking, not content removal
-- Cross-instance access (same movie from .94 and .251 VPN IPs) triggers account-level ban
+- Cross-instance access (same movie from .94 and .250 VPN IPs) triggers account-level ban
 - **ROOT CAUSE of burns**: Rapid Dispatcharr session cycling. Single clean disconnect = movie survives. 6 sessions in 60 seconds = movie burned. Proven via manual probe testing on Quicksand (965133).
 - **Fix**: PLEX_IDLE_TIMEOUT raised from 5s to 30s (Plex reads in bursts with 5-7s pauses between)
 - Implication: 1-strike dead may need cooldown+retry mechanism later
