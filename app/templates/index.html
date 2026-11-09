@@ -6415,7 +6415,7 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                 c.textContent = r.unread; c.style.display = r.unread ? 'block' : 'none';
                 const esc = s => String(s ?? '').replace(/</g, '&lt;');
                 document.getElementById('bellDrop').innerHTML = (r.items || []).map(i =>
-                    '<div class="bell-item' + (i.unread ? ' unread' : '') + '" onclick="switchTab('series')">' +
+                    '<div class="bell-item' + (i.unread ? ' unread' : '') + '" onclick="switchTab(&#39;series&#39;)">' +
                     '<b>' + esc(i.name || 'Show') + '</b>' + (i.season_number != null ? ' S' + String(i.season_number).padStart(2, '0') + 'E' + String(i.episode_number).padStart(2, '0') : '') +
                     ' - ' + esc(BELL_LABEL[i.kind] || i.kind) + '<small>' + esc(i.note || '') + ' ' + esc((i.created_at || '').slice(0, 16).replace('T', ' ')) + '</small></div>'
                 ).join('') || '<div class="bell-empty">Nothing new in the last 30 days.</div>';
