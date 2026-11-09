@@ -273,6 +273,12 @@
         .bell-item.unread { border-left: 3px solid var(--accent, #58a6ff); }
         .bell-item small { display: block; color: #8b949e; margin-top: 2px; }
         .bell-empty { padding: 0.9rem; color: #8b949e; font-size: 0.8rem; text-align: center; }
+        .vpn-ip { display: inline-flex; align-items: center; gap: 0.6rem; padding: 0.25rem 0.6rem; margin-right: 1rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); font-size: 0.82rem; cursor: pointer; }
+        .vpn-ip-label { color: #8b949e; font-size: 0.72rem; }
+        .vpn-ip-val { font-family: monospace; color: var(--text-primary); }
+        .vpn-blur { filter: blur(5px); user-select: none; }
+        .vpn-copy { color: #8b949e; }
+        .vpn-copy:hover { color: var(--text-primary); }
         .acct-menu { position: relative; }
         .acct-btn { display: inline-flex; align-items: center; gap: 0.4rem; }
         .acct-drop { display: none; position: absolute; right: 0; top: calc(100% + 4px); min-width: 150px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.35); z-index: 200; overflow: hidden; }
@@ -6874,13 +6880,21 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
         function renderVpnIp() {
             const el = document.getElementById('vpnIpDisplay');
             if (!vpnIpInfo) return;
-            const d = vpnIpInfo;
-            el.textContent = 'Dispatcharr IP: ' + (vpnIpShown ? d.ip : d.ip.replace(/[0-9a-fA-F]/g, '•'));
-            el.title = vpnIpShown ? (d.city && d.country ? d.city + ', ' + d.country + ' - ' : '') + 'click to hide' : 'click to show';
-            el.style.color = '#58a6ff';
-            el.style.cursor = 'pointer';
+            const d = vpnIpInfo, parts = d.ip.split('.');
+            const shown = parts.length === 4 ? parts.slice(0, 2).join('.') + '.' : '';
+            const rest = d.ip.slice(shown.length);
+            el.className = 'vpn-ip';
+            el.innerHTML = '<span class="vpn-ip-label">Dispatcharr IP</span><span class="vpn-ip-val" title="' + (vpnIpShown ? 'click to hide' : 'click to show') + '">' +
+                shown + '<span class="' + (vpnIpShown ? '' : 'vpn-blur') + '">' + rest + '</span></span>' +
+                '<svg class="vpn-copy" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><title>Copy IP</title><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>';
+            el.style.color = '';
+            el.title = d.city && d.country && vpnIpShown ? d.city + ', ' + d.country : '';
         }
-        document.getElementById('vpnIpDisplay').addEventListener('click', () => { if (vpnIpInfo) { vpnIpShown = !vpnIpShown; renderVpnIp(); } });
+        document.getElementById('vpnIpDisplay').addEventListener('click', e => {
+            if (!vpnIpInfo) return;
+            if (e.target.closest('.vpn-copy')) { try { navigator.clipboard.writeText(vpnIpInfo.ip); } catch (x) {} return; }
+            vpnIpShown = !vpnIpShown; renderVpnIp();
+        });
         async function refreshVpnIp() {
             clearTimeout(vpnIpRetry);
             try {
