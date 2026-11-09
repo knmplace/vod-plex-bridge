@@ -3845,6 +3845,11 @@ async def plex_scan_presence():
         return JSONResponse({"error": plex_libraries.describe_error(e)}, status_code=502)
 
 
+@router.get("/plex/library-totals")
+async def plex_library_totals():
+    return await plex_presence.get_totals()
+
+
 def _count_series_strm_files() -> int:
     if not os.path.exists(STRM_SERIES_OUTPUT_DIR):
         return 0

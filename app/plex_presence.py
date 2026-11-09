@@ -1,9 +1,12 @@
 """Mark catalog movies, series and episodes that Plex already has outside the bridge."""
 import asyncio
+import json
 import logging
+import os
 import re
 import unicodedata
 from collections import defaultdict
+from datetime import datetime, timezone
 
 import httpx
 
@@ -25,6 +28,10 @@ def _bridge_roots() -> tuple:
 
 
 _lock = asyncio.Lock()
+TOTALS_KEY = "plex_library_totals"
+# The user's own libraries; every other Plex library is bridge, plugin or recordings content.
+MAIN_MOVIE_LIBRARY = os.environ.get("PLEX_MAIN_MOVIE_LIBRARY", "Movies")
+MAIN_SHOW_LIBRARY = os.environ.get("PLEX_MAIN_SHOW_LIBRARY", "TV Shows")
 
 
 def normalize_title(s: str) -> str:
@@ -117,13 +124,41 @@ async def _list(client: httpx.AsyncClient, section: str, item_type: int) -> list
             return items
 
 
+async def _total(client: httpx.AsyncClient, section: str, item_type: int) -> int:
+    resp = await client.get(f"{PLEX_URL}/library/sections/{section}/all", params={
+        "type": item_type, "X-Plex-Container-Start": 0, "X-Plex-Container-Size": 0})
+    resp.raise_for_status()
+    return int(resp.json().get("MediaContainer", {}).get("totalSize", 0) or 0)
+
+
+async def get_totals() -> dict:
+    """Last saved totals for the main Movies / TV Shows libraries (empty before the first scan)."""
+    db = await get_db()
+    row = await (await db.execute("SELECT value FROM app_settings WHERE key=?", (TOTALS_KEY,))).fetchone()
+    try:
+        return json.loads(row["value"]) if row else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+async def _save_totals(totals: dict):
+    db = await get_db()
+    await db.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", (TOTALS_KEY, json.dumps(totals)))
+
+
 async def _read_plex():
     movies, shows = _Index(), _Index()
     counts = {"plex_movies": 0, "plex_shows": 0}
+    totals = {}
     async with httpx.AsyncClient(timeout=120, headers=_headers()) as client:
         resp = await client.get(f"{PLEX_URL}/library/sections")
         resp.raise_for_status()
         for d in resp.json().get("MediaContainer", {}).get("Directory", []):
+            if d.get("type") == "movie" and d.get("title") == MAIN_MOVIE_LIBRARY:
+                totals["movies"] = await _total(client, d["key"], 1)
+            elif d.get("type") == "show" and d.get("title") == MAIN_SHOW_LIBRARY:
+                totals["shows"] = await _total(client, d["key"], 2)
+                totals["episodes"] = await _total(client, d["key"], 4)
             if d.get("type") == "movie":
                 for md in await _list(client, d["key"], 1):
                     if _from_bridge(md):
@@ -147,7 +182,7 @@ async def _read_plex():
                     g = _guids(s)
                     shows.add(g.get("tmdb"), g.get("imdb"), s.get("title"), s.get("year"), show)
                     counts["plex_shows"] += 1
-    return movies, shows, counts
+    return movies, shows, counts, totals
 
 
 def _join(labels) -> str:
@@ -158,7 +193,7 @@ async def scan() -> dict:
     if _lock.locked():
         raise RuntimeError("A Plex library scan is already running")
     async with _lock:
-        movies, shows, counts = await _read_plex()
+        movies, shows, counts, totals = await _read_plex()
         db = await get_db()
 
         movie_marks = []
@@ -191,8 +226,11 @@ async def scan() -> dict:
             await db.execute(f"UPDATE {table} SET in_plex = NULL WHERE in_plex IS NOT NULL")
             await db.executemany(f"UPDATE {table} SET in_plex = ? WHERE id = ?", marks)
         await db.commit()
+        totals["scanned_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        await _save_totals(totals)
+        await db.commit()
 
-        result = dict(counts, movies_marked=len(movie_marks), series_marked=len(series_marks),
+        result = dict(counts, totals=totals, movies_marked=len(movie_marks), series_marked=len(series_marks),
                       episodes_marked=len(episode_marks))
         logger.info("Plex presence scan: %s", result)
         return result

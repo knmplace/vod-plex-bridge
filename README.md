@@ -288,6 +288,7 @@ API keys, tokens and passwords saved in Settings are encrypted in the database w
 | `PLEX_TOKEN` | Yes* | — | Plex authentication token |
 | `PLEX_LIBRARY_ID` | Yes* | `7` | Plex library section ID for VOD movies |
 | `PLEX_SERIES_LIBRARY_ID` | No | — | Fallback Plex TV library for series categories without their own library |
+| `PLEX_MAIN_MOVIE_LIBRARY` / `PLEX_MAIN_SHOW_LIBRARY` | No | `Movies` / `TV Shows` | Names of your own Plex libraries, used for the Non-Bridge totals on the category bars |
 | `PLEX_MOVIE_MOUNT_ROOT` | No | `/mnt/vod-bridge` | Where the movie rclone mount appears on the Plex host |
 | `PLEX_MOVIE_CATEGORY_MOUNT_ROOT` | No | `/mnt/vod-bridge-movies` | Where the movie-category rclone mount appears on the Plex host |
 | `PLEX_SERIES_MOUNT_ROOT` | No | `/mnt/vod-bridge-series` | Where the series rclone mount appears on the Plex host |

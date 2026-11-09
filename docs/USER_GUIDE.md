@@ -267,7 +267,7 @@ The header bar shows catalog, activated and STRM counts. On the Series tab it sh
 
 | Button | What it does |
 |---|---|
-| Scan Plex Library | Marks movies and shows that are already in a Plex library |
+| Scan Plex Library | Marks movies and shows that are already in a Plex library, and refreshes the Plex totals shown on the Movie Categories and Series Categories bars (Non-Bridge = your main **Movies** and **TV Shows** libraries; Bridge Activated = what the bridge serves). Totals show `-` until the first scan |
 | Clear Catalog / Clear STRMs | Wipe the stored catalog or the generated files. Shown on the Catalog tab only. Use with care |
 | Scan Dead | Disabled for now ("pending redesign") |
 

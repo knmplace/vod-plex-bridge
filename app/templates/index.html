@@ -296,6 +296,8 @@
         .panel.collapsed > :not(.panel-header) {
             display: none !important;
         }
+        .lib-totals { color: #fff; font-weight: 500; font-size: 0.8rem; flex: 1; text-align: center; }
+        .lib-totals b { font-weight: 700; }
         .panel.collapsed .panel-header {
             border-bottom: none;
         }
@@ -1233,6 +1235,7 @@
             <div class="panel" style="margin-bottom:1rem;" id="movieCategoryPanel">
                 <div class="panel-header collapsible" onclick="togglePanel('movieCategoryPanel')">
                     <span><span class="collapse-arrow">&#9660;</span>Movie Categories</span>
+                    <span class="lib-totals" id="movieLibTotals"></span>
                     <span class="badge" id="movieCategoryCount">0</span>
                 </div>
                 <div class="panel-body">
@@ -1493,6 +1496,7 @@
             <div class="panel" style="margin-bottom:1rem;" id="seriesCategoryPanel">
                 <div class="panel-header collapsible" onclick="togglePanel('seriesCategoryPanel')">
                     <span><span class="collapse-arrow">&#9660;</span>Series Categories</span>
+                    <span class="lib-totals" id="seriesLibTotals"></span>
                     <span class="badge" id="seriesCategoryCount">0</span>
                 </div>
                 <div class="panel-body">
@@ -3295,9 +3299,24 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             }
         }
 
+        let plexTotals = {}, bridgeCounts = {movies: 0, series: 0, episodes: 0};
+
+        // Non-bridge = the main Plex "Movies" / "TV Shows" libraries; bridge = what the bridge has activated.
+        function renderLibTotals() {
+            const n = v => (v == null ? '-' : Number(v).toLocaleString());
+            const when = plexTotals.scanned_at ? ' title="Last Plex scan: ' + plexTotals.scanned_at.replace('T', ' ') + ' UTC"' : '';
+            const m = document.getElementById('movieLibTotals'), s = document.getElementById('seriesLibTotals');
+            if (m) m.innerHTML = `<span${when}>Non-Bridge Movies <b>${n(plexTotals.movies)}</b> &middot; Bridge Activated <b>${n(bridgeCounts.movies)}</b></span>`;
+            if (s) s.innerHTML = `<span${when}>Non-Bridge Shows <b>${n(plexTotals.shows)}</b> &middot; Episodes <b>${n(plexTotals.episodes)}</b> &middot; Bridge Activated <b>${n(bridgeCounts.series)}</b> shows &middot; Episodes <b>${n(bridgeCounts.episodes)}</b></span>`;
+        }
+
         async function refreshActivatedCount() {
-            const [data, sd] = await Promise.all([
-                fetchJSON('/api/movies/activated-count'), fetchJSON('/api/series/activated-count')]);
+            const [data, sd, pt] = await Promise.all([
+                fetchJSON('/api/movies/activated-count'), fetchJSON('/api/series/activated-count'),
+                fetchJSON('/api/plex/library-totals')]);
+            plexTotals = pt || {};
+            bridgeCounts = {movies: data.count || 0, series: sd.series || 0, episodes: sd.episodes || 0};
+            renderLibTotals();
             document.getElementById('activatedCount').textContent = data.count?.toLocaleString() || '0';
             document.getElementById('seriesActiveCount').textContent =
                 `${(sd.series || 0).toLocaleString()} (${(sd.episodes || 0).toLocaleString()} ep)`;
@@ -4824,7 +4843,9 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             const r = await fetchJSON('/api/plex/scan-presence', {method: 'POST'});
             btn.disabled = false;
             if (!r || r.error) { msg.textContent = 'Plex scan failed: ' + (r?.error || 'no response'); return; }
-            msg.textContent = `In Plex: ${r.movies_marked} movies, ${r.series_marked} series, ${r.episodes_marked} episodes`;
+            msg.textContent = '';
+            plexTotals = r.totals || {};
+            renderLibTotals();
             if (document.getElementById('tabSeries').classList.contains('active')) loadSeriesList(seriesCurrentPage);
             else if (document.getElementById('tabBrowse').classList.contains('active')) loadMovies(currentPage);
         }
