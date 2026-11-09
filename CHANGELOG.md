@@ -31,6 +31,10 @@ The three minor bumps each mark a major feature:
 
 ## [0.46.1] — 2026-11-09
 
+### Added
+- **Notification bell in the header.** It shows an unread count and, when opened, lists the last 30 days of Watch List activity (episodes added automatically, episodes available to add, shows that need a library, new seasons). Opening it marks everything read, and the read mark is kept on the server. Click an item to jump to the Series tab.
+- **The Dispatcharr IP in the header is masked by default.** Click it to show the IP and its location, and click again to hide it.
+
 ### Changed
 - **Real Plex totals on the category bars.** The Movie Categories and Series Categories bars now show what is in your own Plex libraries next to what the bridge has activated. Movies read `Non-Bridge Movies 568 · Bridge Activated 12`. Series read `Non-Bridge Shows 108 · Episodes 2,217 · Bridge Activated 5 shows · Episodes 66`. They replace the old "In Plex: 568 movies, 108 series, 39 episodes" message, which counted only bridge catalog items that also exist in Plex, so the episode figure was far too low.
 - The non-bridge counts come from the main **Movies** and **TV Shows** libraries only. Bridge, plugin and recordings libraries are left out. If your libraries have other names, set `PLEX_MAIN_MOVIE_LIBRARY` and `PLEX_MAIN_SHOW_LIBRARY`.

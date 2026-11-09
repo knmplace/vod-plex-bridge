@@ -175,3 +175,19 @@ def test_new_season_is_reported_not_queued(fresh_db, tmdb, monkeypatch):
         assert [x["state"] for x in d["rows"]] == ["complete", "new_season"]
 
     asyncio.run(run())
+
+
+def test_notifications_unread_until_marked_seen(fresh_db, tmdb):
+    async def run():
+        await database.init_db()
+        db = await database.get_db()
+        await _show(db, 1, "continuing")
+        await _ep(db, 1, 1, 1, 1, activated=1)
+        await series_watch._event(db, 1, 1, 1, 1, "auto_added", "queued")
+        await db.commit()
+        r = await series_watch.get_notifications()
+        assert r["unread"] == 1 and r["items"][0]["name"] == "Show 1"
+        await series_watch.mark_notifications_seen()
+        assert (await series_watch.get_notifications())["unread"] == 0
+
+    asyncio.run(run())

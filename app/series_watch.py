@@ -23,7 +23,7 @@ the user's earlier choices (e.g. 10 of 12 activated) are left alone and only lis
 """
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -254,6 +254,33 @@ async def run_watch(refresh: bool = True, only: int | None = None) -> dict:
 @router.get("/series/watch")
 async def get_watch_list():
     return await watch_list()
+
+
+SEEN_KEY = "notif_seen_id"
+
+
+@router.get("/notifications")
+async def get_notifications():
+    """Header bell feed: watch-list events from the last 30 days; unread = newer than the seen mark."""
+    db = await get_db()
+    row = await (await db.execute("SELECT value FROM app_settings WHERE key = ?", (SEEN_KEY,))).fetchone()
+    seen = int(row["value"]) if row and str(row["value"]).isdigit() else 0
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    ev = await (await db.execute(
+        "SELECT e.id, e.series_id, s.name, e.season_number, e.episode_number, e.kind, e.note, e.created_at "
+        "FROM series_watch_events e LEFT JOIN series s ON s.id = e.series_id "
+        "WHERE e.created_at >= ? ORDER BY e.id DESC LIMIT 50", (cutoff,))).fetchall()
+    items = [dict(r, unread=r["id"] > seen) for r in ev]
+    return {"items": items, "unread": sum(1 for i in items if i["unread"])}
+
+
+@router.post("/notifications/seen")
+async def mark_notifications_seen():
+    db = await get_db()
+    row = await (await db.execute("SELECT COALESCE(MAX(id), 0) AS m FROM series_watch_events")).fetchone()
+    await db.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", (SEEN_KEY, str(row["m"])))
+    await db.commit()
+    return {"status": "ok"}
 
 
 @router.post("/series/watch/run")

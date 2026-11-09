@@ -263,6 +263,16 @@
         .src-form-title { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.8rem; }
         .src-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 1.25rem; }
         .src-fields .set-field { max-width: none; }
+        .bell-menu { position: relative; display: inline-block; margin-right: 0.6rem; }
+        .bell-btn { position: relative; padding: 0.3rem 0.5rem; }
+        .bell-count { position: absolute; top: -6px; right: -6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--danger); color: #fff; font-size: 0.65rem; line-height: 16px; text-align: center; display: none; }
+        .bell-drop { display: none; position: absolute; right: 0; top: calc(100% + 4px); width: 340px; max-height: 420px; overflow-y: auto; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.35); z-index: 200; }
+        .bell-menu.open .bell-drop { display: block; }
+        .bell-item { padding: 0.55rem 0.8rem; border-bottom: 1px solid var(--border); font-size: 0.8rem; cursor: pointer; }
+        .bell-item:hover { background: var(--bg-hover); }
+        .bell-item.unread { border-left: 3px solid var(--accent, #58a6ff); }
+        .bell-item small { display: block; color: #8b949e; margin-top: 2px; }
+        .bell-empty { padding: 0.9rem; color: #8b949e; font-size: 0.8rem; text-align: center; }
         .acct-menu { position: relative; }
         .acct-btn { display: inline-flex; align-items: center; gap: 0.4rem; }
         .acct-drop { display: none; position: absolute; right: 0; top: calc(100% + 4px); min-width: 150px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.35); z-index: 200; overflow: hidden; }
@@ -1158,6 +1168,13 @@
             <span id="vpnIpDisplay" style="color:#8b949e;font-size:0.82rem;margin-right:1rem;font-family:monospace;"></span>
             <span class="status-dot idle" id="statusDot"></span>
             <span id="statusText">Loading...</span>
+            <div class="bell-menu" id="bellMenu">
+                <button class="btn btn-outline bell-btn" onclick="toggleBell(event)" title="Notifications">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+                    <span class="bell-count" id="bellCount">0</span>
+                </button>
+                <div class="bell-drop" id="bellDrop"></div>
+            </div>
             <div class="acct-menu" id="acctMenu">
                 <button class="btn btn-outline acct-btn" onclick="toggleAcctMenu(event)" title="Account">
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
@@ -6390,6 +6407,29 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
         }
 
         // --- Account menu and profile ---
+        const BELL_LABEL = {auto_added: 'Added automatically', new_available: 'Available to add', no_category: 'Needs a library', new_season: 'New season'};
+        async function loadBell() {
+            try {
+                const r = await (await fetch('/api/notifications')).json();
+                const c = document.getElementById('bellCount');
+                c.textContent = r.unread; c.style.display = r.unread ? 'block' : 'none';
+                const esc = s => String(s ?? '').replace(/</g, '&lt;');
+                document.getElementById('bellDrop').innerHTML = (r.items || []).map(i =>
+                    '<div class="bell-item' + (i.unread ? ' unread' : '') + '" onclick="switchTab('series')">' +
+                    '<b>' + esc(i.name || 'Show') + '</b>' + (i.season_number != null ? ' S' + String(i.season_number).padStart(2, '0') + 'E' + String(i.episode_number).padStart(2, '0') : '') +
+                    ' - ' + esc(BELL_LABEL[i.kind] || i.kind) + '<small>' + esc(i.note || '') + ' ' + esc((i.created_at || '').slice(0, 16).replace('T', ' ')) + '</small></div>'
+                ).join('') || '<div class="bell-empty">Nothing new in the last 30 days.</div>';
+            } catch (e) {}
+        }
+        function toggleBell(e) {
+            e.stopPropagation();
+            const m = document.getElementById('bellMenu');
+            const open = m.classList.toggle('open');
+            if (open) { fetch('/api/notifications/seen', {method: 'POST'}).then(() => setTimeout(() => { document.getElementById('bellCount').style.display = 'none'; }, 0)); }
+        }
+        document.addEventListener('click', e => { const m = document.getElementById('bellMenu'); if (m && !m.contains(e.target)) { m.classList.remove('open'); loadBell(); } });
+        loadBell(); setInterval(loadBell, 60000);
+
         function toggleAcctMenu(e) {
             e.stopPropagation();
             document.getElementById('acctMenu').classList.toggle('open');
@@ -6829,7 +6869,18 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
 
         // Dispatcharr can answer with no IP while its own lookup is still running (right after
         // it starts, or when the lookup is slow). Retry soon instead of waiting the full minute.
-        let vpnIpRetry = null, vpnIpMisses = 0;
+        let vpnIpRetry = null, vpnIpMisses = 0, vpnIpInfo = null, vpnIpShown = false;
+        // The IP is masked until clicked (screenshots, screen shares); a click toggles it.
+        function renderVpnIp() {
+            const el = document.getElementById('vpnIpDisplay');
+            if (!vpnIpInfo) return;
+            const d = vpnIpInfo;
+            el.textContent = 'Dispatcharr IP: ' + (vpnIpShown ? d.ip : d.ip.replace(/[0-9a-fA-F]/g, '•'));
+            el.title = vpnIpShown ? (d.city && d.country ? d.city + ', ' + d.country + ' - ' : '') + 'click to hide' : 'click to show';
+            el.style.color = '#58a6ff';
+            el.style.cursor = 'pointer';
+        }
+        document.getElementById('vpnIpDisplay').addEventListener('click', () => { if (vpnIpInfo) { vpnIpShown = !vpnIpShown; renderVpnIp(); } });
         async function refreshVpnIp() {
             clearTimeout(vpnIpRetry);
             try {
@@ -6837,9 +6888,8 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
                 const el = document.getElementById('vpnIpDisplay');
                 if (d.ip) {
                     vpnIpMisses = 0;
-                    el.textContent = 'Dispatcharr IP: ' + d.ip;
-                    el.title = d.city && d.country ? d.city + ', ' + d.country : '';
-                    el.style.color = '#58a6ff';
+                    vpnIpInfo = d;
+                    renderVpnIp();
                 } else if (vpnIpMisses < 6) {
                     vpnIpMisses++;
                     el.textContent = 'Dispatcharr IP: looking up…';

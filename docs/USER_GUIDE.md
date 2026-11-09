@@ -344,7 +344,7 @@ Because each category is its own folder under the series mount, one rclone serie
 
 **Browse Series**
 
-- **Watch List** (above the categories): active shows that are still gaining episodes, or have aired episodes not yet activated, with the season, episodes activated against aired, what each is waiting for, and the next air date. New episodes are queued automatically after every series sync and in the Daily Run. Set a show to **Notify only** or **Off** from its row. **Check Now** runs the check immediately.
+- **Watch List** (above the categories): active shows that are still gaining episodes, or have aired episodes not yet activated, with the season, episodes activated against aired, what each is waiting for, and the next air date. New episodes are queued automatically after every series sync and in the Daily Run. Set a show to **Notify only** or **Off** from its row. **Check Now** runs the check immediately. The bell in the header lists this activity (last 30 days) with an unread count.
 - Search, filter by category, and filter by activated. Cards show provider and language tags, plus a **Continuing** (green) or **Ended** (red) badge from TMDB at the bottom right. Shows TMDB doesn't know have no badge. **Series per page** can be 60, 100, 200 or 300 (remembered by the browser).
 - **Sync Series Catalog** pulls the latest series list from Dispatcharr.
 
