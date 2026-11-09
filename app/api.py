@@ -3392,6 +3392,17 @@ async def _run_scheduled_refresh():
             except Exception as e:
                 report.append(f"Series TMDB enrichment: FAILED ({e})")
 
+        # 5d. Series Watch List: new episodes for shows already active (Dispatcharr cache + TMDB only)
+        await _set_status("refreshing", "Daily run: checking active series for new episodes...")
+        try:
+            import series_watch
+            wr = await series_watch.run_watch()
+            if wr.get("status") == "ok":
+                report.append(f"Series watch: {wr['checked']} shows checked, {wr['auto_added']} new episodes queued, "
+                              f"{wr['notified']} to review, {wr['new_seasons']} new seasons")
+        except Exception as e:
+            report.append(f"Series watch: FAILED ({e})")
+
         # 6. Activated stream_id refresh (DB only, no provider calls)
         await _set_status("refreshing", "Daily run: checking activated movies for stream_id changes...")
         try:

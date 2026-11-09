@@ -325,7 +325,14 @@ async def scrape_series_catalog(max_series: int = 0):
             await db.execute("UPDATE series_sync_state SET last_auto_catalog_sync = ? WHERE id = 1",
                              (datetime.now().isoformat(timespec="seconds"),))
             await db.commit()
-        return await _scrape_series_catalog(max_series)
+        total = await _scrape_series_catalog(max_series)
+        if max_series == 0:
+            try:
+                import series_watch
+                await series_watch.run_watch()  # new episodes for shows already active
+            except Exception as e:
+                logger.error(f"Series watch after catalog sync failed: {e}")
+        return total
     finally:
         _scrape_running = False
 
@@ -467,8 +474,8 @@ async def _upsert_episode(db, ep):
         INSERT INTO episodes (id, uuid, series_id, name, description, air_date, rating,
                              duration_secs, season_number, episode_number, tmdb_id,
                              stream_id, account_id, account_name, container_extension,
-                             alt_streams, synced_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             alt_streams, synced_at, discovered_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             uuid=excluded.uuid, series_id=excluded.series_id, name=excluded.name,
             description=excluded.description, air_date=excluded.air_date,
@@ -507,6 +514,7 @@ async def _upsert_episode(db, ep):
         container_extension,
         json.dumps(alt_streams),
         datetime.now(timezone.utc).isoformat(),
+        datetime.now(timezone.utc).isoformat(),  # discovered_at: INSERT only (not in the UPDATE set)
     ))
 
 

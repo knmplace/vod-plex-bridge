@@ -315,10 +315,32 @@ async def init_db():
             status TEXT NOT NULL DEFAULT 'pending',
             queued_at REAL NOT NULL
         );
+        -- Watch List (app/series_watch.py). One row per show the user overrides; shows without
+        -- a row use the default mode. mode: auto (queue new episodes) | notify | off.
+        CREATE TABLE IF NOT EXISTS series_watch_prefs (
+            series_id INTEGER PRIMARY KEY,
+            mode TEXT NOT NULL DEFAULT 'auto'
+        );
+        -- What the watcher did or noticed. UNIQUE(kind, episode_id) keeps it once-per-episode.
+        -- kind: auto_added | new_available | new_season | no_category
+        CREATE TABLE IF NOT EXISTS series_watch_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            series_id INTEGER NOT NULL,
+            episode_id INTEGER,
+            season_number INTEGER,
+            episode_number INTEGER,
+            kind TEXT NOT NULL,
+            note TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE(kind, episode_id)
+        );
     """)
     await db.commit()
 
     for series_col in [
+        # First time this bridge saw the episode (set on INSERT only); the Watch List treats
+        # episodes discovered after a show was activated as "new".
+        "ALTER TABLE episodes ADD COLUMN discovered_at TEXT",
         "ALTER TABLE series ADD COLUMN trailer_key TEXT",
         "ALTER TABLE series_categories ADD COLUMN plex_library_created INTEGER DEFAULT 0",
         "ALTER TABLE series ADD COLUMN in_plex TEXT",

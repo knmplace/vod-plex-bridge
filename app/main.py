@@ -21,11 +21,12 @@ import setup_scripts
 import tmdb_local
 import tmdb_store
 import activation_queue
+import series_watch
 import plex_mounts
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-APP_VERSION = "0.45.2"
+APP_VERSION = "0.46.0"
 
 
 async def _restore_strm_files():
@@ -141,6 +142,7 @@ app.middleware("http")(auth.gate)
 async def version():
     return {"version": APP_VERSION}
 app.include_router(proxy_router)
+app.include_router(series_watch.router)  # before api_router: /series/watch vs /series/{id}
 app.include_router(api_router)
 app.include_router(auth.router)
 app.include_router(connection_router)

@@ -467,6 +467,30 @@ async def series_activation_info(series_id: int):
     }
 
 
+async def enqueue_series_episodes(db, series_id: int, category_id: int, ep_ids: list[int],
+                                  queued_at: float | None = None) -> int:
+    """Add episodes to a show's queue row, merging with a row that is waiting. Does not commit
+    or wake the worker. Shared by the Activate wizard and the Watch List auto-add."""
+    old = await (await db.execute(
+        "SELECT episode_ids FROM series_activation_queue WHERE series_id = ? AND status != 'running'",
+        (series_id,))).fetchone()
+    if old:
+        try:
+            ep_ids = sorted(set(ep_ids) | {int(e) for e in json.loads(old["episode_ids"] or "[]")})
+        except (ValueError, TypeError):
+            pass
+    await db.execute(
+        "INSERT INTO series_activation_queue (series_id, category_id, episode_ids, status, queued_at) "
+        "VALUES (?, ?, ?, 'pending', ?) ON CONFLICT(series_id) DO UPDATE SET "
+        "category_id = excluded.category_id, episode_ids = excluded.episode_ids",
+        (series_id, category_id, json.dumps(ep_ids), queued_at if queued_at is not None else time.time()))
+    return len(ep_ids)
+
+
+def wake_worker() -> None:
+    _wake.set()
+
+
 @router.post("/series/activate-batch")
 async def series_activate_batch(request: Request):
     """Queue shows from the Activate wizard: {shows: [{series_id, category_id, episode_ids}]}."""
@@ -510,20 +534,7 @@ async def series_activate_batch(request: Request):
     now = time.time()
     episodes = 0
     for i, (sid, category_id, ep_ids) in enumerate(plan):
-        old = await (await db.execute(
-            "SELECT episode_ids FROM series_activation_queue WHERE series_id = ? AND status != 'running'",
-            (sid,))).fetchone()
-        if old:
-            try:
-                ep_ids = sorted(set(ep_ids) | {int(e) for e in json.loads(old["episode_ids"] or "[]")})
-            except (ValueError, TypeError):
-                pass
-        await db.execute(
-            "INSERT INTO series_activation_queue (series_id, category_id, episode_ids, status, queued_at) "
-            "VALUES (?, ?, ?, 'pending', ?) ON CONFLICT(series_id) DO UPDATE SET "
-            "category_id = excluded.category_id, episode_ids = excluded.episode_ids",
-            (sid, category_id, json.dumps(ep_ids), now + i * 1e-3))
-        episodes += len(ep_ids)
+        episodes += await enqueue_series_episodes(db, sid, category_id, ep_ids, now + i * 1e-3)
     await db.commit()
     if plan:
         _wake.set()

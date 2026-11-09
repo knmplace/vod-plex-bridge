@@ -1472,6 +1472,24 @@
     <!-- SERIES TAB -->
     <div class="tab-content" id="tabSeries">
         <div class="browse-section">
+            <div class="panel" style="margin-bottom:1rem;" id="seriesWatchPanel">
+                <div class="panel-header collapsible" onclick="togglePanel('seriesWatchPanel')">
+                    <span><span class="collapse-arrow">&#9660;</span>Watch List</span>
+                    <span class="badge" id="seriesWatchCount">0</span>
+                </div>
+                <div class="panel-body">
+                    <div style="display:flex;gap:0.6rem;margin-bottom:0.6rem;flex-wrap:wrap;align-items:center;" onclick="event.stopPropagation()">
+                        <span style="font-size:0.78rem;color:var(--text-muted);flex:1;min-width:240px;">Active shows still gaining episodes, or with aired episodes not yet activated. Checked after every series sync and in the Daily Run. New episodes are queued automatically unless a show is set to Notify or Off.</span>
+                        <button class="btn" style="font-size:0.78rem;padding:0.25rem 0.6rem;" id="seriesWatchRunBtn" onclick="runSeriesWatch()">Check Now</button>
+                    </div>
+                    <table class="summary-table compact" id="seriesWatchTable">
+                        <thead><tr><th>Show</th><th>Status</th><th>Season</th><th style="text-align:right" title="Activated episodes / episodes aired so far">Have</th><th>Watching for</th><th>Next air</th><th>New episodes</th></tr></thead>
+                        <tbody id="seriesWatchBody"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody>
+                    </table>
+                    <div id="seriesWatchEvents" style="margin-top:0.6rem;font-size:0.76rem;color:var(--text-muted);"></div>
+                </div>
+            </div>
+
             <div class="panel" style="margin-bottom:1rem;" id="seriesCategoryPanel">
                 <div class="panel-header collapsible" onclick="togglePanel('seriesCategoryPanel')">
                     <span><span class="collapse-arrow">&#9660;</span>Series Categories</span>
@@ -2188,6 +2206,7 @@
             });
         }
         initCollapsiblePanels();
+        document.getElementById('seriesWatchPanel').classList.toggle('collapsed', panelState('seriesWatchPanel') === '1');
 
         // --- Tabs ---
         let logRefreshTimer = null;
@@ -3823,7 +3842,73 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             }
 
             if (seriesLibraryView !== null && !seriesCategories.some(c => c.id === seriesLibraryView)) showSeriesCatalog();
+            loadWatchList();
+        }
 
+        // --- Series Watch List ---
+        const WATCH_MODE = {auto: 'Add automatically', notify: 'Notify only', off: 'Off'};
+        const WATCH_KIND = {auto_added: 'Queued', new_available: 'Available', no_category: 'Needs a library', new_season: 'New season'};
+        function watchDate(d) {
+            if (!d) return '';
+            const dt = new Date(d + 'T00:00:00');
+            return isNaN(dt) ? d : dt.toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'});
+        }
+        function watchEps(nums) {
+            return nums.map(n => 'E' + String(n).padStart(2, '0')).join(', ');
+        }
+        function watchingFor(r) {
+            const bits = [];
+            if (r.missing.length) bits.push(`${watchEps(r.missing)} aired, not at the provider yet`);
+            if (r.available.length) bits.push(`${watchEps(r.available)} available, not activated`);
+            if (r.upcoming.length) bits.push(r.upcoming.map(u => `E${String(u.episode).padStart(2, '0')} airs ${watchDate(u.date)}`).join(', '));
+            return bits.length ? bits.join('<br>') : '<span style="color:var(--text-muted)">Up to date</span>';
+        }
+        async function loadWatchList() {
+            const body = document.getElementById('seriesWatchBody');
+            if (!body) return;
+            let data;
+            try { data = await fetchJSON('/api/series/watch'); } catch (e) { return; }
+            const shows = data.shows || [];
+            document.getElementById('seriesWatchCount').textContent = shows.length;
+            if (!shows.length) {
+                body.innerHTML = '<tr><td colspan="7" class="empty-state">Nothing to watch: every active show is complete.</td></tr>';
+            } else {
+                body.innerHTML = shows.map(sh => sh.rows.map((r, i) => {
+                    const first = i === 0;
+                    const status = sh.status === 'continuing' ? '<span class="tag tag-status tag-continuing">Continuing</span>'
+                        : sh.status === 'ended' ? 'Ended' : '<span style="color:var(--text-muted)">Unknown</span>';
+                    const next = r.next_air ? watchDate(r.next_air)
+                        : (first && sh.next_air ? `${watchDate(sh.next_air.date)} (S${sh.next_air.season}E${sh.next_air.episode})` : '');
+                    const sel = ['auto', 'notify', 'off'].map(m =>
+                        `<option value="${m}"${sh.mode === m ? ' selected' : ''}>${WATCH_MODE[m]}</option>`).join('');
+                    const edge = i === sh.rows.length - 1 ? '' : 'border-bottom-color:transparent;';
+                    return `<tr>
+                        <td style="${edge}">${first ? escapeHtml(sh.name) + (sh.year ? ` <span style="color:var(--text-muted)">(${sh.year})</span>` : '') : ''}</td>
+                        <td style="${edge}">${first ? status : ''}</td>
+                        <td style="${edge}">S${String(r.season).padStart(2, '0')}${r.state === 'new_season' ? ' <span class="tag">new</span>' : ''}</td>
+                        <td style="text-align:right;${edge}">${r.have} / ${r.aired}</td>
+                        <td style="${edge}">${watchingFor(r)}</td>
+                        <td style="${edge}white-space:nowrap">${next}</td>
+                        <td style="${edge}">${first ? `<select class="search-input" style="width:auto;margin:0;padding:0.15rem 0.3rem;font-size:0.76rem;" onchange="setWatchMode(${sh.series_id}, this.value)">${sel}</select>` : ''}</td>
+                    </tr>`;
+                }).join('')).join('');
+            }
+            const ev = data.events || [];
+            document.getElementById('seriesWatchEvents').innerHTML = ev.length
+                ? '<div style="font-weight:600;margin-bottom:0.2rem;">Recent activity</div>' + ev.slice(0, 8).map(e =>
+                    `<div>${escapeHtml((e.created_at || '').slice(0, 16).replace('T', ' '))} &middot; ${escapeHtml(e.name || '')} &middot; ${WATCH_KIND[e.kind] || e.kind}: ${escapeHtml(e.note || '')}</div>`).join('')
+                : '';
+        }
+        async function setWatchMode(seriesId, mode) {
+            await fetch(`/api/series/watch/${seriesId}/mode`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode})});
+        }
+        async function runSeriesWatch() {
+            const btn = document.getElementById('seriesWatchRunBtn');
+            btn.disabled = true; btn.textContent = 'Checking...';
+            try { await fetch('/api/series/watch/run', {method: 'POST'}); } catch (e) {}
+            btn.disabled = false; btn.textContent = 'Check Now';
+            loadWatchList();
+            loadSeriesCategories();
         }
 
         async function createSeriesCategory() {

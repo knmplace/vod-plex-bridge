@@ -29,6 +29,19 @@ The three minor bumps each mark a major feature:
 
 ---
 
+## [0.46.0] — 2026-11-08
+
+### Added
+- **Series Watch List: new episodes of active shows are added automatically.** If a show is activated and a new episode appears at the provider later, the bridge now queues it for activation by itself. The check runs after every series catalog sync (about four times a day) and in the Daily Run, so a new episode gets about six looks a day. It uses Dispatcharr's cached data only and makes no provider connection.
+- **Watch List panel on the Series tab** (collapsible, in table form). It lists active shows that are still gaining episodes or have aired episodes not yet activated, with the season, episodes activated against episodes aired, what each show is waiting for, and the next air date. A **Check Now** button runs the check on demand, and a Recent activity list shows what was queued.
+- **Completeness is judged by episodes aired, not by show status.** The bridge compares your activated episodes with the aired episodes per season from TMDB (episode air dates, so unaired episodes are not counted as missing). A show that has Ended but has only 10 of 12 aired episodes activated stays on the list.
+- **Per-show setting**: **Add automatically** (default), **Notify only**, or **Off**.
+- A new season, a show with no library, and Notify-only shows are reported on the list and never queued.
+
+### Notes
+- Only episodes that first appear at the provider after a show was activated are added automatically. Episodes that were already there, and any you chose to leave out, are listed but never added behind your back.
+- Each episode is handled once. If you remove an episode that was added, it is not added again.
+
 ## [0.45.2] — 2026-11-04
 
 ### Added

@@ -227,6 +227,42 @@ async def fetch_title(media_type: str, tmdb_id, *, use_store: bool = True,
     return data, False
 
 
+async def fetch_season(tmdb_id, season_number: int, max_age: float = 6 * 3600) -> list[dict] | None:
+    """Episode list ([{episode_number, air_date, name}]) for one TV season: store cache first,
+    then TMDB /tv/{id}/season/{n} (cached). None on any failure or without credentials.
+    Used only for seasons of shows on the Watch List, so the volume stays tiny."""
+    key = str(tmdb_id).strip()
+    if not key.isdigit():
+        return None
+    local_ok = store_enabled()
+    if local_ok:
+        try:
+            cached = await asyncio.to_thread(tmdb_store.get_season, int(key), int(season_number), max_age)
+        except Exception as exc:
+            logger.warning("[tmdb_local] season read failed for %s S%s: %s", key, season_number, exc)
+            cached = None
+        if cached is not None:
+            return cached
+    if not has_credentials():
+        return None
+    try:
+        r = await _tmdb_get(f"{_API_BASE}/tv/{key}/season/{int(season_number)}")
+        r.raise_for_status()
+    except Exception as exc:
+        logger.warning("[tmdb_local] season %s S%s fetch failed: %s", key, season_number, _redact(exc))
+        return None
+    eps = [
+        {"episode_number": e.get("episode_number"), "air_date": e.get("air_date"), "name": e.get("name")}
+        for e in (r.json().get("episodes") or [])
+    ]
+    if local_ok:
+        try:
+            await asyncio.to_thread(tmdb_store.put_season, int(key), int(season_number), eps)
+        except Exception as exc:
+            logger.warning("[tmdb_local] season write failed for %s S%s: %s", key, season_number, exc)
+    return eps
+
+
 async def movie_details(tmdb_id) -> tuple[dict | None, bool]:
     """(payload or None, answered_locally) for one movie; a 404 is None."""
     try:
