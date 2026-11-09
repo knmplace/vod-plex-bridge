@@ -101,6 +101,11 @@ The first time you open `http://<bridge-host>:8585`, you are asked to create the
 
 > Because those paths have no login, don't expose port 8585 to the internet. Keep it on your LAN or behind a VPN.
 
+### Header: notification bell and Dispatcharr IP
+
+- **Bell:** shows an unread count. Open it to see the last 30 days of Watch List activity (episodes added automatically, available to add, shows that need a library, new seasons). Opening it marks everything read, and the read mark is kept on the server. Click an item to jump to the Series tab.
+- **Dispatcharr IP:** the first two parts show and the rest is blurred, so screenshots don't leak it. Click it to show or hide the full IP (the location shows on hover), and use the copy icon to copy it.
+
 ### Profile page
 
 Open the account menu (top right) and choose **Profile** to change your username, your password, or both. You must enter your current password to save changes. Changing the password **signs out every other browser**. Choose **Sign out** from the same menu to end your own session.
