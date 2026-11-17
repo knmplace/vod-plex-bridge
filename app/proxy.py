@@ -1068,14 +1068,36 @@ async def vod_file(filename: str, request: Request):
         # Redirect mode: head/tail reads (Plex/Jellyfin analysis) come from the activation cache above.
         if REDIRECT_STREAMING:
             from redirect import get_redirect_url, get_redirect_label
+            # Scan reads past the head/tail cache: answer from what an earlier scan learned.
+            import range_learn
+            sig = range_learn.make_sig(uuid, stream_id, file_size)
+            size_known = file_size != FALLBACK_FILE_SIZE
+            if size_known and range_start < file_size:
+                learned = await range_learn.find("movie", movie_id, sig, range_start, range_end)
+                if learned:
+                    serve_end = range_start + len(learned) - 1
+                    _log_event("info", movie_id, "Served from cache (learned)", movie_name=movie_name,
+                               bytes=len(learned), range_start=range_start, range_end=serve_end)
+                    return Response(status_code=206, content=learned, headers={
+                        "accept-ranges": "bytes", "content-type": content_type,
+                        "content-length": str(len(learned)),
+                        "content-range": f"bytes {range_start}-{serve_end}/{file_size}"})
             redirect_url, redirect_err, fresh = await get_redirect_url(movie_id)
+            if redirect_url and size_known and range_start < file_size and movie_id not in _movie_pipes:
+                resp = await range_learn.learn("movie", movie_id, sig, redirect_url, range_start, range_end,
+                                               file_size, content_type, movie_name or f"Movie {movie_id}", movie_id)
+                if resp:
+                    return resp
             if redirect_url:
                 if fresh:
                     now = time.time()
                     last = _redirect_logged.get(movie_id)
                     target = get_redirect_label(movie_id)
                     if not last or now - last[1] > REDIRECT_LOG_QUIET_SECS:
-                        _log_event("info", movie_id, f"Redirecting to Dispatcharr proxy via {target}", movie_name=movie_name)
+                        _log_event("info", movie_id, f"Redirecting to Dispatcharr proxy via {target}", movie_name=movie_name,
+                                   range_start=range_start, range_end=range_end, file_size=file_size,
+                                   cached_head=header_size, cached_tail_offset=tail_offset,
+                                   user_agent=(request.headers.get("user-agent") or "")[:60])
                     elif last[0] != redirect_url:
                         _log_event("info", movie_id, f"Redirect switched to {target}", movie_name=movie_name)
                     _redirect_logged[movie_id] = (redirect_url, now)
@@ -1644,8 +1666,33 @@ async def vod_series_file(subpath: str, request: Request):
                 )
 
         from redirect import get_episode_redirect_url
+        import range_learn
+        ep_range = re.match(r"bytes=(\d+)-(\d*)", request.headers.get("range", ""))
+        ep_start = int(ep_range.group(1)) if ep_range else 0
+        ep_end = int(ep_range.group(2)) if ep_range and ep_range.group(2) else file_size - 1
+        ep_end = min(ep_end, file_size - 1)
+        ep_sig = range_learn.make_sig(episode["uuid"], file_size)
+        ep_known = bool(episode["file_size"]) and ep_start < file_size
+        if ep_known:
+            learned = await range_learn.find("episode", episode_id, ep_sig, ep_start, ep_end)
+            if learned:
+                serve_end = ep_start + len(learned) - 1
+                _log_event("info", None, "Episode served from cache (learned)", movie_name=_episode_label(episode),
+                           episode_id=episode_id, bytes=len(learned), range_start=ep_start, range_end=serve_end)
+                return Response(status_code=206, content=learned, headers={
+                    "accept-ranges": "bytes", "content-type": content_type,
+                    "content-length": str(len(learned)),
+                    "content-range": f"bytes {ep_start}-{serve_end}/{file_size}"})
         redirect_url, redirect_err, _fresh = await get_episode_redirect_url(episode_id)
+        if redirect_url and ep_known:
+            resp = await range_learn.learn("episode", episode_id, ep_sig, redirect_url, ep_start, ep_end,
+                                           file_size, content_type, _episode_label(episode), None)
+            if resp:
+                return resp
         if redirect_url:
+            _log_event("info", None, "Episode redirecting to Dispatcharr proxy", movie_name=_episode_label(episode),
+                       episode_id=episode_id, range_start=ep_start, range_end=ep_end,
+                       cached_head=episode["header_size"] or 0, cached_tail_offset=episode["tail_offset"] or 0)
             return Response(status_code=302, headers={"Location": redirect_url})
         return Response(status_code=503, content=redirect_err or "No stream available")
 

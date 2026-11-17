@@ -261,7 +261,7 @@ Sets how often the **movie catalog** and the **series catalog** sync from Dispat
 > - **Redirect mode: use with caution.** It sends Plex and Jellyfin straight to Dispatcharr's
 >   proxy, so every playback opens its own Dispatcharr connection and the bridge's shared
 >   pipe doesn't apply. Plex's scan reads of a movie's start and end are still answered from
->   the copy saved at activation (since 0.41.2); anything else goes to Dispatcharr. **Running a VPN on the
+>   the copy saved at activation (since 0.41.2). Since 0.46.3, reads a little past that copy are learned: the bridge fetches them from Dispatcharr once, keeps what Plex took (up to 32 MB per title) and answers them locally afterwards, so library refreshes open far fewer Dispatcharr connections. Plex can read deeper on each refresh, so some titles still reach Dispatcharr until their budget is used; playback always goes to Dispatcharr. **Running a VPN on the
 >   Plex/Jellyfin machine is recommended** in this mode.
 >
 > Activate 50 episodes at once and the scan can fill every slot your provider allows, block

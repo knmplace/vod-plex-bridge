@@ -294,6 +294,18 @@ async def init_db():
             vod_category_id INTEGER NOT NULL,
             PRIMARY KEY (user_category_id, vod_category_id)
         );
+        -- Bytes Plex read during a scan beyond the head/tail cache (app/range_learn.py). A
+        -- title keeps a few captures (see range_learn.LEARN_*). sig ties a row to the
+        -- file it came from (uuid/stream/size), so a changed file makes it stale.
+        CREATE TABLE IF NOT EXISTS learned_ranges (
+            kind TEXT NOT NULL,
+            item_id INTEGER NOT NULL,
+            start INTEGER NOT NULL,
+            sig TEXT NOT NULL,
+            data BLOB NOT NULL,
+            created_at REAL NOT NULL,
+            PRIMARY KEY (kind, item_id, start)
+        );
         -- Movies waiting to be activated (app/activation_queue.py). A row is deleted once the
         -- movie is activated or fails. status: pending | waiting (no free provider slot) | running.
         -- category: "auto" | "default" | a user_movie_categories id; NULL = auto only if unset.

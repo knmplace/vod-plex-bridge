@@ -669,7 +669,7 @@ async def list_movies(
 
 
 HEADER_FETCH_SIZE = 8 * 1024 * 1024   # 8MB head — gives pipe time to build buffer ahead of Plex
-TAIL_FETCH_SIZE = 256 * 1024          # 256KB tail — moov atom / seek table
+TAIL_FETCH_SIZE = 1024 * 1024
 
 
 @router.get("/proxy-log")

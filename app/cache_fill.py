@@ -27,7 +27,7 @@ from database import get_db
 logger = logging.getLogger(__name__)
 
 EPISODE_HEAD_SIZE = 6 * 1024 * 1024   # above ffprobe's 5 MB default probe size
-TAIL_SIZE = 256 * 1024                # moov atom / cues, same as movies
+TAIL_SIZE = 1024 * 1024               # moov atom / cues, same as movies
 BUSY_RECHECK_SECS = 600               # no free slot, or recently played
 RECENT_PLAY_SECS = 3 * 3600
 RETRY_SECS = (3600, 6 * 3600, 24 * 3600)

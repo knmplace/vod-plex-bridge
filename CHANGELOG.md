@@ -29,6 +29,35 @@ The three minor bumps each mark a major feature:
 
 ---
 
+## [0.46.3] — 2026-11-17
+
+Includes 0.46.2 (the Command A fix below), which was never published on its own. **Tracearr users must update to this version** (or later), copy Command A again from Setup and run it.
+
+### Improved: far fewer Dispatcharr connections when Plex refreshes the library (redirect mode)
+**Reported by Zedan:** a Plex library refresh (not a play) was still being redirected to Dispatcharr, which opens a provider session each time. The head/tail copy saved at activation was only a guess at what Plex reads. Plex reads somewhat more than that, so the extra reads missed the cache and were redirected.
+
+Now the bridge **learns what Plex actually reads** and keeps it, so the next refresh is answered locally:
+- The first time Plex reads a range beyond the saved head/tail, the bridge fetches that range from the provider once, hands it to Plex and stores exactly the bytes Plex took (at most 16 MB per capture, 4 captures and 32 MB per title). Later reads of that range come from the bridge's database with no Dispatcharr connection.
+- Real playback is not proxied: once a title's budget is used, reads outside the cache are redirected as before.
+- A stored range is tied to the file (uuid, stream, size). If the file changes, it is dropped and learned again.
+- Episodes get the same treatment, and episode redirects now appear in the proxy log ("Episode redirecting to Dispatcharr proxy") like movie ones.
+- The saved **tail is now 1 MB** (was 256 KB) for newly activated titles and cache refills. Plex's end-of-file read was larger than 256 KB, which was one of the misses. Titles already activated keep their old tail and rely on learning.
+
+**Result so far:** in three forced refreshes of the movie library, nothing was redirected to Dispatcharr and repeat reads were served from the learned copy. Provider connections on refresh are substantially reduced, but not eliminated: Plex reads a little deeper into some titles on every forced refresh, so there is still something new to learn each time, until a title reaches its budget and falls back to redirecting. We are still investigating why Plex keeps going deeper. No percentage was measured.
+
+**Files changed**
+
+| File | Change | Why |
+|---|---|---|
+| `app/range_learn.py` (new) | Finds, fetches, streams and stores learned ranges, with the per-title budget | Answers Plex's extra scan reads without a redirect |
+| `app/proxy.py` | Movie and episode redirect paths try the learned copy, then learn, then redirect; redirect log lines carry the range and cache sizes | Wires the learning in; makes remaining redirects explainable |
+| `app/database.py` | New `learned_ranges` table | Stores the learned bytes |
+| `app/api.py` | Tail fetched at activation is 1 MB | Plex's end-of-file read exceeded 256 KB |
+| `app/cache_fill.py` | Tail refill is 1 MB | Same, for refilled movies and episodes |
+
+### Upgrade notes
+- No action needed. The new table is created on start; ranges are learned as Plex scans. Expect one extra provider connection per title the first time Plex reads past its cache, then none for those ranges.
+
 ## [0.46.2] — 2026-11-17
 
 ### Fixed
