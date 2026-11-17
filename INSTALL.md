@@ -619,7 +619,7 @@ from the Dispatcharr container directly.
 **Command A says "The first dump failed ... remount-ro ... operation not permitted"**
 - Docker is running in an LXC and the Dispatcharr container has read-only bind mounts of
   `/proc` or `/sys/fs/cgroup` files. Tracearr adds these (`/run/tracearr-sse-metrics-lxc-*`).
-  Fixed in 0.46.2 (ship it with 0.46.3 or later): update the bridge, copy Command A again and run it.
+  Fixed in 0.46.3: update the bridge, copy Command A again and run it.
 - Check with `docker inspect <dispatcharr container> --format '{{json .Mounts}}'`.
 
 **A machine's light never turns green**

@@ -31,32 +31,28 @@ The three minor bumps each mark a major feature:
 
 ## [0.46.3] — 2026-11-17
 
-Includes 0.46.2 (the Command A fix below), which was never published on its own. **Tracearr users must update to this version** (or later), copy Command A again from Setup and run it.
+### Fewer Dispatcharr connections when Plex refreshes your library
 
-### Improved: far fewer Dispatcharr connections when Plex refreshes the library (redirect mode)
-**Reported by Zedan:** a Plex library refresh (not a play) was still being redirected to Dispatcharr, which opens a provider session each time. The head/tail copy saved at activation was only a guess at what Plex reads. Plex reads somewhat more than that, so the extra reads missed the cache and were redirected.
+**Reported by Zedan.** A Plex library refresh (not a play) could still be sent to Dispatcharr, which opens a provider connection each time. The bridge only saved a guess at the start and end of each file, and Plex reads a little more than that during a scan.
 
-Now the bridge **learns what Plex actually reads** and keeps it, so the next refresh is answered locally:
-- The first time Plex reads a range beyond the saved head/tail, the bridge fetches that range from the provider once, hands it to Plex and stores exactly the bytes Plex took (at most 16 MB per capture, 4 captures and 32 MB per title). Later reads of that range come from the bridge's database with no Dispatcharr connection.
-- Real playback is not proxied: once a title's budget is used, reads outside the cache are redirected as before.
-- A stored range is tied to the file (uuid, stream, size). If the file changes, it is dropped and learned again.
-- Episodes get the same treatment, and episode redirects now appear in the proxy log ("Episode redirecting to Dispatcharr proxy") like movie ones.
-- The saved **tail is now 1 MB** (was 256 KB) for newly activated titles and cache refills. Plex's end-of-file read was larger than 256 KB, which was one of the misses. Titles already activated keep their old tail and rely on learning.
+The bridge now remembers what Plex actually reads.
 
-**Result so far:** in three forced refreshes of the movie library, nothing was redirected to Dispatcharr and repeat reads were served from the learned copy. Provider connections on refresh are substantially reduced, but not eliminated: Plex reads a little deeper into some titles on every forced refresh, so there is still something new to learn each time, until a title reaches its budget and falls back to redirecting. We are still investigating why Plex keeps going deeper. No percentage was measured.
+- The first time Plex reads past the saved start or end of a title, the bridge fetches that range once and keeps exactly what Plex took. Later refreshes get it from the bridge, with no Dispatcharr connection.
+- Movies and series episodes are both covered.
+- Playing a title is not affected: reads past what was kept still go to Dispatcharr as before.
+- Newly activated titles now save a **1 MB** end of file (was 256 KB), because Plex's end-of-file read was larger than 256 KB.
 
-**Files changed**
+**What to expect.** In three forced refreshes of a movie library, nothing was sent to Dispatcharr after the first pass. Plex reads a bit deeper into some titles on each refresh, so a few can still redirect once a title has used its allowance (4 captures, 32 MB). This lowers refresh connections but does not remove them. We are still looking into why Plex keeps reading deeper.
 
-| File | Change | Why |
-|---|---|---|
-| `app/range_learn.py` (new) | Finds, fetches, streams and stores learned ranges, with the per-title budget | Answers Plex's extra scan reads without a redirect |
-| `app/proxy.py` | Movie and episode redirect paths try the learned copy, then learn, then redirect; redirect log lines carry the range and cache sizes | Wires the learning in; makes remaining redirects explainable |
-| `app/database.py` | New `learned_ranges` table | Stores the learned bytes |
-| `app/api.py` | Tail fetched at activation is 1 MB | Plex's end-of-file read exceeded 256 KB |
-| `app/cache_fill.py` | Tail refill is 1 MB | Same, for refilled movies and episodes |
+### Also in this release (0.46.2)
+- **Tracearr users: update, then run Command A again from Setup.** Command A could fail with `remount-ro ... operation not permitted` because the dump script copied files out of the Dispatcharr container with `docker cp`, which breaks on LXC hosts when Tracearr's compose adds read-only mounts. The script now reads the files with `docker exec ... cat`.
 
-### Upgrade notes
-- No action needed. The new table is created on start; ranges are learned as Plex scans. Expect one extra provider connection per title the first time Plex reads past its cache, then none for those ranges.
+### Details
+- Nothing to change after updating. The new table is created on start and ranges are learned as Plex scans. Expect one extra provider connection per title the first time Plex reads past its saved ranges.
+- A learned range is tied to the file (uuid, stream, size) and is dropped and learned again if the file changes.
+- Episode redirects now show in the proxy log as "Episode redirecting to Dispatcharr proxy".
+- Titles already activated keep their old 256 KB end of file and rely on learning.
+- Files changed: `app/range_learn.py` (new, fetch/keep/serve learned ranges), `app/proxy.py` (movie and episode paths use them), `app/database.py` (`learned_ranges` table), `app/api.py` and `app/cache_fill.py` (1 MB end of file), `setup/dump_mappings.sh` (`docker exec cat`).
 
 ## [0.46.2] — 2026-11-17
 
