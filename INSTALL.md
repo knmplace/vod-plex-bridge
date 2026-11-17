@@ -616,6 +616,12 @@ from the Dispatcharr container directly.
   doesn't, check the bridge address in Setup step 1 and your firewall.
 - Did you press **Regenerate**? Old commands stop working; copy Command A again.
 
+**Command A says "The first dump failed ... remount-ro ... operation not permitted"**
+- Docker is running in an LXC and the Dispatcharr container has read-only bind mounts of
+  `/proc` or `/sys/fs/cgroup` files. Tracearr adds these (`/run/tracearr-sse-metrics-lxc-*`).
+  Fixed in 0.46.2: update the bridge, copy Command A again and run it.
+- Check with `docker inspect <dispatcharr container> --format '{{json .Mounts}}'`.
+
 **A machine's light never turns green**
 - Run Command B again and read where it stops; each check says what to fix.
 - "No /dev/fuse" in an LXC: see step 5.

@@ -38,7 +38,10 @@ mkdir -p "$BRIDGE_DATA_DIR"
 # Copy a file out of the container atomically so the bridge never reads a
 # partially written JSON file.
 copy_out() {
-    docker cp "$DISPATCHARR_CONTAINER":/tmp/"$1" "$BRIDGE_DATA_DIR/.$1.tmp"
+    # Stream via `docker exec cat` rather than `docker cp`: cp mounts the
+    # container rootfs and fails ("remount-ro ... operation not permitted") on
+    # LXC hosts when the container has read-only /proc or cgroup bind mounts.
+    docker exec "$DISPATCHARR_CONTAINER" cat /tmp/"$1" > "$BRIDGE_DATA_DIR/.$1.tmp"
     mv -f "$BRIDGE_DATA_DIR/.$1.tmp" "$BRIDGE_DATA_DIR/$1"
 }
 

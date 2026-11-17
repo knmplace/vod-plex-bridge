@@ -29,6 +29,16 @@ The three minor bumps each mark a major feature:
 
 ---
 
+## [0.46.2] — 2026-11-17
+
+### Fixed
+- **The Dispatcharr setup command (Command A) failed with "The first dump failed ... remount-ro ... operation not permitted".** The dump script copied its output files out of the Dispatcharr container with `docker cp`. `docker cp` mounts the container's filesystem and re-applies every read-only bind mount the container has. On a Docker host that runs inside an LXC (for example Proxmox), that fails when the Dispatcharr container has read-only bind mounts of `/proc` or `/sys/fs/cgroup` files, so the dump could never finish. The script now streams each file with `docker exec ... cat`, which does not touch the container's mounts. Nothing else about the dump changed.
+- **Seen with Tracearr.** Tracearr's compose file adds read-only bind mounts such as `/proc/meminfo -> /run/tracearr-sse-metrics-lxc-meminfo` and `/sys/fs/cgroup/* -> /run/tracearr-sse-metrics-lxc-cgroup/*` to the Dispatcharr container. The first install worked and later runs failed once Dispatcharr was recreated with those mounts. You are affected only if **both** are true: Docker runs inside an LXC, and the Dispatcharr container has read-only bind mounts like these (Tracearr is the known cause). Other setups were never affected.
+
+### Upgrade notes
+- **Existing installs:** the fixed script reaches your Dispatcharr machine when you run Command A again from **Setup**. Until you do, the scheduled dump keeps using the old script and keeps failing in the case above. After rebuilding or pulling this version, copy Command A again and run it.
+- To check whether you are in the affected case, run `docker inspect <dispatcharr container> --format '{{json .Mounts}}'` and look for read-only `/proc` or `/run/*cgroup*` binds.
+
 ## [0.46.1] — 2026-11-09
 
 ### Added

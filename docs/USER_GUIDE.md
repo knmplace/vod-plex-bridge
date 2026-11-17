@@ -524,6 +524,9 @@ The rclone cache keeps a copy of each title while it plays and removes it 10 min
 **The disk gauge is missing or says it was updated long ago.**
 Run Command B again on that machine. It installs the 5-minute report timer (`systemctl status vod-bridge-disk-report.timer`). If you made a new setup link, the old timer stops reporting until Command B is run again.
 
+**Command A stops with "The first dump failed" and a "remount-ro ... operation not permitted" error.**
+This happens when Docker runs inside an LXC (for example Proxmox) and the Dispatcharr container has read-only bind mounts of `/proc` or `/sys/fs/cgroup` files. Tracearr adds mounts like `/proc/meminfo -> /run/tracearr-sse-metrics-lxc-meminfo` to the Dispatcharr container, which is the usual cause. Version 0.46.2 and later avoids it: update the bridge, copy Command A again from Setup and run it. If you can't update yet, remove those Tracearr mounts from the Dispatcharr compose file and redeploy it. Command: `docker inspect <dispatcharr container> --format '{{json .Mounts}}'` shows them.
+
 **Movies say Queued and nothing happens.**
 Every provider account is busy, so they wait and are checked again every 10 minutes. Click the queue pill to see them or remove them.
 
