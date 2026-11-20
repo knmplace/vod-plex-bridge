@@ -30,6 +30,20 @@ LEARN_PARTS = 4                # most captures for one title
 MAX_ATTEMPTS = 6               # captures tried per title since start, failed ones included
 _inflight: set[tuple[str, int]] = set()
 _attempts: dict[tuple[str, int], int] = {}
+_skip: dict[tuple[str, int], str] = {}   # why the last learn() declined, shown on the redirect log entry
+
+
+def last_skip(kind: str, item_id: int) -> str | None:
+    return _skip.get((kind, item_id))
+
+
+def snapshot() -> dict:
+    """In-memory learning state for support reports."""
+    return {"inflight": sorted(f"{k}:{i}" for k, i in _inflight),
+            "attempts": {f"{k}:{i}": n for (k, i), n in _attempts.items()},
+            "last_skip": {f"{k}:{i}": r for (k, i), r in _skip.items()},
+            "limits": {"LEARN_MAX": LEARN_MAX, "LEARN_TOTAL": LEARN_TOTAL, "LEARN_PARTS": LEARN_PARTS,
+                       "MAX_ATTEMPTS": MAX_ATTEMPTS}}
 
 
 def make_sig(*parts) -> str:
@@ -78,10 +92,14 @@ async def learn(kind: str, item_id: int, sig: str, url: str, start: int, end: in
 
     key = (kind, item_id)
     if key in _inflight:
+        _skip[key] = "another capture for this title is in progress"
         return None
     budget = await _budget(kind, item_id, sig)
     if budget <= 0:
+        _skip[key] = (f"budget used up (max {LEARN_PARTS} captures / {LEARN_TOTAL >> 20}MB per title, "
+                      f"{MAX_ATTEMPTS} attempts since start; attempts={_attempts.get(key, 0)})")
         return None
+    _skip.pop(key, None)
     _inflight.add(key)
     _attempts[key] = _attempts.get(key, 0) + 1
     client = resp = None
@@ -99,7 +117,11 @@ async def learn(kind: str, item_id: int, sig: str, url: str, start: int, end: in
                 "GET", session_url, headers={"Range": f"bytes={start}-{end}"}), stream=True)
     except Exception as e:
         logger.warning("Range learn: %s failed: %s", label, e)
+        _skip[key] = f"provider request failed: {type(e).__name__}: {e}"[:200]
     if resp is None or resp.status_code != 206:
+        if key not in _skip or not _skip[key].startswith("provider request failed"):
+            _skip[key] = ("no playable session URL" if resp is None
+                          else f"provider answered HTTP {resp.status_code} instead of 206")
         _inflight.discard(key)
         if resp is not None:
             await resp.aclose()

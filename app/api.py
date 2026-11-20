@@ -17,6 +17,7 @@ import media_servers
 import plex_libraries
 import plex_presence
 import plex_mounts
+import tickets
 from database import get_db
 from scraper import scrape_catalog, fetch_movies, enrich_from_tmdb, request_cancel, is_cancelled, search_tmdb_for_missing, _upsert_movie
 from generator import generate_strm_files, sanitize_filename, write_strm_for_movie, parse_title, get_folder_name
@@ -670,6 +671,60 @@ async def list_movies(
 
 HEADER_FETCH_SIZE = 8 * 1024 * 1024   # 8MB head — gives pipe time to build buffer ahead of Plex
 TAIL_FETCH_SIZE = 1024 * 1024
+
+
+@router.post("/tickets/collect")
+async def tickets_collect():
+    return await tickets.start_collect()
+
+
+@router.post("/tickets/submit")
+async def tickets_submit(request: Request):
+    body = await request.json()
+    try:
+        return await tickets.submit(str(body.get("collect_id") or ""), str(body.get("note") or ""))
+    except tickets.TicketError as e:
+        return JSONResponse(status_code=e.status, content={"error": str(e)})
+
+
+@router.get("/tickets")
+async def tickets_list():
+    return await tickets.list_tickets()
+
+
+@router.post("/tickets/delete")
+async def tickets_delete(request: Request):
+    body = await request.json()
+    ids = body.get("ids")
+    if not isinstance(ids, list):
+        return JSONResponse({"error": "ids must be a list"}, status_code=400)
+    return {"deleted": await tickets.delete_tickets(ids)}
+
+
+@router.get("/tickets/{ticket_id}")
+async def tickets_get(ticket_id: int):
+    try:
+        return await tickets.get_ticket(ticket_id)
+    except tickets.TicketError as e:
+        return JSONResponse(status_code=e.status, content={"error": str(e)})
+
+
+@router.post("/tickets/{ticket_id}/retry")
+async def tickets_retry(ticket_id: int):
+    try:
+        return await tickets.retry(ticket_id)
+    except tickets.TicketError as e:
+        return JSONResponse(status_code=e.status, content={"error": str(e)})
+
+
+@router.get("/tickets/{ticket_id}/download")
+async def tickets_download(ticket_id: int):
+    from fastapi.responses import PlainTextResponse
+    try:
+        blob = await tickets.blob_for_download(ticket_id)
+    except tickets.TicketError as e:
+        return JSONResponse(status_code=e.status, content={"error": str(e)})
+    return PlainTextResponse(blob, headers={"Content-Disposition": f'attachment; filename="ticket-{ticket_id}.txt"'})
 
 
 @router.get("/proxy-log")

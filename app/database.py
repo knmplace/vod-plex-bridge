@@ -329,6 +329,19 @@ async def init_db():
         );
         -- Watch List (app/series_watch.py). One row per show the user overrides; shows without
         -- a row use the default mode. mode: auto (queue new episodes) | notify | off.
+        -- Support tickets sent from the Tickets tab (app/tickets.py). blob = the sealed report.
+        -- status: sent | unsent (Gitea unreachable; kept so it can be retried or downloaded).
+        CREATE TABLE IF NOT EXISTS tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            number INTEGER,
+            created_at TEXT,
+            version TEXT,
+            title TEXT,
+            note TEXT,
+            status TEXT,
+            blob TEXT,
+            error TEXT
+        );
         CREATE TABLE IF NOT EXISTS series_watch_prefs (
             series_id INTEGER PRIMARY KEY,
             mode TEXT NOT NULL DEFAULT 'auto'
@@ -348,6 +361,13 @@ async def init_db():
         );
     """)
     await db.commit()
+
+    try:
+        # The scrubbed report text the user reviewed, kept so a past ticket can be re-read in the UI.
+        await db.execute("ALTER TABLE tickets ADD COLUMN report TEXT")
+        await db.commit()
+    except Exception:
+        pass
 
     for series_col in [
         # First time this bridge saw the episode (set on INSERT only); the Watch List treats

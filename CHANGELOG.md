@@ -29,6 +29,31 @@ The three minor bumps each mark a major feature:
 
 ---
 
+## [0.47.0] — 2026-11-19
+
+### Tickets: send us a troubleshooting report from inside the app
+
+When something looks wrong, you can now send us everything we need to help, without screenshots or copy and paste.
+
+Open **Maintenance → Tickets**.
+
+1. Press **Collect report**. The bridge gathers its logs, the proxy activity log (including the last few archived logs, so a restart does not hide what happened), the library state (activated and dead movies, activation queues, what Plex has read and which titles have learned parts of the file, with the reason whenever learning was skipped), health history, disk and memory use, library mounts, what Plex and Jellyfin/Emby are doing (sessions, activities, library paths, scan settings, recent Plex play history and transcodes) and Dispatcharr's status.
+2. **Read it before you send it.** Provider names, accounts, addresses, tokens, passwords and emails are replaced with placeholders such as `<PROVIDER-1>` and `<IP-2>`. The text you see is exactly what is sent.
+3. Add a note about what you are seeing, then press **Submit ticket**. You get a ticket number like **VPB-3**. Quote it when you contact us.
+
+The report is encrypted on your bridge before it leaves, and only we can open it. Tickets you send are listed on the right so you can refer back to the number. If we cannot be reached, the ticket is kept: use **Retry** later, or **Download** it and send the file to us.
+
+- Tickets can be deleted from the list: press **Select** next to *Your Tickets*, tick one or more (or **All**), then **Delete**. This only removes them from your bridge; a ticket already sent stays with us, and an unsent one cannot be recovered.
+- One ticket per minute, to keep accidents from flooding us.
+- The report is capped at about 1.5 MB. If the logs are bigger, the oldest lines are dropped first.
+- Nothing is sent until you press Submit, and no provider is contacted to build the report.
+
+### Details
+- Files changed: `app/tickets.py`, `app/ticket_collect.py`, `app/ticket_scrub.py`, `app/ticket_seal.py`, `app/log_ring.py` (all new), `app/api.py` (`/api/tickets/*`), `app/database.py` (`tickets` table), `app/main.py` (log ring, version), `app/templates/index.html` (Tickets tab).
+- `tools/decrypt_ticket.py` is the maintainer-side decryptor.
+
+---
+
 ## [0.46.3] — 2026-11-17
 
 ### Fewer Dispatcharr connections when Plex refreshes your library

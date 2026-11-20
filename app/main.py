@@ -26,7 +26,10 @@ import plex_mounts
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-APP_VERSION = "0.46.3"
+import log_ring
+log_ring.install()
+
+APP_VERSION = "0.47.0"
 
 
 async def _restore_strm_files():

@@ -370,7 +370,7 @@ Click a series card to open it in the same layout. A **Trailer** button appears 
 
 ## 6. Maintenance
 
-The **Maintenance** tab has the sub-tabs **Daily Updates**, **Dead Movies** and **Proxy Logs**, plus **Rclone** once a media machine runs Rclone Manager.
+The **Maintenance** tab has the sub-tabs **Daily Updates**, **Dead Movies** and **Proxy Logs**, plus **Rclone** once a media machine runs Rclone Manager, and **Tickets** for sending us a troubleshooting report.
 
 ### 6.1 Daily Updates
 
@@ -425,6 +425,16 @@ Provider blocks are usually temporary. Many dead movies play fine after a restor
 This sub-tab appears once a media machine reports that Rclone Manager is running. That happens when **Also install Rclone Manager** was ticked on the machine's Setup card *before* Command B ran (see section 2). Each machine gets a card with an **Open Rclone Manager** button. The page opens in a new tab, where you can check and restart the bridge mounts. Sign in as **admin**; the default password is `ChangeMeNow!` unless you set one while Command B ran, so change it right away. The Health tab shows the same link.
 
 ![Rclone sub-tab](images/rclone.png)
+
+### 6.5 Tickets
+
+Use this when something looks wrong and you want us to look at it.
+
+1. Open **Maintenance → Tickets** and press **Collect report**. The bridge gathers its logs, the proxy activity log, queues, settings, mounts, what Plex is doing, and Dispatcharr's status.
+2. **Read the report before sending.** Provider names, accounts, addresses, tokens, passwords and emails are replaced with placeholders like `<PROVIDER-1>` or `<IP-2>`. The preview is exactly what is sent.
+3. Add a **note** describing what you see, then press **Submit ticket**. You get a number such as **VPB-3**. Quote it when you contact us.
+
+The report is encrypted before it leaves your bridge and only we can open it. Your tickets are listed on the right. If we cannot be reached, the ticket stays in the list as unsent: press **Retry**, or **Download** it and send us the file. To remove tickets from the list, press **Select** beside *Your Tickets*, tick the ones you want (or **All**), and press **Delete**; this only clears them from your bridge, and tickets already sent stay with us. You can send one ticket per minute. No provider is contacted to build a report.
 
 ### Other monitoring tabs
 

@@ -1097,7 +1097,9 @@ async def vod_file(filename: str, request: Request):
                         _log_event("info", movie_id, f"Redirecting to Dispatcharr proxy via {target}", movie_name=movie_name,
                                    range_start=range_start, range_end=range_end, file_size=file_size,
                                    cached_head=header_size, cached_tail_offset=tail_offset,
-                                   user_agent=(request.headers.get("user-agent") or "")[:60])
+                                   user_agent=(request.headers.get("user-agent") or "")[:60],
+                                   learn_skip=range_learn.last_skip("movie", movie_id),
+                                   pipe_active=movie_id in _movie_pipes, size_known=size_known)
                     elif last[0] != redirect_url:
                         _log_event("info", movie_id, f"Redirect switched to {target}", movie_name=movie_name)
                     _redirect_logged[movie_id] = (redirect_url, now)
@@ -1692,7 +1694,8 @@ async def vod_series_file(subpath: str, request: Request):
         if redirect_url:
             _log_event("info", None, "Episode redirecting to Dispatcharr proxy", movie_name=_episode_label(episode),
                        episode_id=episode_id, range_start=ep_start, range_end=ep_end,
-                       cached_head=episode["header_size"] or 0, cached_tail_offset=episode["tail_offset"] or 0)
+                       cached_head=episode["header_size"] or 0, cached_tail_offset=episode["tail_offset"] or 0,
+                       learn_skip=range_learn.last_skip("episode", episode_id), size_known=ep_known)
             return Response(status_code=302, headers={"Location": redirect_url})
         return Response(status_code=503, content=redirect_err or "No stream available")
 

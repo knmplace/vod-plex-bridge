@@ -1241,6 +1241,7 @@
         <button class="sub-nav-btn" data-sub="logs" onclick="switchTab('logs')">Proxy Logs</button>
         <button class="sub-nav-btn" data-sub="daily" onclick="switchTab('daily')">Daily Updates</button>
         <button class="sub-nav-btn" data-sub="rclone" id="rcloneSubBtn" style="display:none;" onclick="switchTab('rclone')">Rclone</button>
+        <button class="sub-nav-btn" data-sub="tickets" onclick="switchTab('tickets')">Tickets</button>
     </div>
 
     <!-- Shown when Plex can't read a bridge folder it mounted (plex_mounts.py) -->
@@ -1619,6 +1620,48 @@
                         <div class="empty-state">No dead movies found.</div>
                     </div>
                     <div class="pagination" id="deadPagination"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TICKETS TAB -->
+    <div class="tab-content" id="tabTickets">
+        <div style="display:flex;gap:1rem;padding-top:1rem;padding-left:1rem;padding-right:1rem;height:calc(100vh / var(--z) - 180px);">
+            <div style="flex:2;display:flex;flex-direction:column;min-width:0;">
+                <div class="panel" id="ticketReportPanel" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+                    <div class="panel-header">
+                        <span id="ticketTitle">Send a Ticket</span>
+                        <div style="display:flex;gap:0.4rem;align-items:center;">
+                            <span id="ticketMeta" style="font-size:0.76rem;color:var(--text-muted);"></span>
+                            <button class="btn btn-outline" id="ticketNewBtn" style="font-size:0.76rem;padding:0.2rem 0.5rem;display:none;" onclick="newTicket()">&larr; New ticket</button>
+                            <button class="btn btn-outline" id="ticketCollectBtn" style="font-size:0.76rem;padding:0.2rem 0.5rem;" onclick="collectTicket()">Collect report</button>
+                        </div>
+                    </div>
+                    <div class="panel-body" style="padding:0.6rem;flex:1;display:flex;flex-direction:column;gap:0.5rem;overflow:hidden;">
+                        <div id="ticketIntro" style="font-size:0.78rem;color:var(--text-muted);">Collect gathers logs, settings and Plex/Dispatcharr details. Provider names, addresses, accounts and tokens are replaced with placeholders. Read it below &mdash; exactly this text is what gets sent, encrypted.</div>
+                        <pre id="ticketPreview" style="flex:1;min-height:0;overflow:auto;margin:0;padding:0.5rem;font-size:0.72rem;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;white-space:pre-wrap;word-break:break-all;">Nothing collected yet.</pre>
+                        <textarea id="ticketNote" rows="3" maxlength="4000" placeholder="Note: what are you seeing? (optional)" style="width:100%;padding:0.4rem;font-size:0.82rem;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;resize:vertical;"></textarea>
+                        <div style="display:flex;gap:0.6rem;align-items:center;">
+                            <button class="btn btn-primary" id="ticketSubmitBtn" onclick="submitTicket()" disabled>Submit ticket</button>
+                            <span id="ticketStatus" style="font-size:0.8rem;color:var(--text-muted);"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;min-width:280px;max-width:400px;">
+                <div class="panel" id="ticketListPanel" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+                    <div class="panel-header" style="display:flex;align-items:center;gap:0.4rem;">
+                        <span style="flex:1;">Your Tickets</span>
+                        <button class="btn btn-outline" id="ticketSelBtn" style="font-size:0.72rem;padding:0.1rem 0.5rem;" onclick="toggleTicketSelect()">Select</button>
+                        <button class="btn btn-outline" id="ticketAllBtn" style="display:none;font-size:0.72rem;padding:0.1rem 0.5rem;" onclick="selectAllTickets()">All</button>
+                        <button class="btn btn-danger" id="ticketDelBtn" style="display:none;font-size:0.72rem;padding:0.1rem 0.5rem;" onclick="deleteSelectedTickets()">Delete</button>
+                    </div>
+                    <div class="panel-body" style="padding:0;flex:1;overflow-y:auto;">
+                        <div id="ticketList" style="padding:0.5rem;">
+                            <div class="empty-state" style="font-size:0.8rem;">No tickets yet.</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2238,7 +2281,7 @@
         // --- Tabs ---
         let logRefreshTimer = null;
 
-        const MAINT_TABS = ['dead', 'logs', 'daily', 'rclone'];
+        const MAINT_TABS = ['dead', 'logs', 'daily', 'rclone', 'tickets'];
         let lastMaintTab = 'dead';
 
         // --- TMDB Local tab ---
@@ -2626,6 +2669,9 @@
             } else if (tab === 'rclone') {
                 document.getElementById('tabRclone').classList.add('active');
                 loadRcloneTab();
+            } else if (tab === 'tickets') {
+                document.getElementById('tabTickets').classList.add('active');
+                loadTicketList();
             } else {
                 document.getElementById('tabBrowse').classList.add('active');
                 refreshBrowseFilters();
@@ -5752,6 +5798,211 @@ ${mounts.map(([name, path]) => `      - ${path}:/mnt/${name}:rshared`).join('\n'
             const d = document.createElement('div');
             d.textContent = s;
             return d.innerHTML;
+        }
+
+        // --- Tickets ---
+        let ticketCollectId = null;
+
+        async function collectTicket() {
+            const btn = document.getElementById('ticketCollectBtn');
+            const st = document.getElementById('ticketStatus');
+            btn.disabled = true;
+            st.textContent = 'Collecting... this can take up to 30 seconds.';
+            try {
+                const d = await fetchJSON('/api/tickets/collect', { method: 'POST' });
+                if (!d.collect_id) throw new Error(d.error || d.detail || 'Collect failed');
+                ticketCollectId = d.collect_id;
+                document.getElementById('ticketPreview').textContent = d.text;
+                const n = Object.values(d.replaced || {}).reduce((a, b) => a + b, 0);
+                document.getElementById('ticketMeta').textContent =
+                    Math.round(d.bytes / 1024) + ' KB, ' + n + ' details replaced with placeholders';
+                document.getElementById('ticketSubmitBtn').disabled = false;
+                st.textContent = 'Review the report, add a note, then submit.';
+            } catch (e) {
+                st.textContent = 'Could not collect: ' + e.message;
+            }
+            btn.disabled = false;
+        }
+
+        async function submitTicket() {
+            if (!ticketCollectId) return;
+            const btn = document.getElementById('ticketSubmitBtn');
+            const st = document.getElementById('ticketStatus');
+            btn.disabled = true;
+            st.textContent = 'Sending...';
+            try {
+                const d = await fetchJSON('/api/tickets/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ collect_id: ticketCollectId, note: document.getElementById('ticketNote').value })
+                });
+                if (d.error) { st.textContent = d.error; btn.disabled = false; return; }
+                ticketCollectId = null;
+                document.getElementById('ticketNote').value = '';
+                document.getElementById('ticketPreview').textContent = 'Nothing collected yet.';
+                document.getElementById('ticketMeta').textContent = '';
+                st.textContent = d.status === 'sent'
+                    ? 'Sent. Your ticket number is ' + d.ticket + '.'
+                    : 'Saved but not sent yet (' + (d.error || 'server unreachable') + '). Use Retry in the list.';
+            } catch (e) {
+                st.textContent = 'Could not send: ' + e.message;
+                btn.disabled = false;
+            }
+            loadTicketList();
+        }
+
+        // Read-only view of a past ticket in the left panel; "New ticket" returns to the compose view.
+        let ticketViewId = null;
+
+        function setTicketMode(viewing) {
+            document.getElementById('ticketCollectBtn').style.display = viewing ? 'none' : '';
+            document.getElementById('ticketSubmitBtn').style.display = viewing ? 'none' : '';
+            document.getElementById('ticketNewBtn').style.display = viewing ? '' : 'none';
+            document.getElementById('ticketIntro').style.display = viewing ? 'none' : '';
+            document.getElementById('ticketNote').readOnly = viewing;
+        }
+
+        async function viewTicket(id) {
+            const d = await fetchJSON('/api/tickets/' + id);
+            if (d.error) return;
+            ticketViewId = id;
+            setTicketMode(true);
+            document.getElementById('ticketTitle').textContent = (d.ticket || 'Not sent') + ' — ' + (d.status === 'sent' ? 'sent' : 'unsent');
+            document.getElementById('ticketMeta').textContent =
+                (d.created_at || '').replace('T', ' ').replace('+00:00', ' UTC') + ' · v' + d.version;
+            document.getElementById('ticketPreview').textContent = d.report ||
+                'The report text was not kept for this ticket (it was sent before past reports were saved).';
+            document.getElementById('ticketNote').value = d.note || '';
+            document.getElementById('ticketStatus').textContent = '';
+            loadTicketList();
+        }
+
+        function newTicket() {
+            ticketViewId = null;
+            ticketCollectId = null;
+            setTicketMode(false);
+            document.getElementById('ticketTitle').textContent = 'Send a Ticket';
+            document.getElementById('ticketMeta').textContent = '';
+            document.getElementById('ticketPreview').textContent = 'Nothing collected yet.';
+            document.getElementById('ticketNote').value = '';
+            document.getElementById('ticketSubmitBtn').disabled = true;
+            document.getElementById('ticketStatus').textContent = '';
+            loadTicketList();
+        }
+
+        // Multi-select delete. Removes tickets from this bridge only; copies already sent are kept by us.
+        let ticketSelecting = false;
+        const ticketSel = new Set();
+        let ticketRowIds = [];
+
+        function updateTicketSelUI() {
+            document.getElementById('ticketSelBtn').textContent = ticketSelecting ? 'Cancel' : 'Select';
+            document.getElementById('ticketAllBtn').style.display = ticketSelecting ? '' : 'none';
+            const del = document.getElementById('ticketDelBtn');
+            del.style.display = ticketSelecting ? '' : 'none';
+            del.textContent = 'Delete (' + ticketSel.size + ')';
+            del.disabled = ticketSel.size === 0;
+        }
+
+        function toggleTicketSelect() {
+            ticketSelecting = !ticketSelecting;
+            ticketSel.clear();
+            updateTicketSelUI();
+            loadTicketList();
+        }
+
+        function selectAllTickets() {
+            if (ticketSel.size === ticketRowIds.length) ticketSel.clear();
+            else ticketRowIds.forEach(i => ticketSel.add(i));
+            updateTicketSelUI();
+            loadTicketList();
+        }
+
+        async function deleteSelectedTickets() {
+            const n = ticketSel.size;
+            if (!n) return;
+            if (!confirm('Delete ' + n + ' ticket' + (n > 1 ? 's' : '') + ' from this list? '
+                + 'Tickets not yet sent cannot be recovered. Tickets already sent stay with support.')) return;
+            const ids = Array.from(ticketSel);
+            await fetchJSON('/api/tickets/delete', { method: 'POST',
+                headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
+            const wasViewing = ids.includes(ticketViewId);
+            ticketSelecting = false;
+            ticketSel.clear();
+            updateTicketSelUI();
+            if (wasViewing) newTicket(); else loadTicketList();
+        }
+
+        async function retryTicket(id) {
+            await fetchJSON('/api/tickets/' + id + '/retry', { method: 'POST' });
+            loadTicketList();
+        }
+
+        async function loadTicketList() {
+            const box = document.getElementById('ticketList');
+            const rows = await fetchJSON('/api/tickets');
+            box.textContent = '';
+            ticketRowIds = Array.isArray(rows) ? rows.map(r => r.id) : [];
+            if (!Array.isArray(rows) || !rows.length) {
+                const e = document.createElement('div');
+                e.className = 'empty-state';
+                e.style.fontSize = '0.8rem';
+                e.textContent = 'No tickets yet.';
+                box.appendChild(e);
+                return;
+            }
+            rows.forEach(t => {
+                const card = document.createElement('div');
+                card.style.cssText = 'padding:0.55rem 0.6rem;border-bottom:1px solid var(--border);font-size:0.8rem;cursor:pointer;'
+                    + (t.id === ticketViewId ? 'background:var(--bg-secondary);' : '');
+                card.title = ticketSelecting ? 'Click to select' : 'Click to view this ticket';
+                card.onclick = () => {
+                    if (!ticketSelecting) return viewTicket(t.id);
+                    if (ticketSel.has(t.id)) ticketSel.delete(t.id); else ticketSel.add(t.id);
+                    updateTicketSelUI();
+                    loadTicketList();
+                };
+                const head = document.createElement('div');
+                head.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.15rem;';
+                if (ticketSelecting) {
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.checked = ticketSel.has(t.id);
+                    cb.style.pointerEvents = 'none';
+                    head.appendChild(cb);
+                }
+                const num = document.createElement('span');
+                num.style.cssText = 'font-size:1.05rem;font-weight:700;letter-spacing:0.02em;color:var(--accent, #4f8cff);';
+                num.textContent = t.ticket || 'Not sent';
+                const badge = document.createElement('span');
+                badge.style.cssText = 'font-size:0.68rem;padding:0.05rem 0.4rem;border-radius:999px;border:1px solid var(--border);color:var(--text-muted);';
+                badge.textContent = t.status === 'sent' ? 'sent' : 'unsent';
+                head.append(num, badge);
+                const sub = document.createElement('div');
+                sub.style.cssText = 'color:var(--text-muted);';
+                sub.textContent = (t.created_at || '').replace('T', ' ').replace('+00:00', ' UTC') + ' · v' + t.version;
+                const note = document.createElement('div');
+                note.textContent = t.note || '';
+                card.append(head, sub, note);
+                if (t.status !== 'sent') {
+                    const err = document.createElement('div');
+                    err.style.color = 'var(--danger, #e5484d)';
+                    err.textContent = t.error || '';
+                    const retry = document.createElement('button');
+                    retry.className = 'btn btn-outline';
+                    retry.style.cssText = 'font-size:0.74rem;padding:0.15rem 0.5rem;margin-right:0.4rem;';
+                    retry.textContent = 'Retry';
+                    retry.onclick = (ev) => { ev.stopPropagation(); retryTicket(t.id); };
+                    const dl = document.createElement('a');
+                    dl.className = 'btn btn-outline';
+                    dl.style.cssText = 'font-size:0.74rem;padding:0.15rem 0.5rem;';
+                    dl.href = '/api/tickets/' + t.id + '/download';
+                    dl.textContent = 'Download';
+                    dl.onclick = (ev) => ev.stopPropagation();
+                    card.append(err, retry, dl);
+                }
+                box.appendChild(card);
+            });
         }
 
         // --- Log Archives ---
